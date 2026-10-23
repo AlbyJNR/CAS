@@ -182,6 +182,10 @@ class PlayerActivity : Screen() {
                 }
                 if (retryable(e) && retries < RETRIES) {
                     retries++
+                    // ExoPlayer's own retries already took about 6 s: each of ours gets a fresh START_WAIT, or the
+                    // start timeout would move on to the next source before the second retry ran.
+                    main.removeCallbacks(startTimeout)
+                    main.postDelayed(startTimeout, RETRY_WAIT + START_WAIT)
                     main.postDelayed({ if (!isFinishing) player.prepare() }, RETRY_WAIT)
                     return
                 }
@@ -250,9 +254,13 @@ class PlayerActivity : Screen() {
         background({
             // ponytail: the TV's language and English, three files each in the addon's order; a language picker if asked
             val all = Stremio.addons(key).filter { it.serves("subtitles", type, videoId) }
-                .flatMap { a -> runCatching { a.subtitles(type, videoId) }.getOrDefault(emptyList()) }
+                .flatMap { a -> runCatching { a.subtitles(type, videoId) }
+                    .onFailure { android.util.Log.w("StreamTV", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
             all.filter { it.local }.take(3) + all.filter { !it.local && Locale(it.lang).language == "en" }.take(3)
-        }) { addonSubs = it.getOrDefault(emptyList()) }
+        }) { r ->
+            addonSubs = r.getOrDefault(emptyList())
+            android.util.Log.i("StreamTV", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
+        }
 
         background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
             item = result.fold(
