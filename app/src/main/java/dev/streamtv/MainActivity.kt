@@ -1,6 +1,7 @@
 package dev.streamtv
 
 import android.animation.ValueAnimator
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -45,6 +46,10 @@ class MainActivity : Screen() {
     private var page = Page.HOME
     private var mode = Mode.BROWSE
     private var library: List<JSONObject> = emptyList()
+    // Movies and Shows can show one genre (null: everything); Library sorts by last change or by name.
+    private var genre: String? = null
+    private var libraryByName = false
+    private lateinit var filter: TextView
     private val rows = mutableListOf<Row>()
     private var focusedSomething = false
     private val metas = mutableMapOf<String, Meta>() // full details, fetched once per title
@@ -281,7 +286,15 @@ class MainActivity : Screen() {
             setOnClickListener { startActivity(Intent(this@MainActivity, page)) }
             contentDescription = label
         }
+        filter = text("", BODY).onArt().apply {
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            isFocusable = true
+            setOnFocusChangeListener { _, _ -> styleNav() }
+            setOnClickListener { pickFilter() }
+        }
         val icons = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(filter, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
             addView(icon(R.drawable.ic_search, "Search", SearchActivity::class.java), LinearLayout.LayoutParams(dp(40), dp(40)))
             addView(icon(R.drawable.ic_settings, "Settings", SettingsActivity::class.java),
                 LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginStart = dp(8) })
@@ -306,6 +319,22 @@ class MainActivity : Screen() {
             item.typeface = Typeface.create(if (p == page || focused) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
             if (focused) item.setShadowLayer(0f, 0f, 0f, 0) else item.onArt() // no shadow on the white pill
         }
+        if (!::filter.isInitialized) return
+        filter.visibility = if (page in listOf(Page.MOVIES, Page.SHOWS, Page.LIBRARY)) View.VISIBLE else View.GONE
+        filter.text = if (page == Page.LIBRARY) (if (libraryByName) "A–Z  ▾" else "Recent  ▾") else "${genre ?: "All genres"}  ▾"
+        filter.background = if (filter.isFocused) rounded(Color.WHITE, 12) else glass(12)
+        filter.setTextColor(if (filter.isFocused) Color.BLACK else Color.WHITE)
+    }
+
+    /** Library flips between Recent and A–Z; Movies and Shows offer every genre their catalogs can filter by. */
+    private fun pickFilter() {
+        if (page == Page.LIBRARY) { libraryByName = !libraryByName; return showPage(page) }
+        val type = if (page == Page.MOVIES) "movie" else "series"
+        val genres = (Stremio.savedAddons(profile.authKey) ?: emptyList()).flatMap { it.catalogs }
+            .filter { it.type == type }.flatMap { it.genres }.filterNot { it.equals("All", true) }.distinct().sorted() // "All" is one addon's no-filter
+        val choices = listOf("All genres") + genres
+        AlertDialog.Builder(this).setTitle("Genre")
+            .setItems(choices.toTypedArray()) { _, i -> genre = if (i == 0) null else choices[i]; showPage(page) }.show()
     }
 
     // ---------- the art, and what shows over it ----------
@@ -532,6 +561,7 @@ class MainActivity : Screen() {
      * only if it changed and the remote hasn't been touched yet.
      */
     private fun showPage(p: Page, quick: Boolean = true) {
+        if (p != page) genre = null // a genre belongs to the page it was picked on
         page = p
         val g = ++generation
         touched = false
@@ -599,10 +629,14 @@ class MainActivity : Screen() {
             if (built || g != generation) return
             built = true
             // Each catalog on its page under a plain name, personal rows first; the sort keeps the addons' order within a rank.
+            val picked = genre
             val shelves = addons.flatMap { it.catalogs }.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it } }
+                .filter { picked == null || picked in it.first.genres }
                 .sortedBy { it.second.rank }
             val catalogs = shelves.map { it.first }
-            if (catalogs.isEmpty() && p != Page.HOME) {
+            if (catalogs.isEmpty() && picked != null) {
+                content.addView(text("None of your catalogs can show $picked.", BODY, color = MUTED).apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
+            } else if (catalogs.isEmpty() && p != Page.HOME) {
                 val what = when (p) { Page.MOVIES -> "movie"; Page.LIVE -> "live"; else -> "show" }
                 content.addView(text("None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = MUTED)
                     .apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
@@ -613,14 +647,16 @@ class MainActivity : Screen() {
                 val title = shelf.title
                 val slot = slot()
                 background({
-                    (if (quick) catalog.addon.savedCatalog(catalog) else null)?.let { it to true } ?: (catalog.addon.catalog(catalog) to false)
+                    if (picked != null) catalog.addon.catalog(catalog, picked) to false
+                    else (if (quick) catalog.addon.savedCatalog(catalog) else null)?.let { it to true } ?: (catalog.addon.catalog(catalog) to false)
                 }) { answer ->
                     if (g != generation) return@background
                     val (metas, wasSaved) = answer.getOrNull() ?: (emptyList<Meta>() to false)
                     if (wasSaved) background({ catalog.addon.catalog(catalog) }) {} // fresh for next time
                     val items = metas.map(::metaItem)
                     // The rest of the first page first, then the addon's next pages when it takes `skip`.
-                    val more: ((Int) -> List<Item>)? = if (catalog.pages) { from ->
+                    // ponytail: a genre row stops at its first page; add genre&skip paging if those rows feel short
+                    val more: ((Int) -> List<Item>)? = if (catalog.pages && picked == null) { from ->
                         if (from < items.size) items.drop(from).take(PAGE) else catalog.addon.catalog(catalog, from).map(::metaItem)
                     } else later(items)
                     if (items.isNotEmpty()) slot.addView(row(title, items.take(PAGE), more).view)
@@ -680,7 +716,8 @@ class MainActivity : Screen() {
 
     private fun showLibrary(slot: FrameLayout) {
         val items = library.filter { !it.optBoolean("removed") && it.optString("type") != "other" }
-            .sortedByDescending { it.text("_mtime") }.map(::libraryItem)
+            .let { all -> if (libraryByName) all.sortedBy { it.optString("name").lowercase() } else all.sortedByDescending { it.text("_mtime") } }
+            .map(::libraryItem)
         if (items.isEmpty()) {
             slot.addView(text("Titles you add to your Stremio library show up here.", BODY, color = MUTED).apply { setPadding(dp(PAD), 0, 0, 0) })
             return

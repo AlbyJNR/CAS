@@ -23,7 +23,7 @@ class Addon(val descriptor: JSONObject) {
     private val base = transportUrl.removeSuffix("/manifest.json")
 
     /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
-    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean)
+    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean, val genres: List<String>)
 
     /** Catalogs Home can show: the ones that need no required input such as a search query. */
     val catalogs: List<Catalog> = manifest.optJSONArray("catalogs").objects()
@@ -33,7 +33,10 @@ class Addon(val descriptor: JSONObject) {
         }
         .map { c ->
             val extras = c.optJSONArray("extraSupported").strings() + c.optJSONArray("extra").objects().map { it.optString("name") }
-            Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras)
+            // The genres it can filter by: the protocol's `genre` extra options, or the older `genres` list.
+            val genres = c.optJSONArray("extra").objects().firstOrNull { it.optString("name") == "genre" }?.optJSONArray("options").strings()
+                .ifEmpty { c.optJSONArray("genres").strings() }
+            Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras, genres)
         }
 
     /** Whether this addon answers [resource] ("meta", "stream", …) for this type and id. */
@@ -51,6 +54,10 @@ class Addon(val descriptor: JSONObject) {
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
     fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
+
+    /** One genre of a catalog (Stremio's `genre` extra); not kept on disk. */
+    fun catalog(c: Catalog, genre: String): List<Meta> =
+        get(false, "catalog", c.type, c.id, "genre=$genre").optJSONArray("metas").objects().map(::Meta)
 
     fun savedCatalog(c: Catalog): List<Meta>? = saved("catalog", c.type, c.id)?.optJSONArray("metas")?.objects()?.map(::Meta)
 
