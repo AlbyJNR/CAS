@@ -75,13 +75,17 @@ class PlayerActivity : Screen() {
     private var tickedWatched = false
     // "Up next": over the end credits, the next episode counts down and starts on its own; OK starts it now, Back stays.
     private lateinit var upNext: android.widget.TextView
+    private lateinit var upNextPanel: FrameLayout
+    private lateinit var upNextTimer: TextView
+    private lateinit var upNextMessage: TextView
+    private lateinit var upNextProgress: LinearLayout
     private var countdown = 0
     private var upNextDismissed = false
     // The pill's other use: a source that keeps stalling (three times in a minute) is offered a lower quality once.
     private var offeringLower = false
     private val stalls = ArrayDeque<Long>()
     private var seekedAt = 0L
-    private val countdownTask = Runnable { countDown() }
+    private val countdownTask = Runnable { if (--countdown == 0) playNext() else countDown() }
     private val startTimeout = Runnable {
         if (started) return@Runnable
         android.util.Log.w("StreamTV", "source ${at + 1}/${sources.size} timed out, state ${player.playbackState}")
@@ -122,6 +126,7 @@ class PlayerActivity : Screen() {
             background = rounded(0xF2FFFFFF.toInt(), 8)
             visibility = android.view.View.GONE
         }
+        upNextPanel = FrameLayout(this).apply { visibility = View.GONE }
         controls = buildControls()
         skip = text("", BODY, bold = true).onArt().apply {
             setPadding(dp(22), dp(12), dp(22), dp(12))
@@ -136,6 +141,9 @@ class PlayerActivity : Screen() {
             addView(options, FrameLayout.LayoutParams(-1, -1))
             addView(status, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
             addView(upNext, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(PAD), dp(PAD + 40)) })
+            addView(upNextPanel, FrameLayout.LayoutParams(dp(480), dp(150), Gravity.BOTTOM or Gravity.END).apply {
+                setMargins(0, 0, dp(36), dp(45))
+            })
             addView(skip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(PAD), dp(PAD + 40)) })
         })
         background({
@@ -215,7 +223,8 @@ class PlayerActivity : Screen() {
                 val shownSubs = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)
                 if (!subsPicked && tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                     subsPicked = true
-                    if (shownSubs != null && shownSubs.language?.startsWith(Locale.getDefault().language) != true)
+                    if (!Settings.subtitles(this@PlayerActivity) ||
+                        (shownSubs != null && shownSubs.language?.startsWith(Locale.getDefault().language) != true))
                         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
                 }
                 val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
@@ -329,6 +338,7 @@ class PlayerActivity : Screen() {
             lastPosition = player.currentPosition
             main.postDelayed(tickTask, TICK)
             main.post(skipTask)
+            if (upNextPanel.visibility == View.VISIBLE && countdown > 0) main.postDelayed(countdownTask, 1_000)
         }
     }
 
@@ -381,17 +391,67 @@ class PlayerActivity : Screen() {
     private fun showUpNext() {
         if (offeringLower) { offeringLower = false; upNext.visibility = android.view.View.GONE }
         val next = nextVideo() ?: return
+        if (shown) hideControls()
+        options.visibility = View.GONE
         countdown = UP_NEXT_SECONDS
-        upNext.tag = "S${next.season} E${next.episode}" + (next.title.takeIf { it.isNotBlank() }?.let { "  ·  $it" } ?: "")
-        upNext.visibility = android.view.View.VISIBLE
+        upNextPanel.removeAllViews()
+        upNextPanel.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(0x00000000, 0x99000000.toInt()))
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val still = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(SURFACE, 8)
+            clipToOutline = true
+        }
+        row.addView(still, LinearLayout.LayoutParams(dp(185), dp(102)))
+        Images.load(next.thumbnail, still, dp(370), orElse = meta?.background ?: intent.getStringExtra("background"))
+        val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        upNextTimer = text("", 11f, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f }
+        detail.addView(upNextTimer)
+        detail.addView(text("S${next.season} E${next.episode}  ·  ${next.title.uppercase()}", TITLE, bold = true).onArt().apply {
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        upNextMessage = text("", SMALL, color = TEXT_HI).onArt()
+        detail.addView(upNextMessage, wrap().apply { topMargin = dp(4) })
+        upNextProgress = progressBar(1f, 0xFFF7D98F.toInt())
+        detail.addView(upNextProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(9) })
+        val actions = LinearLayout(this)
+        fun action(label: String, click: () -> Unit) = text(label, SMALL).onArt().apply {
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnFocusChangeListener { v, focused ->
+                v.background = if (focused) glass(8, focused = true) else null
+            }
+            setOnClickListener { click() }
+        }
+        val playNow = action("▶  Play now") { playNext() }
+        actions.addView(playNow, LinearLayout.LayoutParams(dp(116), dp(40)))
+        actions.addView(action("Back to stay") { dismissUpNext() },
+            LinearLayout.LayoutParams(dp(112), dp(40)).apply { leftMargin = dp(8) })
+        detail.addView(actions, wrap().apply { topMargin = dp(8) })
+        row.addView(detail, LinearLayout.LayoutParams(dp(245), -2).apply { leftMargin = dp(16) })
+        upNextPanel.addView(row, FrameLayout.LayoutParams(-1, -1))
+        upNextPanel.visibility = View.VISIBLE
+        playNow.requestFocus()
         countDown()
     }
 
     private fun countDown() {
         if (countdown <= 0 || upNextDismissed) return
-        upNext.text = "Next: ${upNext.tag}   ▸ $countdown"
-        if (--countdown == 0) return playNext()
+        upNextTimer.text = "UP NEXT  ·  ${countdown}s"
+        upNextMessage.text = "Playing automatically in $countdown seconds"
+        (upNextProgress.getChildAt(0).layoutParams as LinearLayout.LayoutParams).weight = countdown.toFloat()
+        (upNextProgress.getChildAt(1).layoutParams as LinearLayout.LayoutParams).weight = (UP_NEXT_SECONDS - countdown).toFloat()
+        upNextProgress.requestLayout()
         main.postDelayed(countdownTask, 1_000)
+    }
+
+    private fun dismissUpNext() {
+        upNextDismissed = true
+        countdown = 0
+        upNextPanel.visibility = View.GONE
+        main.removeCallbacks(countdownTask)
     }
 
     /** Hands the next episode to the sources page, which starts it (preferring this release's group) and finishes here. */
@@ -433,6 +493,10 @@ class PlayerActivity : Screen() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (upNextPanel.visibility == View.VISIBLE && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP) dismissUpNext()
+            return true
+        }
         if (upNext.visibility == android.view.View.VISIBLE && event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { if (offeringLower) lowerQuality() else playNext(); return true }
@@ -625,6 +689,7 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(hideTask)
         if (!shown) {
             shown = true
+            view.subtitleView?.setBottomPaddingFraction(0.28f) // keep captions above the seek bar and buttons
             controls.visibility = View.VISIBLE
             controls.animate().alpha(1f).setDuration(150).start()
             updateProgress()
@@ -637,7 +702,12 @@ class PlayerActivity : Screen() {
         shown = false
         main.removeCallbacks(hideTask)
         main.removeCallbacks(progressTask)
-        controls.animate().alpha(0f).setDuration(250).withEndAction { if (!shown) controls.visibility = View.GONE }.start()
+        controls.animate().alpha(0f).setDuration(250).withEndAction {
+            if (!shown) {
+                controls.visibility = View.GONE
+                view.subtitleView?.setBottomPaddingFraction(0.08f)
+            }
+        }.start()
     }
 
     private fun updateProgress() {
@@ -690,7 +760,7 @@ class PlayerActivity : Screen() {
             gravity = Gravity.CENTER_VERTICAL
             addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
             addView(text("Playback options", TITLE).apply { letterSpacing = 0.06f }, wrap().apply { marginStart = dp(22) })
-        }, wrap().apply { bottomMargin = dp(16) })
+        }, wrap().apply { bottomMargin = dp(36) })
 
         val audio = audioGroups.filter { it.isTrackSupported(0) }
         var first: View? = null
@@ -720,13 +790,15 @@ class PlayerActivity : Screen() {
         }, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(14) })
 
         options.removeAllViews()
-        options.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0))
+        options.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0))
+        }, FrameLayout.LayoutParams(dp(540), -1))
         options.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             addView(list)
-            setPadding(dp(PAD - 16), dp(32), dp(48), dp(32))
+            setPadding(dp(PAD - 16), dp(32), dp(12), dp(32))
             clipToPadding = false
-        }, FrameLayout.LayoutParams(dp(480), -1))
+        }, FrameLayout.LayoutParams(dp(420), -1))
         options.visibility = View.VISIBLE
         (first ?: subsFirst).requestFocus()
     }
@@ -734,11 +806,15 @@ class PlayerActivity : Screen() {
     /** A heading and one row per choice; returns the chosen row, to focus. [pick] runs with the index chosen. */
     private fun section(list: LinearLayout, heading: String, labels: List<String>, chosen: Int, pick: (Int) -> Unit): View {
         list.addView(text(heading, SMALL, bold = true, color = MUTED).apply { letterSpacing = 0.2f },
-            wrap().apply { setMargins(dp(14), dp(20), 0, dp(8)) })
+            wrap().apply { setMargins(dp(14), dp(32), 0, dp(8)) })
         val checks = mutableListOf<ImageView>()
+        val names = mutableListOf<TextView>()
         val rows = labels.mapIndexed { i, label ->
             val arrow = text("", TITLE)
-            val name = text(label, BODY + 2).apply { setPadding(dp(14), dp(6), dp(14), dp(6)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+            val name = text(label, BODY + 2, color = if (i == chosen) Color.WHITE else TEXT_MID).apply {
+                setPadding(dp(14), dp(6), dp(14), dp(6)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+            }
+            names += name
             val check = ImageView(this).apply { setImageResource(R.drawable.ic_check); visibility = if (i == chosen) View.VISIBLE else View.INVISIBLE }
             checks += check
             LinearLayout(this).apply {
@@ -747,10 +823,15 @@ class PlayerActivity : Screen() {
                 addView(FrameLayout(context).apply { addView(name, FrameLayout.LayoutParams(-2, -2)) }, LinearLayout.LayoutParams(0, -2, 1f))
                 addView(check, LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginStart = dp(12) })
                 isFocusable = true
-                setOnFocusChangeListener { _, has -> arrow.text = if (has) "›" else ""; name.background = if (has) glass(10, focused = true) else null }
+                setOnFocusChangeListener { _, has ->
+                    arrow.text = if (has) "›" else ""
+                    name.background = if (has) glass(10, focused = true) else null
+                    name.setTextColor(if (has || check.visibility == View.VISIBLE) Color.WHITE else TEXT_MID)
+                }
                 setOnClickListener {
                     pick(i)
                     checks.forEachIndexed { j, c -> c.visibility = if (j == i) View.VISIBLE else View.INVISIBLE }
+                    names.forEachIndexed { j, n -> n.setTextColor(if (j == i) Color.WHITE else TEXT_MID) }
                 }
             }.also { list.addView(it, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) }) }
         }
@@ -788,6 +869,7 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(tickTask)
         main.removeCallbacks(progressTask)
         main.removeCallbacks(skipTask)
+        main.removeCallbacks(countdownTask)
         player.pause()
         if (!watched || player.isCurrentMediaItemLive) return // nothing played, or live: the account keeps what it had
         record()

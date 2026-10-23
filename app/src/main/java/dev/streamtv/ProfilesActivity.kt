@@ -19,12 +19,15 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 
 // "Who's watching?", plus adding a profile: name, Stremio sign-in, copying addons, and setting up Watchly.
 // The app starts here; with a single profile it goes straight on to Home.
 class ProfilesActivity : Screen() {
     // The sign-in code being waited on; anything else stops its polling loop.
     private var waitingCode: String? = null
+    private var signingIn = false
+    private var draftName = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +44,11 @@ class ProfilesActivity : Screen() {
         super.onDestroy()
     }
 
+    @Deprecated("Android back callback")
+    override fun onBackPressed() {
+        if (signingIn) showName() else super.onBackPressed()
+    }
+
     private fun openHome(profile: Profile) {
         Profiles.setActive(this, profile.id)
         startActivity(Intent(this, MainActivity::class.java))
@@ -51,8 +59,7 @@ class ProfilesActivity : Screen() {
 
     private fun showPicker() {
         val profiles = Profiles.all(this)
-        // Padding leaves room for the focused tile to grow without its outline being cut off.
-        val tiles = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }
+        val tiles = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(14), dp(14), dp(14), dp(14)) }
         profiles.forEach { p ->
             tiles.addView(tile(p.name, p.color, p.name.take(1).uppercase()).apply {
                 setOnClickListener { openHome(p) }
@@ -62,30 +69,48 @@ class ProfilesActivity : Screen() {
         if (profiles.size < Profiles.MAX) {
             tiles.addView(tile("Add profile", GLASS_LOW, "+").apply { setOnClickListener { showName() } })
         }
-        setWindowed(column(Gravity.CENTER,
-            text("Who's watching?", DISPLAY, bold = true),
-            tiles.marginTop(48),
-            text("Hold OK on a profile to remove it", BODY, color = MUTED).marginTop(40),
-        ))
+        val content = android.widget.FrameLayout(this).apply {
+            addView(text("Who’s watching?", 36f, bold = true), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+                leftMargin = dp(48); topMargin = dp(70)
+            })
+            addView(tiles, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            addView(text("Hold OK to remove a profile", 13f, color = TEXT_HI), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(48); bottomMargin = dp(72)
+            })
+        }
+        setWindowed(content, onboardingBackdrop())
         val active = profiles.indexOfFirst { it.id == Profiles.active(this)?.id }
         tiles.getChildAt(maxOf(active, 0)).requestFocus()
     }
 
     private fun tile(label: String, color: Int, initial: String): View {
         val circle = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
-        val avatar = text(initial, 56f, bold = true).apply {
+        val avatar = text(initial, 38f, bold = true).apply {
             gravity = Gravity.CENTER
             background = circle
-            layoutParams = LinearLayout.LayoutParams(dp(140), dp(140))
+            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
         }
-        return column(Gravity.CENTER_HORIZONTAL, avatar, text(label, BODY).marginTop(16)).apply {
+        val marker = text("▶", 14f, bold = true).apply {
+            visibility = View.INVISIBLE
+            gravity = Gravity.CENTER
+        }
+        val name = text(label, 13f).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val nameRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            addView(marker, LinearLayout.LayoutParams(dp(18), -2).apply { marginEnd = dp(4) })
+            addView(name)
+        }.marginTop(2)
+        return column(Gravity.CENTER_HORIZONTAL, avatar, nameRow).apply {
             isFocusable = true
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(16); marginEnd = dp(16) }
-            // Focus: a white ring round the avatar and a slight grow, like Netflix's picker.
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18); marginEnd = dp(18) }
             setOnFocusChangeListener { v, has ->
-                circle.setStroke(if (has) dp(5) else 0, Color.WHITE)
-                v.animate().scaleX(if (has) 1.08f else 1f).scaleY(if (has) 1.08f else 1f).setDuration(120).start()
+                marker.visibility = if (has) View.VISIBLE else View.INVISIBLE
+                name.background = if (has) rounded(0x5538424D, 28) else null
+                v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
             }
         }
     }
@@ -106,58 +131,146 @@ class ProfilesActivity : Screen() {
     // ---------- add a profile ----------
 
     private fun showName() {
+        signingIn = false
+        waitingCode = null
         val first = Profiles.all(this).isEmpty()
         val name = EditText(this).apply {
-            hint = "Name"
-            textSize = 24f
+            hint = "Profile name"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFFB7C0CA.toInt())
+            setPadding(dp(24), dp(18), dp(24), dp(18))
+            background = glass(14)
+            setOnFocusChangeListener { v, has -> v.background = glass(14, has) }
             setSingleLine()
             imeOptions = EditorInfo.IME_ACTION_DONE
-            layoutParams = LinearLayout.LayoutParams(dp(480), -2).apply { topMargin = dp(32) }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) }
         }
-        val next = Button(this).apply { text = "Continue" }
-        val go = { name.text.toString().trim().ifEmpty { null }?.let { showSignIn(it) } }
+        name.setText(draftName)
+        val next = onboardingButton("Continue    →")
+        val go = { name.text.toString().trim().ifEmpty { null }?.let { draftName = it; showSignIn(it) } }
         name.setOnEditorActionListener { _, _, _ -> go(); true }
         next.setOnClickListener { go() }
-        setWindowed(column(Gravity.CENTER,
-            text(if (first) "Welcome" else "New profile", DISPLAY, bold = true),
-            text("Each profile is its own Stremio account, so everyone gets their own history and recommendations.",
-                BODY, color = MUTED).apply { maxWidth = dp(700); gravity = Gravity.CENTER }.marginTop(12),
+        val copy = column(Gravity.START,
+            text(if (first) "Welcome" else "New profile", 52f, bold = true),
+            text("First, name your profile.", 27f).marginTop(8),
+            text("Your watch history and recommendations will stay yours.", BODY, color = TEXT_MID).marginTop(10),
+            text("PROFILE NAME", SMALL, bold = true, color = TEXT_MID).marginTop(40),
             name,
-            next.marginTop(24),
-        ))
+            next.marginTop(26),
+        ).apply { gravity = Gravity.CENTER_VERTICAL }
+        val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase() ?: "E", 96)
+        val preview = column(Gravity.CENTER,
+            avatar,
+            text("${name.text.ifEmpty { "Your name" }}", TITLE, bold = true).marginTop(18),
+        ).apply { gravity = Gravity.CENTER }
+        name.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                (preview.getChildAt(1) as android.widget.TextView).text = s?.toString()?.ifBlank { "Your name" } ?: "Your name"
+                avatar.text = s?.firstOrNull()?.uppercase() ?: "E"
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        val content = onboardingFrame("1 of 2", copy, preview, dp(70), 1.15f, 0.85f)
+        setWindowed(content, onboardingBackdrop())
         name.requestFocus()
     }
 
     private fun showSignIn(name: String) {
+        signingIn = true
         val qr = ImageView(this)
         val code = text("", 64f, bold = true)
         val status = text("Getting a sign-in code…", BODY, color = MUTED)
+        val avatar = onboardingAvatar(name.take(1).uppercase(), 40)
+        val back = onboardingButton("←   Back")
+        back.setOnClickListener { waitingCode = null; showName() }
+        val left = column(Gravity.CENTER,
+            qr.apply { scaleType = ImageView.ScaleType.FIT_CENTER },
+            LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(avatar)
+                addView(text(name, TITLE).marginTop(0).apply { setPadding(dp(14), 0, 0, 0) })
+            }.marginTop(16),
+            back.marginTop(28),
+        ).apply { gravity = Gravity.CENTER }
         val steps = column(Gravity.START,
-            text("Sign in $name with Stremio", DISPLAY, bold = true),
-            text("Scan the code with $name's phone, or go to\nlink.stremio.com and enter:", BODY, color = MUTED).marginTop(16),
-            code.marginTop(12),
-            text("No Stremio account? Make a free one at stremio.com first.", BODY, color = MUTED).marginTop(16),
-            status.marginTop(16),
-        )
-        setWindowed(LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            addView(qr, LinearLayout.LayoutParams(dp(260), dp(260)).apply { marginEnd = dp(56) })
-            addView(steps)
-        })
+            text("Connect Stremio", 52f, bold = true),
+            text("Scan with $name’s phone to sign in.", 27f).marginTop(8),
+            text("Or visit link.stremio.com and enter this code:", BODY + 2, color = TEXT_MID).marginTop(18),
+            code.marginTop(4),
+            LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(View(this@ProfilesActivity).apply { background = rounded(0xFF0878FF.toInt(), 50) }, LinearLayout.LayoutParams(dp(12), dp(12)))
+                addView(status.apply { setPadding(dp(16), 0, 0, 0) })
+            }.marginTop(4),
+            text("New to Stremio? Create an account at stremio.com", BODY + 1, color = TEXT_MID).marginTop(24),
+        ).apply { gravity = Gravity.CENTER_VERTICAL }
+        val content = onboardingFrame("2 of 2", left, steps, dp(36), 0f, 1f, dp(340))
+        setWindowed(content, onboardingBackdrop())
 
         waitingCode = null
         background({ Stremio.createLink() }) { result ->
+            if (!signingIn) return@background
             result.onSuccess { link ->
-                qr.setImageBitmap(qrBitmap(link.url, dp(260)))
+                qr.setImageBitmap(qrBitmap(link.url, dp(240)))
                 code.text = link.code
                 status.text = "Waiting for you to approve it…"
                 waitingCode = link.code
                 poll(name, link.code, SystemClock.elapsedRealtime())
             }.onFailure {
                 status.text = "Can't reach Stremio. Trying again…"
-                main.postDelayed({ showSignIn(name) }, 5_000)
+                main.postDelayed({ if (signingIn) showSignIn(name) }, 5_000)
             }
         }
+    }
+
+    private fun onboardingBackdrop() = ImageView(this).apply {
+        setImageResource(R.drawable.onboarding_scene)
+        scaleType = ImageView.ScaleType.CENTER_CROP
+    }
+
+    private fun onboardingFrame(step: String, left: View, right: View, gap: Int, leftWeight: Float, rightWeight: Float, leftWidth: Int = 0) =
+        android.widget.FrameLayout(this).apply {
+            val body = LinearLayout(this@ProfilesActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(50), dp(86), dp(50), dp(44))
+                addView(left, if (leftWidth > 0)
+                    LinearLayout.LayoutParams(leftWidth, -1).apply { marginEnd = gap }
+                else LinearLayout.LayoutParams(0, -1, leftWeight).apply { marginEnd = gap })
+                addView(right, LinearLayout.LayoutParams(0, -1, rightWeight))
+            }
+            addView(body, android.widget.FrameLayout.LayoutParams(-1, -1))
+            addView(LinearLayout(this@ProfilesActivity).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(40), dp(36), dp(40), 0)
+                addView(text("STREAM TV", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text(step, SMALL, color = TEXT_MID))
+            }, android.widget.FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP))
+        }
+
+    private fun onboardingButton(label: String) = Button(this).apply {
+        text = label
+        isAllCaps = false
+        textSize = 20f
+        setTextColor(Color.WHITE)
+        isFocusable = true
+        setPadding(dp(26), dp(14), dp(26), dp(14))
+        background = glass(18)
+        setOnFocusChangeListener { v, focused -> v.background = glass(18, focused) }
+    }
+
+    private fun onboardingAvatar(initial: String, size: Int) = TextView(this).apply {
+        text = initial
+        textSize = if (size > 100) 54f else 24f
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(0xFF0878FF.toInt())
+        }
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
     }
 
     private fun poll(name: String, code: String, startedAt: Long) {
