@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -28,13 +29,15 @@ class ProfilesActivity : Screen() {
     private var waitingCode: String? = null
     private var signingIn = false
     private var draftName = ""
+    // Where Back goes from the profile menu's screens (PIN, rename); null elsewhere.
+    private var backTo: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val profiles = Profiles.all(this)
         when {
             profiles.isEmpty() -> showName()
-            profiles.size == 1 && !intent.getBooleanExtra("pick", false) -> openHome(profiles[0])
+            profiles.size == 1 && !intent.getBooleanExtra("pick", false) -> enter(profiles[0])
             else -> showPicker()
         }
     }
@@ -46,8 +49,12 @@ class ProfilesActivity : Screen() {
 
     @Deprecated("Android back callback")
     override fun onBackPressed() {
+        backTo?.let { return it() }
         if (signingIn) showName() else super.onBackPressed()
     }
+
+    /** Opens a profile, asking for its PIN first when it has one. */
+    private fun enter(p: Profile) = withPin(p) { openHome(p) }
 
     private fun openHome(profile: Profile) {
         Profiles.setActive(this, profile.id)
@@ -58,12 +65,13 @@ class ProfilesActivity : Screen() {
     // ---------- who's watching ----------
 
     private fun showPicker() {
+        backTo = null
         val profiles = Profiles.all(this)
         val tiles = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(14), dp(14), dp(14), dp(14)) }
         profiles.forEach { p ->
             tiles.addView(tile(p.name, p.color, p.name.take(1).uppercase()).apply {
-                setOnClickListener { openHome(p) }
-                setOnLongClickListener { confirmRemove(p); true }
+                setOnClickListener { enter(p) }
+                setOnLongClickListener { showMenu(p); true }
             })
         }
         if (profiles.size < Profiles.MAX) {
@@ -74,7 +82,7 @@ class ProfilesActivity : Screen() {
                 leftMargin = dp(48); topMargin = dp(70)
             })
             addView(tiles, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            addView(text("Hold OK to remove a profile", 13f, color = TEXT_HI), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+            addView(text("Hold OK to edit a profile", 13f, color = TEXT_HI), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
                 leftMargin = dp(48); bottomMargin = dp(72)
             })
         }
@@ -115,6 +123,119 @@ class ProfilesActivity : Screen() {
         }
     }
 
+    // ---------- edit a profile ----------
+
+    private fun showMenu(p: Profile) {
+        val items = listOfNotNull(
+            "Rename" to { withPin(p) { rename(p) } },
+            (if (p.pin == null) "Set a PIN" else "Change PIN") to { withPin(p) { setPin(p) } },
+            if (p.pin == null) null else "Remove PIN" to {
+                withPin(p) { Profiles.update(this, p.id, clearPin = true); showPicker() }
+            },
+            "Remove profile" to { withPin(p) { showPicker(); confirmRemove(p) } },
+        )
+        AlertDialog.Builder(this)
+            .setTitle(p.name)
+            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
+            .show()
+    }
+
+    /** Runs [then] straight away, or once the profile's PIN is typed, so a locked profile can't be changed around it. */
+    private fun withPin(p: Profile, then: () -> Unit) {
+        val pin = p.pin ?: return then()
+        askPin("Enter ${p.name}'s PIN", ::showPicker) { (it == pin).also { ok -> if (ok) then() } }
+    }
+
+    private fun setPin(p: Profile) {
+        askPin("Choose a PIN for ${p.name}", ::showPicker) { first ->
+            askPin("Enter it again", ::showPicker) { second ->
+                (second == first).also { same ->
+                    if (same) { Profiles.update(this, p.id, pin = first); showPicker() }
+                }
+            }
+            true
+        }
+    }
+
+    private fun rename(p: Profile) {
+        val field = EditText(this).apply {
+            setText(p.name)
+            setSelection(p.name.length)
+            setSingleLine()
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Rename ${p.name}")
+            .setView(field)
+            .setPositiveButton("Save") { _, _ ->
+                field.text.toString().trim().ifEmpty { null }?.let { Profiles.update(this, p.id, name = it) }
+                showPicker()
+            }
+            .setNegativeButton("Cancel") { _, _ -> showPicker() }
+            .show()
+        field.setOnEditorActionListener { _, _, _ -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); true }
+    }
+
+    /**
+     * Four digit boxes for a TV remote: Up/Down turn the focused digit, Left/Right move between boxes, number keys
+     * type and move on. OK (or the fourth number key) hands the PIN to [check]; false shakes the boxes and clears them.
+     */
+    private fun askPin(title: String, back: () -> Unit, check: (String) -> Boolean) {
+        backTo = back
+        val digits = IntArray(4) { -1 }
+        var at = 0
+        val boxes = List(4) {
+            text("", 34f, bold = true).apply {
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(76)).apply { marginStart = dp(8); marginEnd = dp(8) }
+            }
+        }
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER; isFocusable = true; boxes.forEach { addView(it) } }
+        fun draw() = boxes.forEachIndexed { i, b ->
+            b.text = when {
+                digits[i] < 0 -> ""
+                i == at -> "${digits[i]}"
+                else -> "•"
+            }
+            b.background = glass(14, i == at)
+        }
+        fun submit() {
+            if (digits.any { it < 0 }) return
+            if (check(digits.joinToString("") { "$it" })) return
+            digits.fill(-1); at = 0; draw()
+            row.animate().translationX(dp(16).toFloat()).setDuration(50).withEndAction {
+                row.animate().translationX(-dp(16).toFloat()).setDuration(80).withEndAction {
+                    row.animate().translationX(0f).setDuration(50).start()
+                }.start()
+            }.start()
+        }
+        row.setOnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_UP -> digits[at] = (digits[at] + 1).mod(10)
+                KeyEvent.KEYCODE_DPAD_DOWN -> digits[at] = if (digits[at] <= 0) 9 else digits[at] - 1
+                KeyEvent.KEYCODE_DPAD_LEFT -> at = maxOf(0, at - 1)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> if (digits[at] >= 0) at = minOf(3, at + 1)
+                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                    digits[at] = code - KeyEvent.KEYCODE_0
+                    if (at < 3) at++ else { draw(); submit(); return@setOnKeyListener true }
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { submit(); return@setOnKeyListener true }
+                else -> return@setOnKeyListener false
+            }
+            draw()
+            true
+        }
+        draw()
+        val content = column(Gravity.CENTER_HORIZONTAL,
+            text(title, 36f, bold = true),
+            row.marginTop(36),
+            text("▲ ▼ change a digit    ◀ ▶ move    OK to confirm", SMALL, color = TEXT_MID).marginTop(28),
+        ).apply { gravity = Gravity.CENTER }
+        setWindowed(content, onboardingBackdrop())
+        row.requestFocus()
+    }
+
     private fun confirmRemove(p: Profile) {
         AlertDialog.Builder(this)
             .setTitle("Remove ${p.name}?")
@@ -131,6 +252,7 @@ class ProfilesActivity : Screen() {
     // ---------- add a profile ----------
 
     private fun showName() {
+        backTo = null
         signingIn = false
         waitingCode = null
         val first = Profiles.all(this).isEmpty()
