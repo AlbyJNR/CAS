@@ -40,6 +40,14 @@ object Http {
         runCatching { File(f.path + ".tmp").apply { writeText(body) }.renameTo(f) }
     }
 
+    /**
+     * Forgets every kept answer. Used when a profile is removed: its library, addon list and personal addons' answers
+     * (their URLs carry tokens) aren't told apart by name, so all go, and the other profiles fetch theirs again once.
+     */
+    fun forget() {
+        saved?.listFiles()?.forEach { it.delete() }
+    }
+
     // Named by a hash of the request: urls carry addon settings and the body an auth key, so neither is a file name.
     private fun file(url: String, json: String?): File? {
         val dir = saved ?: return null

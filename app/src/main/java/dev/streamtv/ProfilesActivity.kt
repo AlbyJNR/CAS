@@ -247,6 +247,7 @@ class ProfilesActivity : Screen() {
             .setMessage("This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.")
             .setPositiveButton("Remove") { _, _ ->
                 Profiles.remove(this, p.id)
+                background({ Http.forget() }) {}
                 background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
                 if (Profiles.all(this).isEmpty()) showName() else showPicker()
             }
