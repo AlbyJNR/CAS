@@ -112,6 +112,10 @@ class SettingsActivity : Screen() {
         val currentAuthKey = authKey
         val addonCount = text(if (currentAuthKey == null) "Sign in" else "Loading…", BODY - 1, color = TEXT_HI)
         infoRow("My addons", "", addonCount)
+        list.getChildAt(list.childCount - 1).apply {
+            isFocusable = currentAuthKey != null
+            setOnClickListener { startActivity(Intent(this@SettingsActivity, AddonsActivity::class.java)) }
+        }
         infoRow("Sync addons", if (currentAuthKey == null) "Sign in" else "Refresh")
         list.getChildAt(list.childCount - 1).apply {
             isFocusable = currentAuthKey != null

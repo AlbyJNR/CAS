@@ -3,7 +3,9 @@ package dev.streamtv
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.media3.common.MimeTypes
 import java.io.IOException
+import java.util.Locale
 
 /**
  * One installed addon, spoken to with the Stremio addon protocol: plain GETs for catalogs, metadata and streams.
@@ -16,10 +18,12 @@ class Addon(val descriptor: JSONObject) {
     val transportUrl: String = descriptor.getString("transportUrl")
     /** Stremio's built-ins (Cinemeta, Local Files), which every account already has. */
     val official = descriptor.optJSONObject("flags")?.optBoolean("official") == true
+    /** Stremio's own that can't be removed (Cinemeta, Local Files); they can still be moved. */
+    val locked = descriptor.optJSONObject("flags")?.optBoolean("protected") == true
     private val base = transportUrl.removeSuffix("/manifest.json")
 
     /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
-    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean)
+    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean, val genres: List<String>)
 
     /** Catalogs Home can show: the ones that need no required input such as a search query. */
     val catalogs: List<Catalog> = manifest.optJSONArray("catalogs").objects()
@@ -29,7 +33,10 @@ class Addon(val descriptor: JSONObject) {
         }
         .map { c ->
             val extras = c.optJSONArray("extraSupported").strings() + c.optJSONArray("extra").objects().map { it.optString("name") }
-            Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras)
+            // The genres it can filter by: the protocol's `genre` extra options, or the older `genres` list.
+            val genres = c.optJSONArray("extra").objects().firstOrNull { it.optString("name") == "genre" }?.optJSONArray("options").strings()
+                .ifEmpty { c.optJSONArray("genres").strings() }
+            Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras, genres)
         }
 
     /** Whether this addon answers [resource] ("meta", "stream", …) for this type and id. */
@@ -47,6 +54,10 @@ class Addon(val descriptor: JSONObject) {
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
     fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
+
+    /** One genre of a catalog (Stremio's `genre` extra); not kept on disk. */
+    fun catalog(c: Catalog, genre: String): List<Meta> =
+        get(false, "catalog", c.type, c.id, "genre=$genre").optJSONArray("metas").objects().map(::Meta)
 
     fun savedCatalog(c: Catalog): List<Meta>? = saved("catalog", c.type, c.id)?.optJSONArray("metas")?.objects()?.map(::Meta)
 
@@ -95,6 +106,12 @@ class Addon(val descriptor: JSONObject) {
     fun streams(type: String, videoId: String): List<Stream> =
         get(false, "stream", type, videoId).optJSONArray("streams").objects().mapNotNull { Stream.from(it) }
 
+    /** Subtitle files for one video (OpenSubtitles and co. through Stremio's `subtitles` resource). */
+    fun subtitles(type: String, videoId: String): List<Subtitle> =
+        get(false, "subtitles", type, videoId).optJSONArray("subtitles").objects().mapNotNull { s ->
+            Subtitle(s.text("url") ?: return@mapNotNull null, s.text("lang") ?: "und", name)
+        }
+
     // Ids such as "tt0903747:1:2" keep their colons, like Stremio's own requests.
     private fun url(path: Array<out String>) = base + "/" + path.joinToString("/") { Uri.encode(it, ":=") } + ".json"
 
@@ -125,6 +142,20 @@ class Meta(json: JSONObject) {
                 it.text("thumbnail"), it.text("overview") ?: it.text("description"))
         }
         .sortedWith(compareBy({ if (it.season == 0) Int.MAX_VALUE else it.season }, { it.episode }))
+}
+
+/** [lang] is what the addon sends: ISO 639-2 ("eng") from OpenSubtitles, sometimes a two-letter code. */
+class Subtitle(val url: String, val lang: String, val addon: String) {
+    val language: String get() = Locale(lang).displayLanguage.ifBlank { lang }
+    val mimeType: String get() = url.substringBefore('?').lowercase().let {
+        when {
+            it.endsWith(".vtt") -> MimeTypes.TEXT_VTT
+            it.endsWith(".ass") || it.endsWith(".ssa") -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
+        }
+    }
+    /** Whether it's in the TV's language (either code style). */
+    val local: Boolean get() = Locale.getDefault().let { lang == it.language || runCatching { lang == it.isO3Language }.getOrDefault(false) }
 }
 
 class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?, val overview: String?)

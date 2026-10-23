@@ -1,0 +1,117 @@
+package dev.streamtv
+
+import android.app.AlertDialog
+import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import org.json.JSONObject
+
+// The profile's addons, in the account's order (the order decides which addon answers first): add one by its
+// manifest URL, and OK on an addon to move it up or down or remove it. Every change is saved to Stremio at once.
+class AddonsActivity : Screen() {
+    private lateinit var list: LinearLayout
+    private var addons: List<Addon> = emptyList()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val key = authKey ?: return finish()
+        list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
+        setWindowed(FrameLayout(this).apply {
+            addView(ScrollView(context).apply { addView(list) },
+                FrameLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.58f).toInt(), -1, Gravity.START))
+        }, ImageView(this).apply {
+            setImageResource(R.drawable.settings_scene)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        })
+        show(null, "Loading…")
+        background({ Stremio.addons(key, refresh = true) }) { result ->
+            result.onSuccess { addons = it; show(null) }.onFailure { show(null, "Couldn't reach Stremio: ${it.message}") }
+        }
+    }
+
+    /** Redraws the list, focusing [focus] (an addon's URL), or "Add by URL" when null. */
+    private fun show(focus: String?, message: String? = null) {
+        list.removeAllViews()
+        list.addView(text("Addons", DISPLAY + 1, bold = true))
+        list.addView(text("The first addon that has something answers first.", SMALL, color = TEXT_MID).marginTop(4))
+        val add = row("+  Add by URL", "") { askUrl() }.also { list.addView(it, LinearLayout.LayoutParams(-1, dp(30)).apply { topMargin = dp(16) }) }
+        message?.let { list.addView(text(it, BODY - 1, color = TEXT_MID).marginTop(16)) }
+        var focused: View = add
+        addons.forEach { a ->
+            val r = row(a.name, if (a.locked) "Built-in" else "") { edit(a) }
+            list.addView(r, LinearLayout.LayoutParams(-1, dp(30)))
+            if (a.transportUrl == focus) focused = r
+        }
+        focused.post { focused.requestFocus() }
+    }
+
+    private fun row(label: String, value: String, click: () -> Unit) = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(10), 0, dp(10), 0)
+        addView(text(label, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(value, SMALL, color = TEXT_MID))
+        isFocusable = true
+        setOnFocusChangeListener { v, has -> v.background = if (has) glass(6) else null }
+        setOnClickListener { click() }
+    }
+
+    private fun edit(a: Addon) {
+        val i = addons.indexOf(a)
+        val actions = listOfNotNull(
+            if (i > 0) "Move up" to { save(addons.toMutableList().apply { add(i - 1, removeAt(i)) }, a.transportUrl) } else null,
+            if (i < addons.size - 1) "Move down" to { save(addons.toMutableList().apply { add(i + 1, removeAt(i)) }, a.transportUrl) } else null,
+            if (!a.locked) "Remove" to {
+                AlertDialog.Builder(this).setMessage("Remove ${a.name} from this profile?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Remove") { _, _ -> save(addons - a, addons.getOrNull(i + 1)?.transportUrl) }.show()
+                Unit
+            } else null,
+        )
+        AlertDialog.Builder(this).setTitle(a.name)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, n -> actions[n].second() }.show()
+    }
+
+    private fun askUrl() {
+        val field = EditText(this).apply {
+            hint = "https://…/manifest.json"
+            setSingleLine()
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Add an addon").setView(field)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Add") { _, _ -> install(field.text.toString().trim()) }.show()
+        field.setOnEditorActionListener { _, _, _ -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); true }
+    }
+
+    // Stremio's install links are stremio://host/…/manifest.json; a bare addon address gets /manifest.json added.
+    private fun install(typed: String) {
+        if (typed.isEmpty()) return
+        val url = typed.replaceFirst(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
+            .let { if (it.contains("://")) it else "https://$it" }
+            .let { if (it.endsWith("/manifest.json")) it else it.trimEnd('/') + "/manifest.json" }
+        if (addons.any { it.transportUrl == url }) return show(url, "Already installed.")
+        background({
+            val manifest = JSONObject(Http.get(url))
+            require(manifest.has("id") && manifest.has("resources")) { "That address isn't a Stremio addon." }
+            Addon(JSONObject().put("transportUrl", url).put("manifest", manifest)
+                .put("flags", JSONObject().put("official", false).put("protected", false)))
+        }) { result ->
+            result.onSuccess { save(addons + it, url) }
+                .onFailure { show(null, "Couldn't add it: ${it.message ?: "network error"}") }
+        }
+    }
+
+    private fun save(next: List<Addon>, focus: String?) {
+        val key = authKey ?: return
+        background({ Stremio.setAddons(key, next) }) { result ->
+            result.onSuccess { addons = next; show(focus) }
+                .onFailure { show(focus, "Couldn't save: ${it.message ?: "network error"}") }
+        }
+    }
+}

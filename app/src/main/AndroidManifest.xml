@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Continue Watching on the Google TV home (WatchNext.kt) -->
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -25,6 +27,7 @@
         <activity android:name=".MainActivity" android:screenOrientation="landscape" />
         <activity android:name=".SearchActivity" android:screenOrientation="landscape" />
         <activity android:name=".SettingsActivity" android:screenOrientation="landscape" />
+        <activity android:name=".AddonsActivity" android:screenOrientation="landscape" />
         <activity android:name=".DetailsActivity" android:screenOrientation="landscape" />
         <activity android:name=".StreamsActivity" android:screenOrientation="landscape" />
         <activity
