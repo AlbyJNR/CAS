@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Profile(val id: String, val name: String, val color: Int, val authKey: String)
+class Profile(val id: String, val name: String, val color: Int, val authKey: String, val pin: String? = null)
 
 /**
  * The profiles on this TV, kept in app storage. Each one is its own Stremio account, so history, Continue Watching,
@@ -19,7 +19,7 @@ object Profiles {
         val prefs = prefs(context)
         migrate(prefs)
         return JSONArray(prefs.getString("profiles", "[]")).objects()
-            .map { Profile(it.getString("id"), it.getString("name"), it.getInt("color"), it.getString("authKey")) }
+            .map { Profile(it.getString("id"), it.getString("name"), it.getInt("color"), it.getString("authKey"), it.optString("pin").ifEmpty { null }) }
     }
 
     /** The profile in use: the one picked last, or the only one there is. */
@@ -45,9 +45,17 @@ object Profiles {
         if (prefs.getString("active", null) == id) prefs.edit().remove("active").apply()
     }
 
+    /** Rename or set the PIN of a profile (clearPin removes it), keeping its place in the list. */
+    fun update(context: Context, id: String, name: String? = null, pin: String? = null, clearPin: Boolean = false) {
+        save(prefs(context), all(context).map {
+            if (it.id != id) it
+            else Profile(it.id, name ?: it.name, it.color, it.authKey, if (clearPin) null else pin ?: it.pin)
+        })
+    }
+
     private fun save(prefs: SharedPreferences, list: List<Profile>) {
         val json = JSONArray(list.map {
-            JSONObject().put("id", it.id).put("name", it.name).put("color", it.color).put("authKey", it.authKey)
+            JSONObject().put("id", it.id).put("name", it.name).put("color", it.color).put("authKey", it.authKey).put("pin", it.pin ?: "")
         })
         prefs.edit().putString("profiles", json.toString()).apply()
     }
