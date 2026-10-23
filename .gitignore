@@ -8,3 +8,6 @@ keystore.properties
 *.jks
 *.keystore
 .audit/
+design/
+CLAUDE.md
+SPEC.md
