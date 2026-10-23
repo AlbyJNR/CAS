@@ -58,7 +58,12 @@ class ProfilesActivity : Screen() {
 
     private fun openHome(profile: Profile) {
         Profiles.setActive(this, profile.id)
-        startActivity(Intent(this, MainActivity::class.java))
+        val home = Intent(this, MainActivity::class.java)
+        // Opened from the Google TV home's Continue Watching: Home, with that title's page on top of it.
+        // A fresh task, so an app already open in the background doesn't end up with two Homes.
+        if (intent.hasExtra("id")) startActivities(arrayOf(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+            Intent(intent).setClass(this, DetailsActivity::class.java).setFlags(0)))
+        else startActivity(home)
         finish()
     }
 

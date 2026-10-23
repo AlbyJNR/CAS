@@ -69,6 +69,11 @@ class PlayerActivity : Screen() {
     private var startAt = 0L
     private var prepared = false
     private lateinit var status: android.widget.TextView
+    // Subtitles from addons (OpenSubtitles): offered in Playback options after the file's own. Picking one reloads the
+    // source from the same second with that file attached, then selects it once its track shows up.
+    private var addonSubs: List<Subtitle> = emptyList()
+    private var chosenSub: Subtitle? = null
+    private var selectAddonSub = false
 
     // A series' episodes (for the next one and Stremio's watched ticks), from the meta addon's saved answer when there is one.
     private var meta: Meta? = null
@@ -218,6 +223,11 @@ class PlayerActivity : Screen() {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                if (selectAddonSub) tracks.groups.firstOrNull(::isAddonSub)?.let { g ->
+                    selectAddonSub = false
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, 0)).build()
+                }
                 // Releases flag foreign subtitles as forced or default (Lanterns came up with Russian "Forced" under
                 // English audio): start with subtitles only in the TV's language, else none. Once per video, like audio.
                 val shownSubs = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)
@@ -236,6 +246,13 @@ class PlayerActivity : Screen() {
                     .setOverrideForType(TrackSelectionOverride(best.mediaTrackGroup, (0 until best.length).toList())).build()
             }
         })
+
+        background({
+            // ponytail: the TV's language and English, three files each in the addon's order; a language picker if asked
+            val all = Stremio.addons(key).filter { it.serves("subtitles", type, videoId) }
+                .flatMap { a -> runCatching { a.subtitles(type, videoId) }.getOrDefault(emptyList()) }
+            all.filter { it.local }.take(3) + all.filter { !it.local && Locale(it.lang).language == "en" }.take(3)
+        }) { addonSubs = it.getOrDefault(emptyList()) }
 
         background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
             item = result.fold(
@@ -260,7 +277,11 @@ class PlayerActivity : Screen() {
         startAt = position
         started = false
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(s.headers)
-        val item = MediaItem.Builder().setUri(s.url).apply { if (asHls) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
+        val item = MediaItem.Builder().setUri(s.url).apply { if (asHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+            .setSubtitleConfigurations(listOfNotNull(chosenSub?.let {
+                MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(it.url)).setMimeType(it.mimeType)
+                    .setLanguage(it.lang).setLabel(it.addon).setId(ADDON_SUB).build()
+            })).build()
         player.setMediaSource(DefaultMediaSourceFactory(http).createMediaSource(item), position)
         player.prepare()
         player.playWhenReady = true
@@ -750,7 +771,6 @@ class PlayerActivity : Screen() {
     // ---------- playback options, after design/player-options-cinematic-minimal-glass.png ----------
     // A panel down the left over a darkening: the audio tracks, the subtitles (Off first), and Change stream with the
     // source playing. The chosen track has a tick; OK on another switches to it there and then. Back closes it.
-    // ponytail: only the subtitles inside the file; addon subtitles (OpenSubtitles) need Stremio's subtitles resource.
     private lateinit var options: FrameLayout
 
     private fun openOptions() {
@@ -769,14 +789,26 @@ class PlayerActivity : Screen() {
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setOverrideForType(TrackSelectionOverride(audio[i].mediaTrackGroup, (0 until audio[i].length).toList())).build()
         }
-        val subs = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0) }
-        val off = C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes || subs.none { it.isSelected }
-        val subsFirst = section(list, "SUBTITLES", listOf("Off") + subs.map { trackName(it.getTrackFormat(0), false) },
-            if (off) 0 else subs.indexOfFirst { it.isSelected } + 1) { i ->
+        val texts = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0) }
+        val subs = texts.filterNot(::isAddonSub)
+        val loaded = texts.firstOrNull(::isAddonSub) // the addon file attached now, if any
+        val chosen = when {
+            C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes -> 0
+            loaded?.isSelected == true -> 1 + subs.size + addonSubs.indexOf(chosenSub)
+            else -> subs.indexOfFirst { it.isSelected } + 1
+        }
+        val subsFirst = section(list, "SUBTITLES", listOf("Off") + subs.map { trackName(it.getTrackFormat(0), false) } +
+            addonSubs.map { "${it.language} · ${it.addon}" }, chosen) { i ->
             val p = player.trackSelectionParameters.buildUpon()
-            player.trackSelectionParameters = if (i == 0) p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-                else p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            val sub = addonSubs.getOrNull(i - 1 - subs.size)
+            player.trackSelectionParameters = when {
+                i == 0 -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                sub == null -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setOverrideForType(TrackSelectionOverride(subs[i - 1].mediaTrackGroup, 0)).build()
+                sub == chosenSub && loaded != null -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(loaded.mediaTrackGroup, 0)).build()
+                else -> { chosenSub = sub; selectAddonSub = true; load(position()); return@section }
+            }
         }
         list.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(0, dp(24), 0, dp(16)) })
         list.addView(LinearLayout(this).apply {
@@ -844,6 +876,8 @@ class PlayerActivity : Screen() {
     }
 
     /** "English · Dolby Digital 5.1": the language, then the release's own name for the track or, for audio, its format. */
+    private fun isAddonSub(g: Tracks.Group) = g.type == C.TRACK_TYPE_TEXT && g.getTrackFormat(0).id?.contains(ADDON_SUB) == true
+
     private fun trackName(f: Format, audio: Boolean): String {
         val language = f.language?.takeIf { it != "und" }?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()) }?.ifBlank { null }
         val format = if (!audio) null else listOfNotNull(when (f.sampleMimeType) {
@@ -893,6 +927,7 @@ class PlayerActivity : Screen() {
         const val SKIP_SHOWN = 10_000L // ms the Skip intro pill stays, as in NuvioTV
         const val HIDE = 5_000L // ms the controls stay up while playing
         const val START_WAIT = 12_000L // ms for a source to show a picture before the next is tried (4K DV from debrid took 6 s)
+        const val ADDON_SUB = "addon-subtitle" // the id an addon subtitle file is attached under
         const val RETRIES = 2
         const val RETRY_WAIT = 1_500L
         const val UP_NEXT_MIN = 30_000L // ms: the credits window is the last 4% of the episode, or this, whichever is longer
