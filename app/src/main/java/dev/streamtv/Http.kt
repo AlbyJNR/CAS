@@ -1,0 +1,78 @@
+package dev.streamtv
+
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+
+/** Plain HTTP for Stremio's API, addons and images. Every call blocks, so run them off the main thread. */
+object Http {
+    /**
+     * Answers kept on disk (title details, catalogs, the library, the addon list), so a screen can draw from last time
+     * at once and refresh behind it, as Netflix and NuvioTV do. Set once at start; null keeps nothing.
+     */
+    var saved: File? = null
+        set(dir) {
+            field = dir
+            dir?.mkdirs()
+            trim()
+        }
+
+    fun get(url: String, keep: Boolean = false): String = text(url, null, keep)
+
+    fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
+
+    fun bytes(url: String): ByteArray = request(url, null).second
+
+    private fun text(url: String, json: String?, keep: Boolean): String {
+        val (code, body) = request(url, json)
+        return String(body, Charsets.UTF_8).also { if (keep && code < 400) keep(url, json, it) }
+    }
+
+    /** The last answer kept for this request, or null. Never touches the network. */
+    fun savedAnswer(url: String, json: String? = null): String? =
+        file(url, json)?.takeIf { it.exists() }?.let { runCatching { it.readText() }.getOrNull() }
+
+    /** Keeps [body] as the answer to this request, for [savedAnswer] next time. */
+    fun keep(url: String, json: String?, body: String) {
+        val f = file(url, json) ?: return
+        runCatching { File(f.path + ".tmp").apply { writeText(body) }.renameTo(f) }
+    }
+
+    // Named by a hash of the request: urls carry addon settings and the body an auth key, so neither is a file name.
+    private fun file(url: String, json: String?): File? {
+        val dir = saved ?: return null
+        val hash = MessageDigest.getInstance("SHA-1").digest((url + "\n" + (json ?: "")).toByteArray())
+        return File(dir, hash.joinToString("") { "%02x".format(it) })
+    }
+
+    // ponytail: one pass at start, oldest first, down to 60 MB; an index would only matter for far bigger caches.
+    private fun trim() {
+        val files = saved?.listFiles()?.sortedBy { it.lastModified() } ?: return
+        var total = files.sumOf { it.length() }
+        for (f in files) {
+            if (total <= 60L * 1024 * 1024) break
+            total -= f.length()
+            f.delete()
+        }
+    }
+
+    // No disconnect(): a response read to the end and closed hands its connection back for the next request to the same
+    // host. Disconnecting threw it away, so every picture paid a fresh TCP and TLS handshake first.
+    private fun request(url: String, json: String?): Pair<Int, ByteArray> {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000
+        c.readTimeout = 20_000
+        if (json != null) {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            c.outputStream.use { it.write(json.toByteArray()) }
+        }
+        // Stremio's API puts its JSON error in the body of a failed response too, so read it either way.
+        val code = c.responseCode
+        val stream = (if (code < 400) c.inputStream else c.errorStream) ?: throw IOException("HTTP $code")
+        return code to stream.use { it.readBytes() }
+    }
+}
