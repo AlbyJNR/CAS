@@ -180,7 +180,7 @@ class DetailsActivity : Screen() {
         }
         glass.addView(watchLine, FrameLayout.LayoutParams(dp(245), -2).apply { leftMargin = dp(190); topMargin = dp(47) })
 
-        playButton = glassAction(if (resumeAt > 0) "Resume" else "Play", R.drawable.ic_play, true).apply {
+        playButton = glassAction(if (resumeAt > 0) "Resume" else "Play", R.drawable.ic_play).apply {
             setOnClickListener { openSources(target?.first ?: metaId, startOver = false) }
             // Held OK: every source, to choose one by hand.
             setOnLongClickListener { openSources(target?.first ?: metaId, startOver = false, pick = true); true }
@@ -420,28 +420,73 @@ class DetailsActivity : Screen() {
         val m = meta ?: return
         if (::infoOverlay.isInitialized) root.removeView(infoOverlay)
         infoOpen = true
-        hero.visibility = View.INVISIBLE
+        scroll.visibility = View.INVISIBLE
         infoOverlay = FrameLayout(this)
-        infoOverlay.addView(View(this).apply { setBackgroundColor(0x77000000) }, FrameLayout.LayoutParams(-1, -1))
-        val x = dp(55)
-        val y = dp(125)
-        val (pane, art) = glassPane(x, y, dp(570), dp(295))
-        art.setImageDrawable(heroArt.drawable?.constantState?.newDrawable()?.mutate())
-        pane.addView(text(m.name, 30f, bold = true), FrameLayout.LayoutParams(-1, -2).apply { setMargins(dp(24), dp(22), dp(24), 0) })
-        pane.addView(ScrollView(this).apply {
-            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).apply { setLineSpacing(dp(4).toFloat(), 1f) })
-        }, FrameLayout.LayoutParams(-1, dp(145)).apply { setMargins(dp(24), dp(75), dp(24), 0) })
-        val actions = LinearLayout(this)
-        val close = glassAction("Back to title", 0, false).apply { setOnClickListener { hideInfo() } }
-        actions.addView(close, LinearLayout.LayoutParams(dp(165), dp(42)))
-        val target = playTarget(m)
-        if (item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L > 0) {
-            actions.addView(glassAction("Start over", R.drawable.ic_play, false).apply {
-                setOnClickListener { openSources(target?.first ?: metaId, startOver = true) }
-            }, LinearLayout.LayoutParams(dp(150), dp(42)).apply { leftMargin = dp(14) })
+        infoOverlay.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(0xC9000808.toInt(), 0x99000808.toInt(), 0x00000000))
+        }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 3 / 5, -1))
+        infoOverlay.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
+            addView(text("More info", TITLE).onArt(), wrap().apply { marginStart = dp(16) })
+        }, FrameLayout.LayoutParams(-2, -2).apply {
+            leftMargin = dp(50); topMargin = dp(40)
+        })
+        val content = FrameLayout(this)
+        val title = text(m.name.uppercase(), 38f, bold = true).onArt().apply {
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+            setAutoSizeTextTypeUniformWithConfiguration(22, 38, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
         }
-        pane.addView(actions, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24); topMargin = dp(235) })
-        infoOverlay.addView(pane, FrameLayout.LayoutParams(dp(570), dp(295)).apply { leftMargin = x; topMargin = y })
+        content.addView(title, FrameLayout.LayoutParams(dp(420), dp(62)))
+        m.logo?.let { url ->
+            val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; visibility = View.INVISIBLE }
+            content.addView(logo, FrameLayout.LayoutParams(dp(420), dp(62)))
+            Images.load(url, logo, dp(840)) { title.visibility = View.INVISIBLE; logo.visibility = View.VISIBLE }
+        }
+        val facts = listOfNotNull(m.year?.trimEnd('–', '-', ' '), m.runtime,
+            m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString("   ·   ")
+        content.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply {
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+        }, FrameLayout.LayoutParams(dp(430), -2).apply { topMargin = dp(68) })
+        content.addView(text("THE STORY", 11f, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f },
+            FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(113) })
+        content.addView(ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(text(m.description ?: "No description available.", BODY + 2, color = TEXT_HI).onArt().apply {
+                setLineSpacing(dp(4).toFloat(), 1f)
+            })
+        }, FrameLayout.LayoutParams(dp(420), dp(90)).apply { topMargin = dp(138) })
+        val target = playTarget(m)
+        val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
+        val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
+        if (resumeAt > 0 && duration > resumeAt) content.addView(
+            text("${resumeAt / 60_000} min watched   ·   ${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
+            FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(240) })
+        fun action(label: String, icon: Int, click: () -> Unit) = text(label, BODY).onArt().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), 0, dp(16), 0)
+            setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
+            compoundDrawablePadding = dp(12)
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnFocusChangeListener { v, focused ->
+                v.background = if (focused) glass(8, focused = true) else null
+            }
+            setOnClickListener { click() }
+        }
+        val actions = LinearLayout(this)
+        val close = action("Back to title", R.drawable.ic_back) { hideInfo() }
+        actions.addView(close, LinearLayout.LayoutParams(dp(158), dp(44)))
+        if (resumeAt > 0) {
+            actions.addView(action("Start over", R.drawable.ic_play) {
+                openSources(target?.first ?: metaId, startOver = true)
+            }, LinearLayout.LayoutParams(dp(150), dp(44)).apply { leftMargin = dp(10) })
+        }
+        content.addView(actions, FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(282) })
+        infoOverlay.addView(content, FrameLayout.LayoutParams(dp(440), dp(370)).apply {
+            leftMargin = dp(55); topMargin = dp(117)
+        })
         root.addView(infoOverlay, FrameLayout.LayoutParams(-1, -1))
         close.requestFocus()
     }
@@ -449,7 +494,7 @@ class DetailsActivity : Screen() {
     private fun hideInfo() {
         infoOpen = false
         root.removeView(infoOverlay)
-        hero.visibility = View.VISIBLE
+        scroll.visibility = View.VISIBLE
         infoButton.requestFocus()
     }
 
@@ -548,7 +593,7 @@ class DetailsActivity : Screen() {
         background({ runCatching { Stremio.library(key, listOf(metaId)).firstOrNull() }.getOrNull() }) { result ->
             item = result.getOrNull() ?: item
             val wasGuide = guideOpen
-            if (infoOpen) { root.removeView(infoOverlay); infoOpen = false }
+            if (infoOpen) { root.removeView(infoOverlay); infoOpen = false; scroll.visibility = View.VISIBLE }
             hero.visibility = View.VISIBLE
             showHero(meta)
             meta?.videos?.takeIf { it.isNotEmpty() }?.let(::buildGuide)
@@ -593,7 +638,7 @@ class DetailsActivity : Screen() {
         }
     }
 
-    private fun glassAction(label: String, icon: Int, primary: Boolean): TextView = text(label, BODY, bold = true).apply {
+    private fun glassAction(label: String, icon: Int): TextView = text(label, BODY, bold = true).apply {
         gravity = if (icon == 0) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
         if (icon != 0) setPadding(dp(18), 0, dp(12), 0)
         compoundDrawablePadding = dp(8)
