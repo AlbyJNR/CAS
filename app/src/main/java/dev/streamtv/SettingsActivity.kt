@@ -17,6 +17,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.EditText
 import org.json.JSONObject
+import java.util.Locale
 
 /** Choices kept on this TV, shared by every profile (they're about the TV and the sound system, not the person). */
 object Settings {
@@ -28,6 +29,10 @@ object Settings {
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)
     fun subtitles(c: Context) = prefs(c).getBoolean("subtitles", true)
+    /** Two-letter code of the dub to start with: the TV's language unless one is picked. */
+    fun audioLanguage(c: Context): String = prefs(c).getString("audioLang", "").orEmpty().ifEmpty { Locale.getDefault().language }
+    fun subtitleSize(c: Context) = prefs(c).getInt("subSize", 100) // percent of Media3's default size
+    fun subtitleBackground(c: Context) = prefs(c).getBoolean("subBackground", true)
 }
 
 class SettingsActivity : Screen() {
@@ -46,14 +51,28 @@ class SettingsActivity : Screen() {
             listOf(true to "On", false to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate (24 Hz) so pans don't judder.",
             listOf(true to "On", false to "Off")),
+        Choice("audioLang", "Audio language", "The dub to start with when a file has several. Changeable while watching.",
+            listOf("" to "TV language", "en" to "English", "hi" to "Hindi", "es" to "Spanish", "fr" to "French",
+                "de" to "German", "ja" to "Japanese", "ko" to "Korean")),
         Choice("passthrough", "Surround sound", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes here, which always works.",
             listOf(false to "TV speakers", true to "Receiver")),
     )
+    private val subtitles = listOf(
+        Choice("subtitles", "Subtitles by default", "On: subtitles in the TV's language start with the video when there are any.",
+            listOf(true to "On", false to "Off")),
+        Choice("subSize", "Size", "How big subtitles are on screen.",
+            listOf(100 to "Medium", 130 to "Large", 160 to "Extra large", 80 to "Small")),
+        Choice("subBackground", "Dark background", "A dark box behind subtitles, for bright scenes.",
+            listOf(true to "On", false to "Off")),
+    )
+
+    private lateinit var list: LinearLayout
+    private lateinit var hint: TextView
+    private lateinit var addonCount: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
+        list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
         list.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             val back = text("‹", 28f, color = TEXT_HI).apply {
@@ -66,138 +85,129 @@ class SettingsActivity : Screen() {
             addView(back, LinearLayout.LayoutParams(dp(24), dp(35)))
             addView(text("Settings", DISPLAY + 1, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
         })
-        fun infoRow(label: String, value: String, valueView: View? = null) {
-            list.addView(LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(text(label, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(valueView ?: text(value, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(-2, -2))
-                contentDescription = "$label. $value"
-                setOnFocusChangeListener { v, has -> v.background = if (has) glass(6) else null }
-            }, LinearLayout.LayoutParams(-1, dp(26)))
-        }
-        fun divider() = list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
-        fun heading(title: String) {
-            list.addView(text(title.uppercase(), SMALL - 1, bold = true, color = TEXT_HI).apply {
-                letterSpacing = 0.12f
-                setPadding(0, dp(8), 0, dp(4))
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-            divider()
-        }
+
         heading("General")
-        infoRow("System language", "Open settings")
-        (list.getChildAt(list.childCount - 1) as View).apply {
-            isFocusable = true
-            setOnClickListener {
-                runCatching { startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS).setData(android.net.Uri.parse("package:$packageName"))) }
-                    .recoverCatching { startActivity(Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)) }
-                    .onFailure { AlertDialog.Builder(this@SettingsActivity).setMessage("Language settings are unavailable on this TV.").setPositiveButton("OK", null).show() }
-            }
+        action("Language", Locale.getDefault().displayLanguage, "The TV's own language setting; the app follows it.") {
+            runCatching { startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS).setData(android.net.Uri.parse("package:$packageName"))) }
+                .recoverCatching { startActivity(Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)) }
+                .onFailure { AlertDialog.Builder(this).setMessage("Language settings are unavailable on this TV.").setPositiveButton("OK", null).show() }
         }
-        infoRow("Esc exits full screen", "Unavailable")
-        infoRow("Clear local storage", "Clear…")
-        list.getChildAt(list.childCount - 1).apply {
-            isFocusable = true
-            setOnClickListener { AlertDialog.Builder(this@SettingsActivity).setTitle("Clear local storage?")
+        action("Clear local storage", "", "Removes profiles, settings and saved data from this TV. Stremio accounts stay as they are.") {
+            AlertDialog.Builder(this).setTitle("Clear local storage?")
                 .setMessage("This removes saved profiles, settings, and cached data from this TV. It does not cancel your Stremio account.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Clear") { _, _ ->
                     (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
-                }.show() }
+                }.show()
         }
+
         heading("Addons")
-        infoRow("Search addons", "Search…")
-        list.getChildAt(list.childCount - 1).apply {
-            isFocusable = true
-            setOnClickListener { searchAddons() }
+        val signedIn = authKey != null
+        addonCount = action("My addons", if (signedIn) "…" else "Sign in", "Add by URL, reorder or remove this profile's addons.") {
+            if (signedIn) startActivity(Intent(this, AddonsActivity::class.java))
         }
-        val currentAuthKey = authKey
-        val addonCount = text(if (currentAuthKey == null) "Sign in" else "Loading…", BODY - 1, color = TEXT_HI)
-        infoRow("My addons", "", addonCount)
-        list.getChildAt(list.childCount - 1).apply {
-            isFocusable = currentAuthKey != null
-            setOnClickListener { startActivity(Intent(this@SettingsActivity, AddonsActivity::class.java)) }
+        action("Search addons", "", "Find community addons by name and install them to this profile.") { searchAddons() }
+        action("Sync addons", "", "Fetch this profile's addons again, after installing some elsewhere.") {
+            val key = authKey ?: return@action
+            addonCount.text = "Syncing…"
+            background({ Stremio.addons(key, refresh = true) }) { r -> addonCount.text = r.fold({ "${it.size} installed  ›" }, { "Sync failed" }) }
         }
-        infoRow("Sync addons", if (currentAuthKey == null) "Sign in" else "Refresh")
-        list.getChildAt(list.childCount - 1).apply {
-            isFocusable = currentAuthKey != null
-            setOnClickListener { currentAuthKey?.let { key ->
-                addonCount.text = "Syncing…"
-                background({ Stremio.addons(key, refresh = true) }) { result -> addonCount.text = result.fold({ "${it.size} installed · synced" }, { "Sync failed: ${it.message ?: "network error"}" }) }
-            } }
-        }
-        currentAuthKey?.let { key -> background({ Stremio.addons(key).size }) { count ->
-            addonCount.text = count.getOrNull()?.let { "$it installed" } ?: "Unavailable"
-        } }
-        fun section(title: String, choices: List<Choice>, firstId: Int? = null) {
-            heading(title)
-            choices.forEachIndexed { i, c ->
-                fun current(): Int = c.values.indexOfFirst { (v, _) ->
-                    when (v) {
-                        is Boolean -> prefs.getBoolean(c.key, c.values[0].first as Boolean) == v
-                        else -> prefs.getInt(c.key, c.values[0].first as Int) == v
-                    }
-                }.coerceAtLeast(0)
-                val value: View = if (c.key == "hdr" || c.key == "matchFrameRate") Switch(this).apply {
-                    isChecked = c.values[current()].first as Boolean
-                    isClickable = false
-                    isFocusable = false
-                    showText = false
-                    thumbTintList = ColorStateList.valueOf(Color.WHITE)
-                    trackTintList = ColorStateList.valueOf(0xFF65717D.toInt())
-                } else text(c.values[current()].second, BODY - 1, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-                val indicator = View(this).apply { setBackgroundColor(Color.WHITE); visibility = View.INVISIBLE }
-                val row = LinearLayout(this).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(indicator, LinearLayout.LayoutParams(dp(3), -1))
-                    val label = text(c.label, BODY - 1, color = TEXT_HI)
-                    addView(label, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
-                    addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
-                    setPadding(0, dp(4), dp(2), dp(4))
-                    contentDescription = "${c.label}. ${c.hint} Current value: ${c.values[current()].second}. Press OK to change."
-                    layoutParams = LinearLayout.LayoutParams(-1, dp(26)).apply { topMargin = dp(if (i == 0) 2 else 0) }
-                    focusable(grow = 1f)
-                    setOnFocusChangeListener { v, has ->
-                        v.background = if (has) glass(6) else null
-                        indicator.visibility = if (has) View.VISIBLE else View.INVISIBLE
-                    }
-                    setOnClickListener {
-                        val (next, labelText) = c.values[(current() + 1) % c.values.size]
-                        prefs.edit().apply { if (next is Boolean) putBoolean(c.key, next) else putInt(c.key, next as Int) }.apply()
-                        if (value is Switch) value.isChecked = next as Boolean else (value as TextView).text = labelText
-                        contentDescription = "${c.label}. ${c.hint} Current value: $labelText. Press OK to change."
-                    }
-                }
-                if (firstId != null && i == 0) row.id = firstId
-                list.addView(row)
-                if (title == "Streaming" && i == 0) row.post { row.requestFocus() }
-            }
-        }
+
         val firstRowId = View.generateViewId()
         (list.getChildAt(0) as LinearLayout).getChildAt(0).nextFocusDownId = firstRowId
         section("Streaming", streaming, firstRowId)
         section("Picture & Sound", pictureAndSound)
-        heading("Subtitles")
-        infoRow("Subtitles by default", if (Settings.subtitles(this)) "On" else "Off")
-        list.getChildAt(list.childCount - 1).apply {
-            isFocusable = true
-            setOnClickListener {
-                val enabled = !Settings.subtitles(this@SettingsActivity)
-                prefs.edit().putBoolean("subtitles", enabled).apply()
-                (this as LinearLayout).getChildAt(1).let { (it as TextView).text = if (enabled) "On" else "Off" }
-                contentDescription = "Subtitles by default. ${if (enabled) "On" else "Off"}"
-            }
-        }
+        section("Subtitles", subtitles)
+
+        hint = text("", SMALL, color = TEXT_MID).apply { setPadding(dp(PAD), dp(10), dp(PAD), dp(18)) }
         val scroll = ScrollView(this).apply {
             isFocusable = false
+            isVerticalScrollBarEnabled = false
             descendantFocusability = ScrollView.FOCUS_AFTER_DESCENDANTS
             addView(list)
         }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(hint, LinearLayout.LayoutParams(-1, -2))
+        }
         val panelWidth = (resources.displayMetrics.widthPixels * 0.58f).toInt()
         setWindowed(FrameLayout(this).apply {
-            addView(scroll, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START))
+            addView(panel, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START))
         }, ImageView(this).apply {
             setImageResource(R.drawable.settings_scene)
             scaleType = ImageView.ScaleType.CENTER_CROP
         })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val key = authKey ?: return
+        background({ Stremio.addons(key).size }) { r -> addonCount.text = r.getOrNull()?.let { "$it installed  ›" } ?: "Unavailable" }
+    }
+
+    private fun heading(title: String) {
+        list.addView(text(title.uppercase(), SMALL - 1, bold = true, color = TEXT_HI).apply {
+            letterSpacing = 0.12f
+            setPadding(0, dp(8), 0, dp(4))
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
+    }
+
+    /** One row: a white bar and glass when focused, the label left, [value] right; its hint shows below the list. */
+    private fun row(label: String, value: View, hintText: String, click: () -> Unit) = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        val indicator = View(context).apply { setBackgroundColor(Color.WHITE); visibility = View.INVISIBLE }
+        addView(indicator, LinearLayout.LayoutParams(dp(3), -1))
+        addView(text(label, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
+        setPadding(0, dp(4), dp(8), dp(4))
+        focusable(grow = 1f)
+        setOnFocusChangeListener { v, has ->
+            v.background = if (has) glass(6) else null
+            indicator.visibility = if (has) View.VISIBLE else View.INVISIBLE
+            if (has) hint.text = hintText
+        }
+        setOnClickListener { click() }
+        list.addView(this, LinearLayout.LayoutParams(-1, dp(28)))
+    }
+
+    /** A row that opens something: its value (if any) and a ›. Returns the value text, to update. */
+    private fun action(label: String, value: String, hintText: String, click: () -> Unit): TextView {
+        val v = text(if (value.isEmpty()) "›" else "$value  ›", BODY - 1, color = TEXT_HI)
+        row(label, v, hintText, click)
+        return v
+    }
+
+    private fun section(title: String, choices: List<Choice>, firstId: Int? = null) {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        heading(title)
+        choices.forEachIndexed { i, c ->
+            fun current(): Int = c.values.indexOfFirst { (v, _) ->
+                when (v) {
+                    is Boolean -> prefs.getBoolean(c.key, c.values[0].first as Boolean) == v
+                    is String -> prefs.getString(c.key, c.values[0].first as String) == v
+                    else -> prefs.getInt(c.key, c.values[0].first as Int) == v
+                }
+            }.coerceAtLeast(0)
+            // On/Off choices are switches; the rest name their value.
+            val isSwitch = c.values.map { it.second }.toSet() == setOf("On", "Off")
+            val value: View = if (isSwitch) Switch(this).apply {
+                isChecked = c.values[current()].first as Boolean
+                isClickable = false
+                isFocusable = false
+                showText = false
+                thumbTintList = ColorStateList.valueOf(Color.WHITE)
+                trackTintList = ColorStateList.valueOf(0xFF65717D.toInt())
+            } else text(c.values[current()].second, BODY - 1, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+            val r = row(c.label, value, c.hint) {
+                val (next, labelText) = c.values[(current() + 1) % c.values.size]
+                prefs.edit().apply {
+                    when (next) { is Boolean -> putBoolean(c.key, next); is String -> putString(c.key, next); else -> putInt(c.key, next as Int) }
+                }.apply()
+                if (value is Switch) value.isChecked = next as Boolean else (value as TextView).text = labelText
+            }
+            if (firstId != null && i == 0) { r.id = firstId; r.post { r.requestFocus() } }
+        }
     }
 
     private fun searchAddons() {

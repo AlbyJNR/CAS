@@ -24,6 +24,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -35,7 +36,9 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -74,6 +77,10 @@ class PlayerActivity : Screen() {
     private var addonSubs: List<Subtitle> = emptyList()
     private var chosenSub: Subtitle? = null
     private var selectAddonSub = false
+    // Timing for an addon subtitle file that runs early or late: the file is fetched, its times moved, and attached
+    // from the app's cache instead of its URL. ponytail: SRT and VTT only; ASS and the file's own subtitles can't move.
+    private var subDelay = 0L
+    private var subFile: java.io.File? = null
 
     // A series' episodes (for the next one and Stremio's watched ticks), from the meta addon's saved answer when there is one.
     private var meta: Meta? = null
@@ -115,14 +122,19 @@ class PlayerActivity : Screen() {
                 }
         }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON) // ffmpeg after the TV's own decoders
         player = ExoPlayer.Builder(this, renderers).build()
-        // Release files carry many dubs; start in the TV's language instead of whichever track comes first.
+        // Release files carry many dubs; start in the chosen language (the TV's unless Settings says) instead of the first.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredAudioLanguage(Locale.getDefault().language).build()
+            .setPreferredAudioLanguage(Settings.audioLanguage(this)).build()
         view = PlayerView(this).apply {
             player = this@PlayerActivity.player
             keepScreenOn = true
             useController = false
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+            // Settings' size and background, with a shadow so white text holds up on bright scenes either way.
+            subtitleView?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * Settings.subtitleSize(context) / 100f)
+            subtitleView?.setStyle(CaptionStyleCompat(Color.WHITE,
+                if (Settings.subtitleBackground(context)) 0xB3000000.toInt() else Color.TRANSPARENT, Color.TRANSPARENT,
+                CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, Color.BLACK, null))
             setBackgroundColor(Color.BLACK)
         }
         status = text("", TITLE).apply { gravity = Gravity.CENTER }
@@ -287,10 +299,10 @@ class PlayerActivity : Screen() {
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(s.headers)
         val item = MediaItem.Builder().setUri(s.url).apply { if (asHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
             .setSubtitleConfigurations(listOfNotNull(chosenSub?.let {
-                MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(it.url)).setMimeType(it.mimeType)
+                MediaItem.SubtitleConfiguration.Builder(subFile?.let(android.net.Uri::fromFile) ?: android.net.Uri.parse(it.url)).setMimeType(it.mimeType)
                     .setLanguage(it.lang).setLabel(it.addon).setId(ADDON_SUB).build()
             })).build()
-        player.setMediaSource(DefaultMediaSourceFactory(http).createMediaSource(item), position)
+        player.setMediaSource(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)).createMediaSource(item), position) // files too: shifted subtitles
         player.prepare()
         player.playWhenReady = true
         main.removeCallbacks(startTimeout)
@@ -341,7 +353,7 @@ class PlayerActivity : Screen() {
      * the TV decodes in hardware, which on The Raid was a stereo commentary.
      */
     private fun bestAudio(groups: List<Tracks.Group>): Tracks.Group? {
-        val language = Locale.getDefault().language
+        val language = Settings.audioLanguage(this)
         return groups
             .filter { it.isTrackSupported(0) && (it.getTrackFormat(0).id ?: "") !in failedAudio }
             .filter { it.getTrackFormat(0).label?.contains("commentary", ignoreCase = true) != true }
@@ -815,8 +827,14 @@ class PlayerActivity : Screen() {
                     .setOverrideForType(TrackSelectionOverride(subs[i - 1].mediaTrackGroup, 0)).build()
                 sub == chosenSub && loaded != null -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setOverrideForType(TrackSelectionOverride(loaded.mediaTrackGroup, 0)).build()
-                else -> { chosenSub = sub; selectAddonSub = true; load(position()); return@section }
+                else -> { chosenSub = sub; subDelay = 0; subFile = null; selectAddonSub = true; load(position()); return@section }
             }
+        }
+        val shiftable = chosenSub?.takeIf { loaded?.isSelected == true && it.mimeType != MimeTypes.TEXT_SSA }
+        if (shiftable != null) {
+            val steps = listOf(-2_000L, -1_000L, -500L, 0L, 500L, 1_000L, 2_000L)
+            section(list, "SUBTITLE TIMING", steps.map { if (it == 0L) "On time" else "%+.1f s".format(it / 1000f) + if (it < 0) "  earlier" else "  later" },
+                steps.indexOf(subDelay)) { i -> shiftSubtitles(shiftable, steps[i]) }
         }
         list.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(0, dp(24), 0, dp(16)) })
         list.addView(LinearLayout(this).apply {
@@ -884,6 +902,25 @@ class PlayerActivity : Screen() {
     }
 
     /** "English · Dolby Digital 5.1": the language, then the release's own name for the track or, for audio, its format. */
+    /** Re-attaches [sub] with every time moved by [delay] ms (later when positive), from the same second. */
+    private fun shiftSubtitles(sub: Subtitle, delay: Long) {
+        subDelay = delay
+        background({
+            if (delay == 0L) return@background null
+            val times = Regex("""(\d{2}):(\d{2}):(\d{2})([,.])(\d{3})""")
+            val moved = times.replace(Http.get(sub.url)) { m ->
+                val (h, mi, se, sep, ms) = m.destructured
+                val t = maxOf(0L, ((h.toLong() * 60 + mi.toLong()) * 60 + se.toLong()) * 1000 + ms.toLong() + delay)
+                "%02d:%02d:%02d%s%03d".format(t / 3_600_000, t / 60_000 % 60, t / 1000 % 60, sep, t % 1000)
+            }
+            java.io.File(cacheDir, "subtitle." + if (sub.mimeType == MimeTypes.TEXT_VTT) "vtt" else "srt").apply { writeText(moved) }
+        }) { r ->
+            subFile = r.getOrNull()
+            selectAddonSub = true
+            load(position())
+        }
+    }
+
     private fun isAddonSub(g: Tracks.Group) = g.type == C.TRACK_TYPE_TEXT && g.getTrackFormat(0).id?.contains(ADDON_SUB) == true
 
     private fun trackName(f: Format, audio: Boolean): String {
