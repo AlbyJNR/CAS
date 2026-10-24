@@ -28,6 +28,7 @@ object Images {
     // Art fetched ahead for where the remote may go next never holds up the cards on screen.
     private val aheadPool = newestFirst(2)
     private val tmdb = Regex("""(image\.tmdb\.org/t/p/)(original|w1280)/""")
+    private val metahub = Regex("""(images\.metahub\.space/(?:poster|background)/)(small|medium)/""")
 
     /**
      * The latest request first: after racing along a row, the cards the remote stopped on load before the ones it
@@ -147,10 +148,20 @@ object Images {
         return out
     }
 
+    /**
+     * MetaHub (Stremio's image server) serves small, medium and large copies, and Stremio's catalogs and library point
+     * at the small poster (about 150 px) and medium background (about 1000 px): soft on a TV once stretched. The large
+     * copy is asked for instead, and the decode below scales it to the size shown.
+     */
+    fun sharp(url: String) = url.replace(metahub, "$1large/")
+
+    /** The 16:9 art MetaHub keeps for an IMDb title, for places that have no art of their own (Watch Next). */
+    fun backgroundFor(id: String) = id.takeIf { it.startsWith("tt") }?.let { "https://images.metahub.space/background/large/${it.substringBefore(':')}/img" }
+
     // TMDB serves every picture in a few widths: a card needs the 780 px copy, not the 4K original (a tenth of the bytes).
     private fun sized(url: String, widthPx: Int): String {
-        val size = if (widthPx <= 780) "w780" else if (widthPx <= 1280) "w1280" else return url
-        return url.replace(tmdb, "$1$size/")
+        val size = if (widthPx <= 780) "w780" else if (widthPx <= 1280) "w1280" else return sharp(url)
+        return sharp(url).replace(tmdb, "$1$size/")
     }
 
     // One copy per size: a card's small copy must never stand in for the full-screen art (it would be blurry).
