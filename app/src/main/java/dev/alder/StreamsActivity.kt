@@ -73,7 +73,7 @@ class StreamsActivity : Screen() {
 
         background({ Stremio.addons(key).filter { it.serves("stream", type, videoId) } }) { result ->
             val addons = result.getOrElse { status.text = "Couldn't load your addons: ${it.message}"; return@background }
-            if (addons.isEmpty()) { status.text = "None of your addons offer sources for this."; return@background }
+            if (addons.isEmpty()) { status.text = "None of your addons offer sources for this. Add a stream addon in Stremio on your phone or at web.stremio.com, and it shows up here."; return@background }
             val answers = arrayOfNulls<List<Stream>>(addons.size)
             var started = false
             var listed = false

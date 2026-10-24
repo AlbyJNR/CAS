@@ -335,7 +335,7 @@ class ProfilesActivity : Screen() {
                 addView(View(this@ProfilesActivity).apply { background = rounded(0xFF0878FF.toInt(), 50) }, LinearLayout.LayoutParams(dp(12), dp(12)))
                 addView(status.apply { setPadding(dp(16), 0, 0, 0) })
             }.marginTop(4),
-            text("New to Stremio? Create an account at stremio.com", BODY, color = TEXT_MID).marginTop(24),
+            text("New to Stremio? Create an account and install addons in the Stremio app or at web.stremio.com. Alder brings them to the TV.", BODY, color = TEXT_MID).marginTop(24),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
         val content = onboardingFrame("2 of 2", left, steps, dp(36), 0f, 1f, dp(340))
         setWindowed(content, onboardingBackdrop())

@@ -15,8 +15,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.EditText
-import org.json.JSONObject
 import java.util.Locale
 
 /** Choices kept on this TV, shared by every profile (they're about the TV and the sound system, not the person). */
@@ -88,7 +86,6 @@ class SettingsActivity : Screen() {
         addonCount = action("My addons", if (signedIn) "…" else "Sign in", "Add by URL, reorder or remove this profile's addons.") {
             if (signedIn) startActivity(Intent(this, AddonsActivity::class.java))
         }
-        action("Search addons", "", "Find community addons by name and install them to this profile.") { searchAddons() }
         action("Sync addons", "", "Fetch this profile's addons again, after installing some elsewhere.") {
             val key = authKey ?: return@action
             addonCount.text = "Syncing…"
@@ -194,43 +191,4 @@ class SettingsActivity : Screen() {
         }
     }
 
-    private fun searchAddons() {
-        val key = authKey ?: run { AlertDialog.Builder(this).setMessage("Sign in to install addons.").setPositiveButton("OK", null).show(); return }
-        val input = EditText(this).apply { hint = "Addon name"; isSingleLine = true }
-        AlertDialog.Builder(this).setTitle("Search community addons").setView(input)
-            .setNegativeButton("Cancel", null).setPositiveButton("Search") { _, _ ->
-                val query = input.text.toString().trim()
-                if (query.isBlank()) return@setPositiveButton
-                background({
-                    val addons = JSONObject(Http.get("https://v3-cinemeta.strem.io/addon_catalog/all/community.json"))
-                        .getJSONArray("addons").objects().map(::Addon)
-                    addons.filter { it.name.contains(query, ignoreCase = true) }
-                }) { result ->
-                    val found = result.getOrElse { AlertDialog.Builder(this).setMessage("Search failed: ${it.message ?: "network error"}").setPositiveButton("OK", null).show(); return@background }
-                    if (found.isEmpty()) { AlertDialog.Builder(this).setMessage("No matching addons.").setPositiveButton("OK", null).show(); return@background }
-                    background({ Stremio.addons(key) }) { installedResult ->
-                        val installed = installedResult.getOrDefault(emptyList()).map { it.transportUrl }.toSet()
-                        AlertDialog.Builder(this).setTitle("Community addons").setItems(found.map { addon ->
-                            addon.name + when { addon.transportUrl in installed -> " · Installed"; (addon.descriptor.optJSONObject("manifest")?.optJSONArray("config")?.length() ?: 0) > 0 -> " · Configure on Stremio"; else -> "" }
-                        }.toTypedArray()) { _, which ->
-                            val addon = found[which]
-                            when {
-                                addon.transportUrl in installed -> AlertDialog.Builder(this).setMessage("Already installed.").setPositiveButton("OK", null).show()
-                                (addon.descriptor.optJSONObject("manifest")?.optJSONArray("config")?.length() ?: 0) > 0 -> AlertDialog.Builder(this).setMessage("This addon needs configuration. Configure it on Stremio, then sync addons here.").setPositiveButton("OK", null).show()
-                                else -> AlertDialog.Builder(this).setMessage("Install ${addon.name} to this account?").setNegativeButton("Cancel", null).setPositiveButton("Install") { _, _ ->
-                                    background({
-                                        val latest = Stremio.addons(key, refresh = true)
-                                        if (latest.none { it.transportUrl == addon.transportUrl }) Stremio.setAddons(key, latest + addon)
-                                        Stremio.addons(key)
-                                    }) { saved ->
-                                        val msg = saved.fold({ "${it.size} addons installed" }, { "Install failed: ${it.message ?: "network error"}" })
-                                        AlertDialog.Builder(this).setMessage(msg).setPositiveButton("OK", null).show()
-                                    }
-                                }.show()
-                            }
-                        }.setNegativeButton("Close", null).show()
-                    }
-                }
-            }.show()
-    }
 }
