@@ -69,22 +69,13 @@ class SettingsActivity : Screen() {
     private lateinit var list: LinearLayout
     private lateinit var hint: TextView
     private lateinit var addonCount: TextView
+    private val scene by lazy { ImageView(this).apply { setImageResource(R.drawable.settings_scene); scaleType = ImageView.ScaleType.CENTER_CROP } }
+    override val backdrop get() = scene
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
-        list.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            val back = text("‹", DISPLAY, color = TEXT_HI).apply {
-                gravity = Gravity.CENTER
-                contentDescription = "Back"
-                isFocusable = true
-                setOnClickListener { finish() }
-                setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
-            }
-            addView(back, LinearLayout.LayoutParams(dp(24), dp(35)))
-            addView(text("Settings", DISPLAY, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
-        })
+        list = column(Gravity.START).apply { setPadding(0, dp(15), 0, dp(30)) }
+        list.addView(text("Settings", DISPLAY, bold = true))
 
         heading("General")
         action("Language", Locale.getDefault().displayLanguage, "The TV's own language setting; the app follows it.") {
@@ -105,7 +96,6 @@ class SettingsActivity : Screen() {
         }
 
         val firstRowId = View.generateViewId()
-        (list.getChildAt(0) as LinearLayout).getChildAt(0).nextFocusDownId = firstRowId
         section("Streaming", streaming, firstRowId)
         section("Picture & Sound", pictureAndSound)
         section("Subtitles", subtitles)
@@ -118,7 +108,7 @@ class SettingsActivity : Screen() {
                 }.show()
         }
 
-        hint = text("", BODY, color = TEXT_MID).apply { setPadding(dp(PAD), dp(10), dp(PAD), dp(18)) }
+        hint = text("", BODY, color = TEXT_MID).apply { setPadding(0, dp(10), 0, dp(18)) }
         val scroll = ScrollView(this).apply {
             isFocusable = false
             isVerticalScrollBarEnabled = false
@@ -131,12 +121,12 @@ class SettingsActivity : Screen() {
             addView(hint, LinearLayout.LayoutParams(-1, -2))
         }
         val panelWidth = (resources.displayMetrics.widthPixels * 0.58f).toInt()
+        // The list on a pane of glass inset from the edges, like the episode list; the words stay on the side margin.
+        panel.setPadding(dp(PAD - GLASS_INSET), 0, dp(PAD - GLASS_INSET), 0)
+        panel.background = glassOver(panel, 14)
         setWindowed(FrameLayout(this).apply {
-            addView(panel, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START))
-        }, ImageView(this).apply {
-            setImageResource(R.drawable.settings_scene)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        })
+            addView(panel, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START).apply { setMargins(dp(GLASS_INSET), dp(GLASS_INSET), 0, dp(GLASS_INSET)) })
+        }, scene)
     }
 
     override fun onResume() {
@@ -149,21 +139,16 @@ class SettingsActivity : Screen() {
         list.addView(text(title, BODY, bold = true).apply {
             setPadding(0, dp(8), 0, dp(4))
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-        list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
     }
 
-    /** One row: a white bar and glass when focused, the label left, [value] right; its hint shows below the list. */
+    /** One row: the shared white focus, the label left, [value] right; its hint shows below the list. */
     private fun row(label: String, value: View, hintText: String, click: () -> Unit) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
-        val indicator = View(context).apply { setBackgroundColor(Color.WHITE); visibility = View.INVISIBLE }
-        addView(indicator, LinearLayout.LayoutParams(dp(3), -1))
-        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
         addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
-        setPadding(0, dp(4), dp(8), dp(4))
-        focusable(grow = 1f)
-        setOnFocusChangeListener { v, has ->
-            v.background = if (has) glass(6) else null
-            indicator.visibility = if (has) View.VISIBLE else View.INVISIBLE
+        setPadding(dp(13), dp(4), dp(8), dp(4))
+        rowFocus(6) { has ->
+            (value as? Switch)?.thumbTintList = ColorStateList.valueOf(if (has) INK else Color.WHITE)
             if (has) hint.text = hintText
         }
         setOnClickListener { click() }

@@ -20,13 +20,16 @@ import org.json.JSONArray
 class StreamsActivity : Screen() {
     private val pick by lazy { intent.getBooleanExtra("pick", false) || Settings.alwaysList(this) }
 
+    private lateinit var art: ImageView
+    override val backdrop get() = art
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val key = authKey ?: return finish()
         val type = intent.getStringExtra("type") ?: "movie"
         val videoId = intent.getStringExtra("videoId")!!
-        val list = column(Gravity.START).apply { setPadding(dp(PAD), 0, dp(24), dp(72)) }
-        val header = column(Gravity.START).apply { setPadding(dp(PAD), dp(24), dp(24), dp(8)) }
+        val list = column(Gravity.START).apply { setPadding(dp(PAD - GLASS_INSET), 0, dp(24), dp(72)) }
+        val header = column(Gravity.START).apply { setPadding(dp(PAD - GLASS_INSET), dp(24), dp(24), dp(8)) }
         val name = intent.getStringExtra("name") ?: ""
         val logo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(40); maxWidth = dp(300) }
         val title = text(name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
@@ -39,11 +42,12 @@ class StreamsActivity : Screen() {
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_MID).onArt().marginTop(10)
         header.addView(status)
 
-        val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         val still = intent.getStringExtra("still")
         val backArt = intent.getStringExtra("background") ?: intent.getStringExtra("poster")
         Images.load(still ?: backArt, art, resources.displayMetrics.widthPixels, orElse = backArt.takeIf { still != null }) {
             art.animate().alpha(1f).setDuration(250).start()
+            refrost()
         }
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -51,8 +55,10 @@ class StreamsActivity : Screen() {
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0x59000000, 0))
             }, FrameLayout.LayoutParams(-1, -1))
+            // The list on a pane of glass inset from the edges, like the episode list.
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
+                background = glassOver(this, 14)
                 addView(header, LinearLayout.LayoutParams(-1, -2))
                 addView(ScrollView(context).apply {
                     isVerticalScrollBarEnabled = false
@@ -61,13 +67,7 @@ class StreamsActivity : Screen() {
                     setFadingEdgeLength(dp(96))
                     addView(list)
                 }, LinearLayout.LayoutParams(-1, 0, 1f))
-            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1))
-            // The hint sits on its own dark band, so the list scrolling under it stays out of the way.
-            addView(FrameLayout(context).apply {
-                background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0))
-                addView(text("Press OK to play", SMALL, color = TEXT_MID), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START)
-                    .apply { leftMargin = dp(PAD); bottomMargin = dp(20) })
-            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, dp(84), Gravity.BOTTOM))
+            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1).apply { setMargins(dp(GLASS_INSET), dp(GLASS_INSET), 0, dp(GLASS_INSET)) })
         })
         val tv = Device.of(this)
 
@@ -165,7 +165,7 @@ class StreamsActivity : Screen() {
 
     /**
      * One source: its number, the addon's name for it ("Torrentio · 2160p") and the addon's own lines (release, audio,
-     * size, languages), over a hairline. Focus puts a frosted pill behind the name and an arrow by the number.
+     * size, languages). Focus is the shared white row.
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
@@ -178,13 +178,7 @@ class StreamsActivity : Screen() {
                 addView(num, LinearLayout.LayoutParams(dp(56), -2).apply { topMargin = dp(2) })
                 addView(column(Gravity.START, head, lines.marginTop(4)), LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(12), 0, dp(12)) })
-            addView(View(context).apply { setBackgroundColor(0x2EFFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
-            isFocusable = true
-            setOnFocusChangeListener { _, has ->
-                background = if (has) glass(12, focused = true) else null
-                num.text = if (has) "%02d ›".format(number) else "%02d".format(number)
-                num.setTextColor(if (has) Color.WHITE else TEXT_MID)
-            }
+            rowFocus(12)
             setOnClickListener {
             startActivity(Intent(this@StreamsActivity, PlayerActivity::class.java).putExtras(intent)
                 .putExtra("sources", JSONArray(listOf(s.toJson())).toString()).putExtra("picked", true))

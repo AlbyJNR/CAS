@@ -27,14 +27,12 @@ class DetailsActivity : Screen() {
     private val initialArt by lazy { intent.getStringExtra("background") }
 
     private lateinit var key: String
+    override val backdrop get() = heroArt
     private lateinit var page: LinearLayout
     private val scroll by lazy { ScrollView(this) }
     private lateinit var root: FrameLayout
     private lateinit var hero: FrameLayout
     private lateinit var heroArt: ImageView
-    private var frostSource: Bitmap? = null
-    private var frost: Bitmap? = null
-    private lateinit var guideGlassArt: ImageView
     private lateinit var guide: FrameLayout
     private lateinit var guideRows: LinearLayout
     private lateinit var seasonButton: TextView
@@ -42,7 +40,6 @@ class DetailsActivity : Screen() {
     private lateinit var previewTitle: TextView
     private lateinit var previewAbout: TextView
     private lateinit var previewProgress: FrameLayout
-    private lateinit var previewHint: TextView
     private lateinit var listButton: TextView
     private lateinit var playButton: TextView
     private lateinit var infoButton: TextView
@@ -78,7 +75,7 @@ class DetailsActivity : Screen() {
         }
         setContentView(root)
 
-        initialArt?.let { Images.load(it, heroArt, artWidth, urgent = true) { heroArt.alpha = 1f; syncGlassArt() } }
+        initialArt?.let { Images.load(it, heroArt, artWidth, urgent = true) { heroArt.alpha = 1f; refrost() } }
 
         background({
             val m = Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.meta(type, metaId)
@@ -90,7 +87,7 @@ class DetailsActivity : Screen() {
             val art = m?.background ?: initialArt ?: poster
             if (heroArt.tag != art) Images.load(art, heroArt, artWidth, urgent = true) {
                 heroArt.animate().alpha(1f).setDuration(250).start()
-                syncGlassArt()
+                refrost()
             }
             showHero(m)
             if (m != null && m.videos.isNotEmpty()) buildGuide(m.videos)
@@ -149,10 +146,13 @@ class DetailsActivity : Screen() {
             // Held OK: every source, to choose one by hand.
             setOnLongClickListener { openSources(target?.first ?: metaId, startOver = false, pick = true); true }
         }
+        val startOver = if (resumeAt > 0) pill("Start over").apply { setOnClickListener { openSources(target?.first ?: metaId, startOver = true) } } else null
         infoButton = pill("Synopsis").apply { setOnClickListener { showInfo() } }
         listButton = pill(if (Library.inList(item)) "✓  My List" else "+  My List").apply { setOnClickListener { toggleList() } }
         stack.addView(LinearLayout(this).apply {
+            clipChildren = false // a focused pill grows past the row's edge
             addView(playButton, wrap().apply { marginEnd = dp(12) })
+            startOver?.let { addView(it, wrap().apply { marginEnd = dp(12) }) }
             addView(infoButton, wrap().apply { marginEnd = dp(12) })
             addView(listButton)
         }, wrap().apply { topMargin = dp(if (where.isEmpty()) 18 else 16) })
@@ -179,32 +179,9 @@ class DetailsActivity : Screen() {
 
     // ---------- glass and episode guide ----------
 
-    private fun glassPane(x: Int, y: Int, width: Int, height: Int): Pair<FrameLayout, ImageView> {
-        val pane = FrameLayout(this).apply {
-            clipToOutline = true
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: android.graphics.Outline) =
-                    outline.setRoundRect(0, 0, view.width, view.height, dp(14).toFloat())
-            }
-        }
-        val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        pane.addView(art, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).apply {
-            leftMargin = -x; topMargin = -y
-        })
-        pane.addView(View(this).apply { background = glass(14) }, FrameLayout.LayoutParams(-1, -1))
-        return pane to art
-    }
-
-    /** The episode guide's pane shows the hero art frosted (see [Images.frost]), made once per picture. */
-    private fun syncGlassArt() {
-        val source = (heroArt.drawable as? BitmapDrawable)?.bitmap ?: return
-        if (source !== frostSource) {
-            frostSource = source
-            background({ Images.frost(source, 240) }) { r -> if (frostSource === source) { frost = r.getOrNull(); syncGlassArt() } }
-            return
-        }
-        val f = frost ?: return
-        if (::guideGlassArt.isInitialized) guideGlassArt.setImageBitmap(f)
+    private fun glassPane() = FrameLayout(this).apply {
+        background = glassOver(this, 14)
+        clipToOutline = true // the background's rounded corners clip the pane's contents too
     }
 
     private fun buildGuide(videos: List<Video>) {
@@ -227,21 +204,13 @@ class DetailsActivity : Screen() {
         }, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
             leftMargin = dp(PAD); topMargin = dp(50)
         })
-        val (pane, art) = glassPane(x, y, width, height)
-        guideGlassArt = art
-        syncGlassArt()
+        val pane = glassPane()
         pane.addView(text("Episodes", BODY, bold = true),
             FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(26); topMargin = dp(if (largeText) 12 else 17) })
         seasonButton = text("", BODY, color = TEXT_HI).apply {
             id = View.generateViewId()
             setPadding(dp(10), dp(3), dp(10), dp(3))
-            isFocusable = true
-            background = tile(8)
-            setOnFocusChangeListener { _, has ->
-                background = if (has) glass(8, focused = true) else tile(8)
-                setTextColor(if (has) Color.WHITE else TEXT_HI)
-                if (has) previewHint.text = "← / →  Change season"
-            }
+            rowFocus(rest = { if (isFocusable) tile(8) else null })
             setOnClickListener { cycleSeason(1) }
         }
         pane.addView(seasonButton, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(23); topMargin = dp(if (largeText) 52 else 44) })
@@ -276,12 +245,6 @@ class DetailsActivity : Screen() {
         pane.addView(previewProgress, FrameLayout.LayoutParams(previewWidth - dp(16), dp(4)).apply {
             leftMargin = previewX + dp(8); topMargin = dp(196)
         })
-        previewHint = text("", BODY, color = TEXT_MID)
-        pane.addView(previewHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
-            leftMargin = previewX; bottomMargin = dp(20)
-        })
-        pane.addView(text("BACK  Return to title", BODY, color = TEXT_MID),
-            FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { leftMargin = dp(26); bottomMargin = dp(20) })
         guide.addView(pane, FrameLayout.LayoutParams(width, height).apply { leftMargin = x; topMargin = y })
         root.addView(guide, FrameLayout.LayoutParams(-1, -1))
         selectedSeason = playTarget(meta)?.second?.season ?: videos.first().season
@@ -295,14 +258,12 @@ class DetailsActivity : Screen() {
         seasonButton.text = (if (selectedSeason == 0) "Specials" else "Season $selectedSeason") +
             if (canChangeSeason) "  ▾" else ""
         seasonButton.isFocusable = canChangeSeason
-        seasonButton.background = if (canChangeSeason) tile(8) else null
+        if (!seasonButton.isFocused) seasonButton.background = if (canChangeSeason) tile(8) else null
         guideRows.removeAllViews()
         val watched = Library.watched(item, videos)
         val currentId = playTarget(meta)?.first
         episodeRows = seasonVideos.map { v ->
             val row = FrameLayout(this).apply { tag = v.id; isFocusable = true }
-            val mark = View(this).apply { background = rounded(0xFFF7D98F.toInt(), 2); visibility = View.INVISIBLE }
-            row.addView(mark, FrameLayout.LayoutParams(dp(3), dp(32), Gravity.CENTER_VERTICAL or Gravity.START))
             val number = text("%02d".format(v.episode), BODY, color = TEXT_MID)
             row.addView(number, FrameLayout.LayoutParams(dp(45), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(12) })
             val resumeAt = item?.let { Library.resumeAt(it, v.id) } ?: 0L
@@ -320,15 +281,7 @@ class DetailsActivity : Screen() {
             })
             if (status.isNotEmpty()) row.addView(text(status, SMALL, color = TEXT_MID).apply { gravity = Gravity.END },
                 FrameLayout.LayoutParams(dp(105), -2, Gravity.CENTER_VERTICAL or Gravity.END).apply { rightMargin = dp(8) })
-            row.addView(View(this).apply { setBackgroundColor(0x40FFFFFF) },
-                FrameLayout.LayoutParams(-1, dp(1), Gravity.BOTTOM))
-            row.setOnFocusChangeListener { _, focused ->
-                mark.visibility = if (focused) View.VISIBLE else View.INVISIBLE
-                row.setBackgroundColor(if (focused) 0x593B4B49 else Color.TRANSPARENT)
-                number.setTextColor(if (focused) Color.WHITE else TEXT_MID)
-                label.setTextColor(if (focused) Color.WHITE else TEXT_HI)
-                if (focused) updatePreview(v)
-            }
+            row.rowFocus { focused -> if (focused) updatePreview(v) }
             row.setOnClickListener {
                 val next = videos.getOrNull(videos.indexOf(v) + 1)?.id
                 openSources(v.id, startOver = false, next = next, label = "S${v.season} E${v.episode}")
@@ -344,7 +297,6 @@ class DetailsActivity : Screen() {
         }
         seasonVideos.firstOrNull { it.id == currentId }?.let(::updatePreview)
             ?: seasonVideos.firstOrNull()?.let(::updatePreview)
-        if (seasonButton.isFocused) previewHint.text = "← / →  Change season"
         if (guideOpen) episodeRows.firstOrNull()?.requestFocus()
     }
 
@@ -359,7 +311,6 @@ class DetailsActivity : Screen() {
         if (resumeAt > 0 && duration > resumeAt) {
             previewProgress.addView(progressBar(resumeAt.toFloat() / duration), FrameLayout.LayoutParams(-1, -1))
         }
-        previewHint.text = if (resumeAt > 0) "OK  Resume episode" else "OK  Play episode"
     }
 
     private fun cycleSeason(direction: Int) {
@@ -393,6 +344,10 @@ class DetailsActivity : Screen() {
         }.start()
     }
 
+    /**
+     * The whole story, in the title page's place and layout: name, facts, then the description, which scrolls with the
+     * remote when it's long. Back returns to the title; there's nothing else to press.
+     */
     private fun showInfo() {
         val m = meta ?: return
         if (::infoOverlay.isInitialized) root.removeView(infoOverlay)
@@ -403,49 +358,24 @@ class DetailsActivity : Screen() {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(0xC9000808.toInt(), 0x99000808.toInt(), 0x00000000))
         }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 3 / 5, -1))
-        infoOverlay.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(text("Full synopsis", BODY, bold = true).onArt(), wrap().apply { marginStart = dp(16) })
-        }, FrameLayout.LayoutParams(-2, -2).apply {
-            leftMargin = dp(PAD); topMargin = dp(40)
-        })
-        val content = FrameLayout(this)
-        content.addView(text(m.name, DISPLAY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END },
-            FrameLayout.LayoutParams(dp(420), dp(62)))
         val facts = listOfNotNull(m.year?.trimEnd('–', '-', ' '), m.runtime,
             m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString(DOT)
-        content.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply {
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-        }, FrameLayout.LayoutParams(dp(430), -2).apply { topMargin = dp(68) })
-        content.addView(text("The story", SMALL, bold = true, color = TEXT_HI).onArt(),
-            FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(113) })
-        content.addView(ScrollView(this).apply {
+        val story = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).onArt().apply {
-                setLineSpacing(dp(4).toFloat(), 1f)
-            })
-        }, FrameLayout.LayoutParams(dp(420), dp(90)).apply { topMargin = dp(138) })
-        val target = playTarget(m)
-        val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
-        val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
-        if (resumeAt > 0 && duration > resumeAt) content.addView(
-            text("${resumeAt / 60_000} min watched$DOT${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
-            FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(240) })
-        val actions = LinearLayout(this)
-        val close = pill("Back to title", R.drawable.ic_back).apply { setOnClickListener { hideInfo() } }
-        actions.addView(close)
-        if (resumeAt > 0) {
-            actions.addView(pill("Start over", R.drawable.ic_play).apply {
-                setOnClickListener { openSources(target?.first ?: metaId, startOver = true) }
-            }, wrap().apply { marginStart = dp(12) })
+            isFocusable = true // takes the remote, so Up and Down scroll a long story
+            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).onArt())
         }
-        content.addView(actions, FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(282) })
-        infoOverlay.addView(content, FrameLayout.LayoutParams(dp(440), dp(370)).apply {
-            leftMargin = dp(PAD); topMargin = dp(117)
+        infoOverlay.addView(column(Gravity.START,
+            text(m.name, DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END },
+            text(facts, SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6),
+            text("The story", SMALL, bold = true, color = TEXT_HI).onArt().marginTop(SECTION_GAP),
+        ).apply {
+            addView(story, LinearLayout.LayoutParams(-1, dp(180)).apply { topMargin = dp(8) })
+        }, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = dp(PAD); bottomMargin = dp(96)
         })
         root.addView(infoOverlay, FrameLayout.LayoutParams(-1, -1))
-        close.requestFocus()
+        story.requestFocus()
     }
 
     private fun hideInfo() {
@@ -473,13 +403,14 @@ class DetailsActivity : Screen() {
         }
     }
 
+    /** Posters like every row on Home: same size, gap, focus ring and growth, with room above and below to grow into. */
     private fun showSimilar(heading: String, titles: List<Meta>) {
         page.addView(text(heading, BODY, bold = true).onArt().apply {
             setPadding(dp(PAD), 0, dp(PAD), 0)
-        }.marginTop(28))
+        }.marginTop(SECTION_GAP))
         val cards = LinearLayout(this).apply {
-            clipChildren = false
-            setPadding(dp(PAD), dp(10), dp(PAD), dp(10))
+            setPadding(dp(PAD), dp(HEADING_GAP + 9), dp(PAD), dp(14))
+            clipToPadding = false // the focused poster grows into the padding
         }
         titles.forEachIndexed { index, title ->
             val card = FrameLayout(this).apply {
@@ -489,37 +420,27 @@ class DetailsActivity : Screen() {
                     override fun getOutline(view: View, outline: android.graphics.Outline) =
                         outline.setRoundRect(0, 0, view.width, view.height, dp(12).toFloat())
                 }
+                // The name only when there's no poster to show it.
+                val name = text(title.name, SMALL, bold = true).apply {
+                    maxLines = 3; ellipsize = TextUtils.TruncateAt.END; visibility = View.INVISIBLE
+                }
+                addView(name, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(12)) })
                 val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
                 addView(image, FrameLayout.LayoutParams(-1, -1))
-                addView(View(context).apply {
-                    background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                        intArrayOf(0xCC000000.toInt(), 0x00000000))
-                }, FrameLayout.LayoutParams(-1, dp(60), Gravity.BOTTOM))
-                addView(text(title.name, SMALL, bold = true).onArt().apply {
-                    maxLines = 2
-                    ellipsize = TextUtils.TruncateAt.END
-                }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(10)) })
-                isFocusable = true
-                setOnFocusChangeListener { v, focused ->
-                    v.animate().scaleX(if (focused) 1.08f else 1f).scaleY(if (focused) 1.08f else 1f)
-                        .translationZ(if (focused) dp(12).toFloat() else 0f).setDuration(180).start()
-                    if (focused) scroll.smoothScrollTo(0, page.height)
-                }
+                cardFocus { focused -> if (focused) scroll.smoothScrollTo(0, page.height) }
                 setOnClickListener {
                     startActivity(Intent(this@DetailsActivity, DetailsActivity::class.java)
                         .putExtra("type", title.type).putExtra("id", title.id).putExtra("name", title.name)
                         .putExtra("poster", title.poster).putExtra("background", title.background))
                 }
-                Images.load(title.background ?: title.poster, image, dp(184))
+                Images.load(title.poster ?: title.background, image, dp(POSTER_W), failed = { name.visibility = View.VISIBLE })
             }
-            cards.addView(card, LinearLayout.LayoutParams(dp(184), dp(104)).apply {
-                if (index > 0) marginStart = dp(14)
+            cards.addView(card, LinearLayout.LayoutParams(dp(POSTER_W), dp(POSTER_H)).apply {
+                if (index > 0) marginStart = dp(CARD_GAP)
             })
         }
         page.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            clipChildren = false
-            clipToPadding = false
             addView(cards)
         })
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
@@ -560,10 +481,6 @@ class DetailsActivity : Screen() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-                if (infoOpen) { hideInfo(); return true }
-                if (guideOpen) { hideGuide(); return true }
-            }
             if (guideOpen) {
                 val focused = currentFocus
                 if (focused === seasonButton) when (event.keyCode) {

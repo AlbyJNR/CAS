@@ -459,11 +459,8 @@ class PlayerActivity : Screen() {
         val actions = LinearLayout(this)
         fun action(label: String, click: () -> Unit) = text(label, BODY).onArt().apply {
             gravity = Gravity.CENTER
-            isFocusable = true
             isFocusableInTouchMode = true
-            setOnFocusChangeListener { v, focused ->
-                v.background = if (focused) glass(8, focused = true) else null
-            }
+            rowFocus(8)
             setOnClickListener { click() }
         }
         val playNow = action("▶  Play now") { playNext() }
@@ -654,8 +651,7 @@ class PlayerActivity : Screen() {
         subtitle = text(intent.getStringExtra("label")?.substringAfter("  ·  ", "") ?: "", BODY, color = MUTED).onArt()
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(title, wrap().apply { marginStart = dp(22) })
+            addView(title, wrap())
             addView(subtitle, wrap().apply { marginStart = dp(18) })
         }
         elapsed = text("", SMALL).onArt()
@@ -719,8 +715,7 @@ class PlayerActivity : Screen() {
         compoundDrawablePadding = if (label != null) dp(12) else 0
         val v = dp(10 - (size - 26) / 2)
         setPadding(dp(16), v, dp(if (label != null) 20 else 16), v)
-        isFocusable = true
-        setOnFocusChangeListener { v, has -> v.background = if (has) glass(10, focused = true) else null }
+        rowFocus(10)
         setOnClickListener { onClick() }
     }
 
@@ -798,13 +793,12 @@ class PlayerActivity : Screen() {
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         list.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(text("Playback options", BODY, bold = true), wrap().apply { marginStart = dp(22) })
+            addView(text("Playback options", BODY, bold = true), wrap().apply { marginStart = dp(14) })
         }, wrap().apply { bottomMargin = dp(36) })
 
         val audio = audioGroups.filter { it.isTrackSupported(0) }
         var first: View? = null
-        if (audio.isNotEmpty()) first = section(list, "AUDIO", audio.map { trackName(it.getTrackFormat(0), true) }, audio.indexOfFirst { it.isSelected }) { i ->
+        if (audio.isNotEmpty()) first = section(list, "Audio", audio.map { trackName(it.getTrackFormat(0), true) }, audio.indexOfFirst { it.isSelected }) { i ->
             audioPicked = true
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setOverrideForType(TrackSelectionOverride(audio[i].mediaTrackGroup, (0 until audio[i].length).toList())).build()
@@ -817,7 +811,7 @@ class PlayerActivity : Screen() {
             loaded?.isSelected == true -> 1 + subs.size + addonSubs.indexOf(chosenSub)
             else -> subs.indexOfFirst { it.isSelected } + 1
         }
-        val subsFirst = section(list, "SUBTITLES", listOf("Off") + subs.map { trackName(it.getTrackFormat(0), false) } +
+        val subsFirst = section(list, "Subtitles", listOf("Off") + subs.map { trackName(it.getTrackFormat(0), false) } +
             addonSubs.map { "${it.language} · ${it.addon}" }, chosen) { i ->
             val p = player.trackSelectionParameters.buildUpon()
             val sub = addonSubs.getOrNull(i - 1 - subs.size)
@@ -833,17 +827,17 @@ class PlayerActivity : Screen() {
         val shiftable = chosenSub?.takeIf { loaded?.isSelected == true && it.mimeType != MimeTypes.TEXT_SSA }
         if (shiftable != null) {
             val steps = listOf(-2_000L, -1_000L, -500L, 0L, 500L, 1_000L, 2_000L)
-            section(list, "SUBTITLE TIMING", steps.map { if (it == 0L) "On time" else "%+.1f s".format(it / 1000f) + if (it < 0) "  earlier" else "  later" },
+            section(list, "Subtitle timing", steps.map { if (it == 0L) "On time" else "%+.1f s".format(it / 1000f) + if (it < 0) "  earlier" else "  later" },
                 steps.indexOf(subDelay)) { i -> shiftSubtitles(shiftable, steps[i]) }
         }
         list.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(0, dp(24), 0, dp(16)) })
         list.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val head = text("Change stream  →", BODY + 2, bold = true).apply { setPadding(dp(14), dp(6), dp(14), dp(6)) }
+            val head = text("Change stream  →", BODY, bold = true).apply { setPadding(dp(14), dp(6), dp(14), dp(6)) }
             addView(head, wrap())
             addView(text(sources[at].label, SMALL, color = MUTED).apply { setPadding(dp(14), 0, 0, 0) }, wrap())
-            isFocusable = true
-            setOnFocusChangeListener { _, has -> head.background = if (has) glass(10, focused = true) else null }
+            setPadding(0, 0, 0, dp(6))
+            rowFocus(10)
             setOnClickListener { changeStream() }
         }, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(14) })
 
@@ -868,7 +862,6 @@ class PlayerActivity : Screen() {
         val checks = mutableListOf<ImageView>()
         val names = mutableListOf<TextView>()
         val rows = labels.mapIndexed { i, label ->
-            val arrow = text("", BODY)
             val name = text(label, BODY, color = if (i == chosen) Color.WHITE else TEXT_MID).apply {
                 setPadding(dp(14), dp(6), dp(14), dp(6)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             }
@@ -877,19 +870,21 @@ class PlayerActivity : Screen() {
             checks += check
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(arrow, LinearLayout.LayoutParams(dp(14), -2))
                 addView(FrameLayout(context).apply { addView(name, FrameLayout.LayoutParams(-2, -2)) }, LinearLayout.LayoutParams(0, -2, 1f))
                 addView(check, LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginStart = dp(12) })
+                // The shared white row on focus; the chosen one stays white with a tick when the remote moves on.
                 isFocusable = true
-                setOnFocusChangeListener { _, has ->
-                    arrow.text = if (has) "›" else ""
-                    name.background = if (has) glass(10, focused = true) else null
-                    name.setTextColor(if (has || check.visibility == View.VISIBLE) Color.WHITE else TEXT_MID)
+                fun style(has: Boolean) {
+                    background = if (has) rounded(Color.WHITE, 10) else null
+                    name.setTextColor(if (has) INK else if (check.visibility == View.VISIBLE) Color.WHITE else TEXT_MID)
+                    if (has) check.setColorFilter(INK) else check.clearColorFilter()
                 }
+                setOnFocusChangeListener { _, has -> style(has) }
                 setOnClickListener {
                     pick(i)
                     checks.forEachIndexed { j, c -> c.visibility = if (j == i) View.VISIBLE else View.INVISIBLE }
                     names.forEachIndexed { j, n -> n.setTextColor(if (j == i) Color.WHITE else TEXT_MID) }
+                    style(true)
                 }
             }.also { list.addView(it, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) }) }
         }

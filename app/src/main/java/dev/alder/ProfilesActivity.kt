@@ -88,9 +88,8 @@ class ProfilesActivity : Screen() {
             })
             addView(tiles, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             addView(text("Manage profiles", BODY, color = TEXT_HI).apply {
-                isFocusable = true
                 setPadding(dp(16), dp(10), dp(16), dp(10))
-                setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
+                rowFocus(8)
                 setOnClickListener {
                     AlertDialog.Builder(this@ProfilesActivity).setTitle("Manage profiles")
                         .setItems(profiles.map { it.name }.toTypedArray()) { _, i -> showMenu(profiles[i]) }.show()
@@ -111,28 +110,19 @@ class ProfilesActivity : Screen() {
             background = circle
             layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
         }
-        val marker = text("▶", 14f, bold = true).apply {
-            visibility = View.INVISIBLE
-            gravity = Gravity.CENTER
-        }
         val name = text(label, BODY).apply {
             gravity = Gravity.CENTER
             maxWidth = dp(112); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(12), dp(4), dp(12), dp(4))
         }
-        val nameRow = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            addView(marker, LinearLayout.LayoutParams(dp(18), -2).apply { marginEnd = dp(4) })
-            addView(name)
-        }.marginTop(2)
-        return column(Gravity.CENTER_HORIZONTAL, avatar, nameRow).apply {
+        // Focus: the avatar grows and lifts, like a focused poster.
+        return column(Gravity.CENTER_HORIZONTAL, avatar, name.marginTop(6)).apply {
             isFocusable = true
             setPadding(dp(8), dp(8), dp(8), dp(8))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18); marginEnd = dp(18) }
-            setOnFocusChangeListener { v, has ->
-                marker.visibility = if (has) View.VISIBLE else View.INVISIBLE
-                name.background = if (has) rounded(0x5538424D, 28) else null
-                v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
+            setOnFocusChangeListener { _, has ->
+                avatar.lift(has)
+                name.setTextColor(if (has) Color.WHITE else TEXT_HI)
             }
         }
     }
@@ -296,7 +286,7 @@ class ProfilesActivity : Screen() {
             text(if (first) "Welcome" else "New profile", DISPLAY, bold = true),
             text("First, name your profile.", BODY).marginTop(8),
             text("Your own history and recommendations.", BODY, color = TEXT_MID).marginTop(10),
-            text("PROFILE NAME", SMALL, bold = true, color = TEXT_MID).marginTop(40),
+            text("Profile name", SMALL, bold = true, color = TEXT_MID).marginTop(40),
             name,
             next.marginTop(26),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -386,7 +376,7 @@ class ProfilesActivity : Screen() {
             addView(LinearLayout(this@ProfilesActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(PAD), dp(36), dp(PAD), 0)
-                addView(text("ALDER", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text("Alder", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
                 addView(text(step, SMALL, color = TEXT_MID))
             }, android.widget.FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP))
         }
@@ -396,10 +386,8 @@ class ProfilesActivity : Screen() {
         isAllCaps = false
         textSize = BODY
         setTextColor(Color.WHITE)
-        isFocusable = true
         setPadding(dp(26), dp(14), dp(26), dp(14))
-        background = glass(18)
-        setOnFocusChangeListener { v, focused -> v.background = glass(18, focused) }
+        rowFocus(18, rest = { glass(18) })
     }
 
     private fun onboardingAvatar(initial: String, size: Int) = TextView(this).apply {
@@ -461,7 +449,7 @@ class ProfilesActivity : Screen() {
                     buttonTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
                     minHeight = dp(44)
                     setPadding(dp(12), 0, dp(12), 0)
-                    setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
+                    rowFocus(8) { has -> buttonTintList = android.content.res.ColorStateList.valueOf(if (has) INK else Color.WHITE) }
                     isChecked = !isPersonal(addon)
                     tag = addon
                 }

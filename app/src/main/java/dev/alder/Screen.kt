@@ -2,14 +2,22 @@ package dev.alder
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorFilter
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -98,6 +106,7 @@ abstract class Screen : Activity() {
 
     protected fun column(gravity: Int, vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
+        clipChildren = false // focused pills and pictures grow past their own bounds
         this.gravity = gravity
         // Wrap-content by default: a vertical LinearLayout would otherwise stretch every child to full width.
         views.forEach { addView(it, it.layoutParams ?: wrap()) }
@@ -152,8 +161,8 @@ abstract class Screen : Activity() {
         }
 
     /**
-     * The hero's buttons (Home, the title page): small pills of one height, frosted white at rest so they read as
-     * buttons on any art, solid white with dark words once the remote is on one.
+     * The hero's buttons (Home, the title page): small pills of one height, frosted glass at rest (the same tint over
+     * any art), solid white with dark words once the remote is on one.
      */
     protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
         isFocusable = true
@@ -162,16 +171,120 @@ abstract class Screen : Activity() {
         setPadding(dp(if (icon != 0) 14 else 16), 0, dp(16), 0)
         compoundDrawablePadding = dp(6)
         if (icon != 0) setCompoundDrawablesRelative(getDrawable(icon)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
+        val rest = glassOver(this, BUTTON_H / 2)
         fun style(focused: Boolean) {
-            background = rounded(if (focused) Color.WHITE else GLASS_HIGH, BUTTON_H / 2)
+            background = if (focused) rounded(Color.WHITE, BUTTON_H / 2) else rest
             setTextColor(if (focused) INK else Color.WHITE)
             compoundDrawablesRelative[0]?.setTint(if (focused) INK else Color.WHITE)
         }
         style(false)
         setOnFocusChangeListener { v, has ->
             style(has)
-            v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(150).start()
+            v.animate().scaleX(if (has) FOCUS_GROW else 1f).scaleY(if (has) FOCUS_GROW else 1f).setDuration(150).start()
         }
+    }
+
+    /**
+     * The focused row, on every list (settings, addons, episodes, sources) and small control: a white fill with dark
+     * words and icons, the same as a focused pill. [rest] is the fill when not focused; [also] runs on every change.
+     */
+    protected fun View.rowFocus(radiusDp: Int = 8, rest: () -> android.graphics.drawable.Drawable? = { null }, also: (Boolean) -> Unit = {}) {
+        isFocusable = true
+        background = rest()
+        setOnFocusChangeListener { v, has ->
+            v.background = if (has) rounded(Color.WHITE, radiusDp) else rest()
+            ink(v, has)
+            also(has)
+        }
+    }
+
+    /** Dark words on the white fill, and back to each one's own colour (and shadow, for text on art) after. */
+    private fun ink(v: View, on: Boolean) {
+        when (v) {
+            is TextView -> {
+                val (color, shadow) = v.tag as? Pair<*, *> ?: (v.currentTextColor to v.shadowRadius).also { v.tag = it }
+                v.setTextColor(if (on) INK else color as Int)
+                if (on) v.setShadowLayer(0f, 0f, 0f, 0) else if ((shadow as Float) > 0f) v.onArt()
+                v.compoundDrawablesRelative.forEach { it?.setTint(if (on) INK else Color.WHITE) }
+            }
+            is ImageView -> if (on) v.setColorFilter(INK) else v.clearColorFilter()
+            is android.view.ViewGroup -> for (i in 0 until v.childCount) ink(v.getChildAt(i), on)
+        }
+    }
+
+    /**
+     * The focused picture (posters, search results, avatars): it grows by [CARD_GROW] and lifts on a shadow. Never a ring,
+     * outline or border: the picture itself comes forward.
+     */
+    protected fun View.cardFocus(also: (Boolean) -> Unit = {}) {
+        isFocusable = true
+        setOnFocusChangeListener { v, has ->
+            v.lift(has)
+            also(has)
+        }
+    }
+
+    protected fun View.lift(on: Boolean) = animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
+        .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(180).start()
+
+    /** The screen's art, behind its glass: what [glassOver] frosts. Screens with art behind them name it. */
+    protected open val backdrop: ImageView? get() = null
+
+    private var frostSource: Bitmap? = null
+    private var frostBitmap: Bitmap? = null
+    private val frostHosts = mutableListOf<View>()
+
+    /**
+     * Frosted glass, as the episode list draws it: the art behind, blurred, seen through a rounded pane under the
+     * glass tint. A background for [host] (pills, the top bar, panels); without a [backdrop] it's the plain tint.
+     */
+    protected fun glassOver(host: View, radiusDp: Int): Drawable {
+        val behind = backdrop ?: return rounded(GLASS, radiusDp)
+        frostHosts += host
+        return Frost(host, behind, dp(radiusDp).toFloat())
+    }
+
+    /** The art behind changed: glass redraws with the new picture once it's blurred. */
+    protected fun refrost() = frostHosts.forEach { it.invalidate() }
+
+    /** The art blurred once per picture ([Images.frost]); the last one stays up while the next is made. */
+    private fun frosted(d: Drawable?): Bitmap? {
+        val src = (d as? BitmapDrawable)?.bitmap ?: return frostBitmap
+        if (src !== frostSource) {
+            frostSource = src
+            background({ Images.frost(src, 240) }) { r -> if (frostSource === src) { frostBitmap = r.getOrNull(); refrost() } }
+        }
+        return frostBitmap
+    }
+
+    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float) : Drawable() {
+        private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS }
+        private val path = Path()
+        private val at = IntArray(2)
+        private val art = IntArray(2)
+
+        override fun draw(canvas: Canvas) {
+            path.reset()
+            path.addRoundRect(RectF(bounds), radius, radius, Path.Direction.CW)
+            val d = behind.drawable
+            frosted(d)?.let { f ->
+                canvas.save()
+                canvas.clipPath(path)
+                // The blurred art lines up with the sharp art behind: where the host sits on screen, through the same crop.
+                host.getLocationInWindow(at)
+                behind.getLocationInWindow(art)
+                canvas.translate((art[0] - at[0]).toFloat(), (art[1] - at[1]).toFloat())
+                canvas.concat(behind.imageMatrix)
+                canvas.drawBitmap(f, null, Rect(0, 0, d?.intrinsicWidth ?: f.width, d?.intrinsicHeight ?: f.height), paint)
+                canvas.restore()
+            }
+            canvas.drawPath(path, tint)
+        }
+
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
     /** A thin watched-so-far bar: accent (or [color]) over a faint track. */
@@ -187,25 +300,28 @@ abstract class Screen : Activity() {
     /** Something didn't load: what went wrong in a line, and a button to try again. */
     protected fun failed(message: String, retry: () -> Unit) = column(Gravity.START,
         text(message, BODY, color = TEXT_MID),
-        text("Try again", BODY, bold = true).apply {
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            isFocusable = true
-            fun style(focused: Boolean) {
-                setTextColor(if (focused) Color.BLACK else Color.WHITE)
-                background = if (focused) rounded(Color.WHITE, 10) else glass(10)
-            }
-            style(false)
-            setOnFocusChangeListener { _, has -> style(has) }
-            setOnClickListener { retry() }
-        }.marginTop(16),
+        pill("Try again").apply { setOnClickListener { retry() } }.marginTop(16),
     )
 
     // The design's values, in one place: every screen takes its colours and type sizes from here.
     companion object {
         const val PAD = 56 // dp: the side margin, clear of the TV's edges
         const val TILE_RADIUS = 12
+        const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 32 // dp: the hero's pills
+        const val FOCUS_GROW = 1.06f // how much a focused pill grows, everywhere
+        // A focused picture grows by this and rises CARD_LIFT dp on its shadow: the only sign of focus on pictures (no
+        // rings or outlines). 10% of a 120 dp poster is 6 dp a side, inside its 16 dp gaps.
+        const val CARD_GROW = 1.10f
+        const val CARD_LIFT = 12
+        // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
+        // the focused card to grow), and above a heading, so each heading belongs to the row under it.
+        const val CARD_GAP = 16
+        const val POSTER_W = 120 // dp: a 2:3 poster in a row
+        const val POSTER_H = 180
+        const val HEADING_GAP = 12
+        const val SECTION_GAP = 32
         const val DOT = "  ·  "
 
         // Three sizes, on every screen (sp, from Apple TV's text styles: tvOS points on a 1920 × 1080 screen, halved for
