@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.animation.ValueAnimator
 import android.app.AlertDialog

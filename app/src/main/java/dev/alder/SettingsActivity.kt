@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.content.Context
 import android.app.AlertDialog

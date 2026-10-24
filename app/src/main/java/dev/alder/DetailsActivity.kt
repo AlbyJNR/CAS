@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.content.Intent
 import android.graphics.Color

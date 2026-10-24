@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.app.AlertDialog
 import android.content.Intent
@@ -373,7 +373,7 @@ class ProfilesActivity : Screen() {
             addView(LinearLayout(this@ProfilesActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(40), dp(36), dp(40), 0)
-                addView(text("STREAM TV", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text("ALDER", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
                 addView(text(step, SMALL, color = TEXT_MID))
             }, android.widget.FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP))
         }

@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.content.ContentValues
 import android.content.Context
@@ -49,7 +49,7 @@ object WatchNext {
                 put(WatchNextPrograms.COLUMN_INTENT_URI, open.toUri(Intent.URI_INTENT_SCHEME))
             })
         }
-    }.onFailure { android.util.Log.w("StreamTV", "Watch Next not updated", it) }
+    }.onFailure { android.util.Log.w("Alder", "Watch Next not updated", it) }
 
     private fun lastWatched(state: JSONObject): Long = runCatching {
         java.time.Instant.parse(state.optString("lastWatched")).toEpochMilli()

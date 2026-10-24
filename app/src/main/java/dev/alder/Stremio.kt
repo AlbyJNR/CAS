@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import org.json.JSONArray
 import org.json.JSONObject

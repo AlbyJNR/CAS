@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "stream-tv"
+rootProject.name = "alder"
 include(":app")

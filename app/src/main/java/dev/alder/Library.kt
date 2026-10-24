@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.util.Base64
 import org.json.JSONObject

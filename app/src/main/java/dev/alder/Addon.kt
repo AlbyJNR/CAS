@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.net.Uri
 import org.json.JSONArray
