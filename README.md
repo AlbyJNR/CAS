@@ -15,7 +15,7 @@
   <img src="docs/details.jpg" alt="Alder title page" width="49%">
 </p>
 
-Alder is built on top of Stremio. Your account, add-ons, library and watch progress stay exactly where they are, and everything you do in Alder syncs back to Stremio on your phone and computer. What's new is the app you watch in: made for a TV and a remote, quick to open, and quiet enough that the film is the main thing on screen.
+Alder is built on top of Stremio. Your account, add-ons, library and watch progress stay exactly where they are, and everything you do in Alder syncs back to Stremio on your phone and computer. What's new is the app you watch in: made for a TV and a remote, and quiet enough that the film is the main thing on screen.
 
 ## Highlights
 
@@ -24,7 +24,7 @@ Alder is built on top of Stremio. Your account, add-ons, library and watch progr
 - **Knows your TV.** Files your TV can't decode are left out before you see them, including Dolby Vision profiles it can't show. Higher quality than your screen or HDR on a screen without it goes down the list.
 - **A profile for everyone.** Up to 5 profiles, each its own Stremio account with its own history and recommendations, and an optional PIN.
 - **Continue Watching on the Google TV home screen.** Jump straight back into a show without opening the app first.
-- **A cinematic interface.** Full-screen art, title logos and rows that open fast because they remember the last visit.
+- **A cinematic interface.** Full-screen art, title logos and rows of posters, with everything else out of the way.
 - **The player you'd want.** Skip intro, Up next with autoplay, audio and subtitle choice in one panel, subtitles from add-ons like OpenSubtitles with size, background and timing controls, DTS and TrueHD audio, and frame-rate matching.
 - **Manage add-ons on the TV.** Add by URL, reorder and remove. Changes save to your Stremio account.
 
