@@ -98,6 +98,7 @@ abstract class Screen : Activity() {
 
     protected fun column(gravity: Int, vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
+        clipChildren = false // focused pills and pictures grow past their own bounds
         this.gravity = gravity
         // Wrap-content by default: a vertical LinearLayout would otherwise stretch every child to full width.
         views.forEach { addView(it, it.layoutParams ?: wrap()) }
@@ -152,8 +153,8 @@ abstract class Screen : Activity() {
         }
 
     /**
-     * The hero's buttons (Home, the title page): small pills of one height, frosted white at rest so they read as
-     * buttons on any art, solid white with dark words once the remote is on one.
+     * The hero's buttons (Home, the title page): small pills of one height, one solid grey at rest so they look the
+     * same over any art, solid white with dark words once the remote is on one.
      */
     protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
         isFocusable = true
@@ -163,16 +164,59 @@ abstract class Screen : Activity() {
         compoundDrawablePadding = dp(6)
         if (icon != 0) setCompoundDrawablesRelative(getDrawable(icon)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
         fun style(focused: Boolean) {
-            background = rounded(if (focused) Color.WHITE else GLASS_HIGH, BUTTON_H / 2)
+            background = rounded(if (focused) Color.WHITE else PILL, BUTTON_H / 2)
             setTextColor(if (focused) INK else Color.WHITE)
             compoundDrawablesRelative[0]?.setTint(if (focused) INK else Color.WHITE)
         }
         style(false)
         setOnFocusChangeListener { v, has ->
             style(has)
-            v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(150).start()
+            v.animate().scaleX(if (has) FOCUS_GROW else 1f).scaleY(if (has) FOCUS_GROW else 1f).setDuration(150).start()
         }
     }
+
+    /**
+     * The focused row, on every list (settings, addons, episodes, sources) and small control: a white fill with dark
+     * words and icons, the same as a focused pill. [rest] is the fill when not focused; [also] runs on every change.
+     */
+    protected fun View.rowFocus(radiusDp: Int = 8, rest: () -> android.graphics.drawable.Drawable? = { null }, also: (Boolean) -> Unit = {}) {
+        isFocusable = true
+        background = rest()
+        setOnFocusChangeListener { v, has ->
+            v.background = if (has) rounded(Color.WHITE, radiusDp) else rest()
+            ink(v, has)
+            also(has)
+        }
+    }
+
+    /** Dark words on the white fill, and back to each one's own colour (and shadow, for text on art) after. */
+    private fun ink(v: View, on: Boolean) {
+        when (v) {
+            is TextView -> {
+                val (color, shadow) = v.tag as? Pair<*, *> ?: (v.currentTextColor to v.shadowRadius).also { v.tag = it }
+                v.setTextColor(if (on) INK else color as Int)
+                if (on) v.setShadowLayer(0f, 0f, 0f, 0) else if ((shadow as Float) > 0f) v.onArt()
+                v.compoundDrawablesRelative.forEach { it?.setTint(if (on) INK else Color.WHITE) }
+            }
+            is ImageView -> if (on) v.setColorFilter(INK) else v.clearColorFilter()
+            is android.view.ViewGroup -> for (i in 0 until v.childCount) ink(v.getChildAt(i), on)
+        }
+    }
+
+    /**
+     * The focused picture (posters, search results, avatars): it grows by [CARD_GROW] and lifts on a shadow. Never a ring,
+     * outline or border: the picture itself comes forward.
+     */
+    protected fun View.cardFocus(also: (Boolean) -> Unit = {}) {
+        isFocusable = true
+        setOnFocusChangeListener { v, has ->
+            v.lift(has)
+            also(has)
+        }
+    }
+
+    protected fun View.lift(on: Boolean) = animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
+        .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(180).start()
 
     /** A thin watched-so-far bar: accent (or [color]) over a faint track. */
     protected fun progressBar(progress: Float, color: Int = ACCENT) = LinearLayout(this).apply {
@@ -187,17 +231,7 @@ abstract class Screen : Activity() {
     /** Something didn't load: what went wrong in a line, and a button to try again. */
     protected fun failed(message: String, retry: () -> Unit) = column(Gravity.START,
         text(message, BODY, color = TEXT_MID),
-        text("Try again", BODY, bold = true).apply {
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            isFocusable = true
-            fun style(focused: Boolean) {
-                setTextColor(if (focused) Color.BLACK else Color.WHITE)
-                background = if (focused) rounded(Color.WHITE, 10) else glass(10)
-            }
-            style(false)
-            setOnFocusChangeListener { _, has -> style(has) }
-            setOnClickListener { retry() }
-        }.marginTop(16),
+        pill("Try again").apply { setOnClickListener { retry() } }.marginTop(16),
     )
 
     // The design's values, in one place: every screen takes its colours and type sizes from here.
@@ -206,6 +240,18 @@ abstract class Screen : Activity() {
         const val TILE_RADIUS = 12
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 32 // dp: the hero's pills
+        const val FOCUS_GROW = 1.06f // how much a focused pill grows, everywhere
+        // A focused picture grows by this and rises CARD_LIFT dp on its shadow: the only sign of focus on pictures (no
+        // rings or outlines). 10% of a 120 dp poster is 6 dp a side, inside its 16 dp gaps.
+        const val CARD_GROW = 1.10f
+        const val CARD_LIFT = 12
+        // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
+        // the focused card to grow), and above a heading, so each heading belongs to the row under it.
+        const val CARD_GAP = 16
+        const val POSTER_W = 120 // dp: a 2:3 poster in a row
+        const val POSTER_H = 180
+        const val HEADING_GAP = 12
+        const val SECTION_GAP = 32
         const val DOT = "  ·  "
 
         // Three sizes, on every screen (sp, from Apple TV's text styles: tvOS points on a 1920 × 1080 screen, halved for
@@ -229,6 +275,7 @@ abstract class Screen : Activity() {
         const val SURFACE = 0xFF24272D.toInt() // placeholder while a picture loads
         const val GLASS_LOW = 0x24FFFFFF // the "Add profile" tile
         const val GLASS_HIGH = 0x40FFFFFF // progress track
+        const val PILL = 0xFF3A3D42.toInt() // a pill at rest: solid, so it doesn't change shade with the art behind
         // Flat translucent fills keep the glass quiet while focus remains visible.
         const val GLASS = 0xB3080808.toInt()
         const val GLASS_FOCUSED = 0xD0252525.toInt()

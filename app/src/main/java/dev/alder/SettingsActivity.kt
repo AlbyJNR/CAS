@@ -73,18 +73,7 @@ class SettingsActivity : Screen() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
-        list.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            val back = text("‹", DISPLAY, color = TEXT_HI).apply {
-                gravity = Gravity.CENTER
-                contentDescription = "Back"
-                isFocusable = true
-                setOnClickListener { finish() }
-                setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
-            }
-            addView(back, LinearLayout.LayoutParams(dp(24), dp(35)))
-            addView(text("Settings", DISPLAY, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
-        })
+        list.addView(text("Settings", DISPLAY, bold = true))
 
         heading("General")
         action("Language", Locale.getDefault().displayLanguage, "The TV's own language setting; the app follows it.") {
@@ -105,7 +94,6 @@ class SettingsActivity : Screen() {
         }
 
         val firstRowId = View.generateViewId()
-        (list.getChildAt(0) as LinearLayout).getChildAt(0).nextFocusDownId = firstRowId
         section("Streaming", streaming, firstRowId)
         section("Picture & Sound", pictureAndSound)
         section("Subtitles", subtitles)
@@ -152,18 +140,14 @@ class SettingsActivity : Screen() {
         list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
     }
 
-    /** One row: a white bar and glass when focused, the label left, [value] right; its hint shows below the list. */
+    /** One row: the shared white focus, the label left, [value] right; its hint shows below the list. */
     private fun row(label: String, value: View, hintText: String, click: () -> Unit) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
-        val indicator = View(context).apply { setBackgroundColor(Color.WHITE); visibility = View.INVISIBLE }
-        addView(indicator, LinearLayout.LayoutParams(dp(3), -1))
-        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
         addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
-        setPadding(0, dp(4), dp(8), dp(4))
-        focusable(grow = 1f)
-        setOnFocusChangeListener { v, has ->
-            v.background = if (has) glass(6) else null
-            indicator.visibility = if (has) View.VISIBLE else View.INVISIBLE
+        setPadding(dp(13), dp(4), dp(8), dp(4))
+        rowFocus(6) { has ->
+            (value as? Switch)?.thumbTintList = ColorStateList.valueOf(if (has) INK else Color.WHITE)
             if (has) hint.text = hintText
         }
         setOnClickListener { click() }

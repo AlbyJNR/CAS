@@ -62,12 +62,6 @@ class StreamsActivity : Screen() {
                     addView(list)
                 }, LinearLayout.LayoutParams(-1, 0, 1f))
             }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1))
-            // The hint sits on its own dark band, so the list scrolling under it stays out of the way.
-            addView(FrameLayout(context).apply {
-                background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0))
-                addView(text("Press OK to play", SMALL, color = TEXT_MID), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START)
-                    .apply { leftMargin = dp(PAD); bottomMargin = dp(20) })
-            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, dp(84), Gravity.BOTTOM))
         })
         val tv = Device.of(this)
 
@@ -165,7 +159,7 @@ class StreamsActivity : Screen() {
 
     /**
      * One source: its number, the addon's name for it ("Torrentio · 2160p") and the addon's own lines (release, audio,
-     * size, languages), over a hairline. Focus puts a frosted pill behind the name and an arrow by the number.
+     * size, languages). Focus is the shared white row.
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
@@ -178,13 +172,7 @@ class StreamsActivity : Screen() {
                 addView(num, LinearLayout.LayoutParams(dp(56), -2).apply { topMargin = dp(2) })
                 addView(column(Gravity.START, head, lines.marginTop(4)), LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(12), 0, dp(12)) })
-            addView(View(context).apply { setBackgroundColor(0x2EFFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
-            isFocusable = true
-            setOnFocusChangeListener { _, has ->
-                background = if (has) glass(12, focused = true) else null
-                num.text = if (has) "%02d ›".format(number) else "%02d".format(number)
-                num.setTextColor(if (has) Color.WHITE else TEXT_MID)
-            }
+            rowFocus(12)
             setOnClickListener {
             startActivity(Intent(this@StreamsActivity, PlayerActivity::class.java).putExtras(intent)
                 .putExtra("sources", JSONArray(listOf(s.toJson())).toString()).putExtra("picked", true))

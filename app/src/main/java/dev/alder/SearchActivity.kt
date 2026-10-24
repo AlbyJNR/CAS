@@ -54,9 +54,8 @@ class SearchActivity : Screen() {
         val clear = ImageView(this).apply {
             setImageResource(R.drawable.ic_close)
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            isFocusable = true
             visibility = View.INVISIBLE
-            setOnFocusChangeListener { v, has -> v.background = if (has) glass(20, focused = true) else null }
+            rowFocus(20)
             setOnClickListener { input.setText(""); input.requestFocus() }
         }
         val field = LinearLayout(this).apply {
@@ -72,16 +71,13 @@ class SearchActivity : Screen() {
         }
         val heading = text("", BODY, bold = true).onArt()
         val count = text("", SMALL, color = TEXT_MID).onArt()
-        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
 
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(PAD), dp(28), 0, dp(28))
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-                addView(text("Search", DISPLAY, bold = true).onArt(), wrap().apply { marginStart = dp(22) })
-            })
+            clipToPadding = false; clipChildren = false // the focused card grows past its bounds
+            addView(text("Search", DISPLAY, bold = true).onArt())
             addView(field, LinearLayout.LayoutParams(dp(GRID_W), -2).apply { topMargin = dp(18) })
             addView(LinearLayout(context).apply {
                 gravity = Gravity.BOTTOM
@@ -110,11 +106,20 @@ class SearchActivity : Screen() {
         })
 
         var request = 0
+        lateinit var typed: Runnable
         fun search(moveFocus: Boolean) {
             val query = input.text.toString().trim()
             val current = ++request
+            grid.removeAllViews(); count.text = ""
             if (query.isEmpty()) {
-                grid.removeAllViews(); heading.text = ""; count.text = ""; info.visibility = View.INVISIBLE
+                info.visibility = View.INVISIBLE
+                val recent = recent()
+                heading.text = if (recent.isEmpty()) "" else "Recent searches"
+                recent.forEach { q ->
+                    grid.addView(pill(q).apply {
+                        setOnClickListener { input.setText(q); input.setSelection(q.length); main.removeCallbacks(typed); search(moveFocus = true) }
+                    }, wrap().apply { bottomMargin = dp(12) })
+                }
                 return
             }
             if (moveFocus) (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
@@ -122,9 +127,14 @@ class SearchActivity : Screen() {
             background({
                 var failed = false
                 // Every addon at once: one after another, a slow one held the whole page up for seconds.
+                // A slow addon is left out after SEARCH_WAIT instead of holding everyone's results back.
+                val deadline = System.currentTimeMillis() + SEARCH_WAIT
                 val titles = Stremio.addons(key)
                     .map { addon -> java.util.concurrent.CompletableFuture.supplyAsync({ runCatching { addon.search(query) } }, searchPool) }
-                    .flatMap { it.join().onFailure { failed = true }.getOrDefault(emptyList()) }
+                    .flatMap { f ->
+                        runCatching { f.get((deadline - System.currentTimeMillis()).coerceAtLeast(0), java.util.concurrent.TimeUnit.MILLISECONDS) }
+                            .getOrElse { Result.failure(it) }.onFailure { failed = true }.getOrDefault(emptyList())
+                    }
                     .distinctBy { it.id }.take(24).toList().sortedWith(compareBy<Meta> {
                     when {
                         it.name.equals(query, ignoreCase = true) || it.name.equals("The $query", ignoreCase = true) -> 0
@@ -135,23 +145,24 @@ class SearchActivity : Screen() {
                 titles to failed
             }) { answer ->
                 if (current != request) return@background
-                val (titles, failed) = answer.getOrElse { heading.text = "Search failed. Try again."; return@background }
-                heading.text = when {
-                    titles.isNotEmpty() -> "Results for “$query”"
-                    failed -> "Search is unavailable. Try again."
-                    else -> "No matches for “$query”"
+                val (titles, failed) = answer.getOrElse { emptyList<Meta>() to true }
+                if (titles.isEmpty() && failed) {
+                    heading.text = ""
+                    grid.addView(failed("Search is unavailable right now.") { search(moveFocus = true) })
+                    return@background
                 }
+                if (titles.isNotEmpty()) remember(query)
+                heading.text = if (titles.isNotEmpty()) "Results for “$query”" else "No matches for “$query”"
                 count.text = if (titles.isEmpty()) "" else if (titles.size == 1) "1 title" else "${titles.size} titles"
-                grid.removeAllViews()
                 titles.chunked(COLUMNS).forEach { row ->
-                    grid.addView(LinearLayout(this).apply { row.forEach { addView(card(it), LinearLayout.LayoutParams(dp(CARD_W), -2).apply { marginEnd = dp(GAP) }) } },
-                        wrap().apply { bottomMargin = dp(16) })
+                    grid.addView(LinearLayout(this).apply { clipChildren = false; row.forEach { addView(card(it), LinearLayout.LayoutParams(dp(CARD_W), -2).apply { marginEnd = dp(CARD_GAP) }) } },
+                        wrap().apply { bottomMargin = dp(CARD_GAP) })
                 }
                 titles.firstOrNull()?.let(::show)
                 if (moveFocus) (grid.getChildAt(0) as? LinearLayout)?.getChildAt(0)?.requestFocus()
             }
         }
-        val typed = Runnable { search(moveFocus = false) }
+        typed = Runnable { search(moveFocus = false) }
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -163,9 +174,17 @@ class SearchActivity : Screen() {
         })
         input.setOnEditorActionListener { _, _, _ -> main.removeCallbacks(typed); search(moveFocus = true); true }
         input.requestFocus()
+        search(moveFocus = false) // recent searches
     }
 
-    /** A wide card: the art with rounded corners, the title (a ▶ in front while focused), then year and type. */
+    private fun recent() = getSharedPreferences("search", MODE_PRIVATE).getString("recent", "")!!.split("\n").filter { it.isNotBlank() }
+
+    private fun remember(query: String) {
+        val list = (listOf(query) + recent().filterNot { it.equals(query, ignoreCase = true) }).take(RECENT)
+        getSharedPreferences("search", MODE_PRIVATE).edit().putString("recent", list.joinToString("\n")).apply()
+    }
+
+    /** A wide card: the art with rounded corners (it grows and lifts on focus), then the title, year and type. */
     private fun card(m: Meta): View {
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -175,21 +194,19 @@ class SearchActivity : Screen() {
             }
             clipToOutline = true
         }
-        val title = text(m.name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; compoundDrawablePadding = dp(8) }
+        val title = text(m.name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         val kind = when (m.type) { "movie" -> "Movie"; "series" -> "Series"; else -> m.type.replaceFirstChar(Char::uppercaseChar) }
         val line = text(listOfNotNull(m.year?.take(4), kind).joinToString("  ·  "), SMALL, color = TEXT_MID).onArt()
         Images.load(m.background ?: m.poster, image, dp(CARD_W))
-        val play = getDrawable(R.drawable.ic_play)?.mutate()?.apply { setBounds(0, 0, dp(18), dp(18)) }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            clipChildren = false
             addView(image, LinearLayout.LayoutParams(-1, dp(CARD_W * 9 / 16)))
             addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             addView(line, wrap().apply { topMargin = dp(2) })
             isFocusable = true
             setOnFocusChangeListener { _, has ->
-                image.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(150).start()
-                image.elevation = if (has) dp(12).toFloat() else 0f
-                title.setCompoundDrawablesRelative(if (has) play else null, null, null, null)
+                image.lift(has)
                 if (has) show(m)
             }
             setOnClickListener {
@@ -225,8 +242,9 @@ class SearchActivity : Screen() {
     private companion object {
         const val COLUMNS = 3
         const val CARD_W = 168 // dp: three across in GRID_W
-        const val GAP = 12
-        const val GRID_W = COLUMNS * CARD_W + (COLUMNS - 1) * GAP
+        const val GRID_W = COLUMNS * CARD_W + (COLUMNS - 1) * CARD_GAP
+        const val SEARCH_WAIT = 6000L // ms: addons that haven't answered by then are left out
+        const val RECENT = 6 // searches remembered
         const val TYPING_PAUSE = 500L // ms after the last letter before searching
         val searchPool = java.util.concurrent.Executors.newFixedThreadPool(8)
     }
