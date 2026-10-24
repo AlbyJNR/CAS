@@ -18,17 +18,19 @@ class AddonsActivity : Screen() {
     private lateinit var list: LinearLayout
     private var addons: List<Addon> = emptyList()
 
+    private val scene by lazy { ImageView(this).apply { setImageResource(R.drawable.settings_scene); scaleType = ImageView.ScaleType.CENTER_CROP } }
+    override val backdrop get() = scene
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val key = authKey ?: return finish()
-        list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
+        list = column(Gravity.START).apply { setPadding(dp(PAD - GLASS_INSET), dp(15), dp(PAD - GLASS_INSET), dp(30)) }
+        // The list on a pane of glass inset from the edges, like Settings and the episode list.
         setWindowed(FrameLayout(this).apply {
-            addView(ScrollView(context).apply { addView(list) },
-                FrameLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.58f).toInt(), -1, Gravity.START))
-        }, ImageView(this).apply {
-            setImageResource(R.drawable.settings_scene)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        })
+            addView(ScrollView(context).apply { addView(list); background = glassOver(this, 14) },
+                FrameLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.58f).toInt(), -1, Gravity.START)
+                    .apply { setMargins(dp(GLASS_INSET), dp(GLASS_INSET), 0, dp(GLASS_INSET)) })
+        }, scene)
         show(null, "Loading…")
         background({ Stremio.addons(key, refresh = true) }) { result ->
             result.onSuccess { addons = it; show(null) }.onFailure { show(null, "Couldn't reach Stremio: ${it.message}") }

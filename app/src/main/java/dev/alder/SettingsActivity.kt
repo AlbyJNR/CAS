@@ -69,10 +69,12 @@ class SettingsActivity : Screen() {
     private lateinit var list: LinearLayout
     private lateinit var hint: TextView
     private lateinit var addonCount: TextView
+    private val scene by lazy { ImageView(this).apply { setImageResource(R.drawable.settings_scene); scaleType = ImageView.ScaleType.CENTER_CROP } }
+    override val backdrop get() = scene
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
+        list = column(Gravity.START).apply { setPadding(0, dp(15), 0, dp(30)) }
         list.addView(text("Settings", DISPLAY, bold = true))
 
         heading("General")
@@ -106,7 +108,7 @@ class SettingsActivity : Screen() {
                 }.show()
         }
 
-        hint = text("", BODY, color = TEXT_MID).apply { setPadding(dp(PAD), dp(10), dp(PAD), dp(18)) }
+        hint = text("", BODY, color = TEXT_MID).apply { setPadding(0, dp(10), 0, dp(18)) }
         val scroll = ScrollView(this).apply {
             isFocusable = false
             isVerticalScrollBarEnabled = false
@@ -119,12 +121,12 @@ class SettingsActivity : Screen() {
             addView(hint, LinearLayout.LayoutParams(-1, -2))
         }
         val panelWidth = (resources.displayMetrics.widthPixels * 0.58f).toInt()
+        // The list on a pane of glass inset from the edges, like the episode list; the words stay on the side margin.
+        panel.setPadding(dp(PAD - GLASS_INSET), 0, dp(PAD - GLASS_INSET), 0)
+        panel.background = glassOver(panel, 14)
         setWindowed(FrameLayout(this).apply {
-            addView(panel, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START))
-        }, ImageView(this).apply {
-            setImageResource(R.drawable.settings_scene)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        })
+            addView(panel, FrameLayout.LayoutParams(panelWidth, -1, Gravity.START).apply { setMargins(dp(GLASS_INSET), dp(GLASS_INSET), 0, dp(GLASS_INSET)) })
+        }, scene)
     }
 
     override fun onResume() {
@@ -137,7 +139,6 @@ class SettingsActivity : Screen() {
         list.addView(text(title, BODY, bold = true).apply {
             setPadding(0, dp(8), 0, dp(4))
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-        list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
     }
 
     /** One row: the shared white focus, the label left, [value] right; its hint shows below the list. */

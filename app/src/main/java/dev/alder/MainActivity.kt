@@ -41,6 +41,7 @@ class MainActivity : Screen() {
     private enum class Mode { CINEMA, BROWSE }
 
     private lateinit var profile: Profile
+    override val backdrop get() = art
     private lateinit var scroller: ScrollView
     private lateinit var content: LinearLayout
     private lateinit var header: FrameLayout
@@ -53,6 +54,7 @@ class MainActivity : Screen() {
     private var libraryByName = false
     private lateinit var filter: TextView
     private var search: TextView? = null
+    private var filterRest: android.graphics.drawable.Drawable? = null
     private val rows = mutableListOf<Row>()
     private var focusedSomething = false
     private val metas = mutableMapOf<String, Meta>() // full details, fetched once per title
@@ -291,7 +293,6 @@ class MainActivity : Screen() {
         val nav = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = rounded(NAV_FILL, NAV_R + 4)
         }
         fun navItem(label: String, open: () -> Unit) = text(label, BODY).apply {
             setPadding(dp(16), dp(7), dp(16), dp(7))
@@ -300,6 +301,7 @@ class MainActivity : Screen() {
             setOnClickListener { open() }
             nav.addView(this)
         }
+        nav.background = glassOver(nav, NAV_R + 4)
         Page.entries.forEach { p -> navItems[p] = navItem(p.label) { showPage(p) } }
         search = navItem("Search") { startActivity(Intent(this, SearchActivity::class.java)) }
         filter = text("", BODY).apply {
@@ -310,6 +312,7 @@ class MainActivity : Screen() {
         }
         header.addView(avatar, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        filterRest = glassOver(filter, NAV_R + 4)
         header.addView(filter, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
@@ -335,7 +338,7 @@ class MainActivity : Screen() {
         if (!::filter.isInitialized) return
         filter.visibility = if (page in listOf(Page.MOVIES, Page.SHOWS, Page.LIBRARY)) View.VISIBLE else View.GONE
         filter.text = if (page == Page.LIBRARY) (if (libraryByName) "A–Z  ▾" else "Recent  ▾") else "${genre ?: "All genres"}  ▾"
-        filter.background = rounded(if (filter.isFocused) Color.WHITE else NAV_FILL, NAV_R + 4)
+        filter.background = if (filter.isFocused) rounded(Color.WHITE, NAV_R + 4) else filterRest
         filter.setTextColor(if (filter.isFocused) Color.BLACK else Color.WHITE)
     }
 
@@ -369,6 +372,7 @@ class MainActivity : Screen() {
             Images.load(url, art, artW, urgent = true, look = shaded, failed = ready) {
                 // Once the new art covers it, the old one lets go: otherwise the GPU paints a hidden full screen every frame.
                 art.animate().alpha(1f).setDuration(250).withEndAction { artBack.setImageDrawable(null) }.start()
+                refrost()
                 ready?.invoke()
             }
         }
@@ -1165,7 +1169,6 @@ class MainActivity : Screen() {
         const val WIDE_H = WIDE_W * 9 / 16
         const val INFO_W = 360 // the cinema's line
         const val NAV_R = 18 // dp: the top bar's pills
-        const val NAV_FILL = 0x99141619.toInt() // the top bar's capsule and the filter pill
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
         const val RADIUS = 12

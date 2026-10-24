@@ -20,13 +20,16 @@ import org.json.JSONArray
 class StreamsActivity : Screen() {
     private val pick by lazy { intent.getBooleanExtra("pick", false) || Settings.alwaysList(this) }
 
+    private lateinit var art: ImageView
+    override val backdrop get() = art
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val key = authKey ?: return finish()
         val type = intent.getStringExtra("type") ?: "movie"
         val videoId = intent.getStringExtra("videoId")!!
-        val list = column(Gravity.START).apply { setPadding(dp(PAD), 0, dp(24), dp(72)) }
-        val header = column(Gravity.START).apply { setPadding(dp(PAD), dp(24), dp(24), dp(8)) }
+        val list = column(Gravity.START).apply { setPadding(dp(PAD - GLASS_INSET), 0, dp(24), dp(72)) }
+        val header = column(Gravity.START).apply { setPadding(dp(PAD - GLASS_INSET), dp(24), dp(24), dp(8)) }
         val name = intent.getStringExtra("name") ?: ""
         val logo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(40); maxWidth = dp(300) }
         val title = text(name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
@@ -39,11 +42,12 @@ class StreamsActivity : Screen() {
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_MID).onArt().marginTop(10)
         header.addView(status)
 
-        val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         val still = intent.getStringExtra("still")
         val backArt = intent.getStringExtra("background") ?: intent.getStringExtra("poster")
         Images.load(still ?: backArt, art, resources.displayMetrics.widthPixels, orElse = backArt.takeIf { still != null }) {
             art.animate().alpha(1f).setDuration(250).start()
+            refrost()
         }
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -51,8 +55,10 @@ class StreamsActivity : Screen() {
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0x59000000, 0))
             }, FrameLayout.LayoutParams(-1, -1))
+            // The list on a pane of glass inset from the edges, like the episode list.
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
+                background = glassOver(this, 14)
                 addView(header, LinearLayout.LayoutParams(-1, -2))
                 addView(ScrollView(context).apply {
                     isVerticalScrollBarEnabled = false
@@ -61,7 +67,7 @@ class StreamsActivity : Screen() {
                     setFadingEdgeLength(dp(96))
                     addView(list)
                 }, LinearLayout.LayoutParams(-1, 0, 1f))
-            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1))
+            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1).apply { setMargins(dp(GLASS_INSET), dp(GLASS_INSET), 0, dp(GLASS_INSET)) })
         })
         val tv = Device.of(this)
 

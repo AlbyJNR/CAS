@@ -34,6 +34,7 @@ class SearchActivity : Screen() {
     private lateinit var about: android.widget.TextView
     private lateinit var info: View
     private var focused: Meta? = null
+    override val backdrop get() = art
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,13 +62,14 @@ class SearchActivity : Screen() {
         val field = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(18), 0, dp(10), 0)
-            background = glass(14)
             addView(ImageView(context).apply { setImageResource(R.drawable.ic_search) }, LinearLayout.LayoutParams(dp(24), dp(24)))
             addView(input, LinearLayout.LayoutParams(0, -2, 1f))
             addView(clear, LinearLayout.LayoutParams(dp(40), dp(40)))
         }
+        val fieldRest = glassOver(field, 14)
+        field.background = fieldRest
         input.setOnFocusChangeListener { _, has ->
-            field.background = glass(14, has)
+            field.background = if (has) glass(14, focused = true) else fieldRest
         }
         val heading = text("", BODY, bold = true).onArt()
         val count = text("", SMALL, color = TEXT_MID).onArt()
@@ -227,7 +229,7 @@ class SearchActivity : Screen() {
             art.animate().cancel()
             artBack.setImageDrawable(art.drawable)
             art.alpha = 0f
-            Images.load(url, art, resources.displayMetrics.widthPixels, urgent = true) { art.animate().alpha(1f).setDuration(250).start() }
+            Images.load(url, art, resources.displayMetrics.widthPixels, urgent = true) { art.animate().alpha(1f).setDuration(250).start(); refrost() }
         }
         name.text = m.name
         name.visibility = View.GONE

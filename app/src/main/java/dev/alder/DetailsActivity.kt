@@ -27,14 +27,12 @@ class DetailsActivity : Screen() {
     private val initialArt by lazy { intent.getStringExtra("background") }
 
     private lateinit var key: String
+    override val backdrop get() = heroArt
     private lateinit var page: LinearLayout
     private val scroll by lazy { ScrollView(this) }
     private lateinit var root: FrameLayout
     private lateinit var hero: FrameLayout
     private lateinit var heroArt: ImageView
-    private var frostSource: Bitmap? = null
-    private var frost: Bitmap? = null
-    private lateinit var guideGlassArt: ImageView
     private lateinit var guide: FrameLayout
     private lateinit var guideRows: LinearLayout
     private lateinit var seasonButton: TextView
@@ -77,7 +75,7 @@ class DetailsActivity : Screen() {
         }
         setContentView(root)
 
-        initialArt?.let { Images.load(it, heroArt, artWidth, urgent = true) { heroArt.alpha = 1f; syncGlassArt() } }
+        initialArt?.let { Images.load(it, heroArt, artWidth, urgent = true) { heroArt.alpha = 1f; refrost() } }
 
         background({
             val m = Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.meta(type, metaId)
@@ -89,7 +87,7 @@ class DetailsActivity : Screen() {
             val art = m?.background ?: initialArt ?: poster
             if (heroArt.tag != art) Images.load(art, heroArt, artWidth, urgent = true) {
                 heroArt.animate().alpha(1f).setDuration(250).start()
-                syncGlassArt()
+                refrost()
             }
             showHero(m)
             if (m != null && m.videos.isNotEmpty()) buildGuide(m.videos)
@@ -181,32 +179,9 @@ class DetailsActivity : Screen() {
 
     // ---------- glass and episode guide ----------
 
-    private fun glassPane(x: Int, y: Int, width: Int, height: Int): Pair<FrameLayout, ImageView> {
-        val pane = FrameLayout(this).apply {
-            clipToOutline = true
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: android.graphics.Outline) =
-                    outline.setRoundRect(0, 0, view.width, view.height, dp(14).toFloat())
-            }
-        }
-        val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        pane.addView(art, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).apply {
-            leftMargin = -x; topMargin = -y
-        })
-        pane.addView(View(this).apply { background = glass(14) }, FrameLayout.LayoutParams(-1, -1))
-        return pane to art
-    }
-
-    /** The episode guide's pane shows the hero art frosted (see [Images.frost]), made once per picture. */
-    private fun syncGlassArt() {
-        val source = (heroArt.drawable as? BitmapDrawable)?.bitmap ?: return
-        if (source !== frostSource) {
-            frostSource = source
-            background({ Images.frost(source, 240) }) { r -> if (frostSource === source) { frost = r.getOrNull(); syncGlassArt() } }
-            return
-        }
-        val f = frost ?: return
-        if (::guideGlassArt.isInitialized) guideGlassArt.setImageBitmap(f)
+    private fun glassPane() = FrameLayout(this).apply {
+        background = glassOver(this, 14)
+        clipToOutline = true // the background's rounded corners clip the pane's contents too
     }
 
     private fun buildGuide(videos: List<Video>) {
@@ -229,9 +204,7 @@ class DetailsActivity : Screen() {
         }, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
             leftMargin = dp(PAD); topMargin = dp(50)
         })
-        val (pane, art) = glassPane(x, y, width, height)
-        guideGlassArt = art
-        syncGlassArt()
+        val pane = glassPane()
         pane.addView(text("Episodes", BODY, bold = true),
             FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(26); topMargin = dp(if (largeText) 12 else 17) })
         seasonButton = text("", BODY, color = TEXT_HI).apply {
