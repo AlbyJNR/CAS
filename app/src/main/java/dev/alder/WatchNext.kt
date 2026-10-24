@@ -14,8 +14,9 @@ import org.json.JSONObject
  */
 object WatchNext {
     private const val MAX = 10
+    private const val ART_PX = 1280 // the launcher's cards are a few hundred px wide; TMDB's 4K original is wasted there
 
-    fun sync(context: Context, items: List<JSONObject>, locked: Boolean) = runCatching {
+    fun sync(context: Context, authKey: String, items: List<JSONObject>, locked: Boolean) = runCatching {
         val resolver = context.contentResolver
         resolver.query(TvContract.WatchNextPrograms.CONTENT_URI, arrayOf(WatchNextPrograms._ID), null, null, null)?.use { c ->
             while (c.moveToNext()) resolver.delete(TvContract.buildWatchNextProgramUri(c.getLong(0)), null, null)
@@ -26,9 +27,11 @@ object WatchNext {
             val series = item.optString("type") == "series"
             // A series' video id is "tt123:1:3": season, then episode.
             val parts = state.optString("video_id").split(":")
-            // Wide art for the launcher's wide cards: the library's own (sharpened), else MetaHub's for the IMDb id. A
-            // poster sent as the art gets cropped to a strip of its middle by the launcher.
-            val art = (item.text("background") ?: Images.backgroundFor(item.optString("_id")))?.let(Images::sharp)
+            // Wide, cinematic art for the launcher's wide cards: the meta addon's backdrop (TMDB's, from AIOMetadata or
+            // Cinemeta; last time's answer from disk when there is one), else the library's own, else MetaHub's for the
+            // IMDb id. A poster sent as the art gets cropped to a strip of its middle by the launcher.
+            val art = (backdrop(authKey, item) ?: item.text("background") ?: Images.backgroundFor(item.optString("_id")))
+                ?.let { Images.sized(it, ART_PX) }
             val poster = item.text("poster")?.let(Images::sharp)
             val open = Intent(context, ProfilesActivity::class.java)
                 .putExtra("type", item.optString("type")).putExtra("id", item.optString("_id"))
@@ -53,6 +56,13 @@ object WatchNext {
             })
         }
     }.onFailure { android.util.Log.w("Alder", "Watch Next not updated", it) }
+
+    private fun backdrop(authKey: String, item: JSONObject): String? = runCatching {
+        val type = item.optString("type")
+        val id = item.optString("_id")
+        Stremio.addons(authKey).firstOrNull { it.serves("meta", type, id) }
+            ?.let { it.savedMeta(type, id) ?: it.meta(type, id) }?.background
+    }.getOrNull()
 
     private fun lastWatched(state: JSONObject): Long = runCatching {
         java.time.Instant.parse(state.optString("lastWatched")).toEpochMilli()

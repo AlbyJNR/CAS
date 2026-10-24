@@ -159,7 +159,7 @@ object Images {
     fun backgroundFor(id: String) = id.takeIf { it.startsWith("tt") }?.let { "https://images.metahub.space/background/large/${it.substringBefore(':')}/img" }
 
     // TMDB serves every picture in a few widths: a card needs the 780 px copy, not the 4K original (a tenth of the bytes).
-    private fun sized(url: String, widthPx: Int): String {
+    fun sized(url: String, widthPx: Int): String {
         val size = if (widthPx <= 780) "w780" else if (widthPx <= 1280) "w1280" else return sharp(url)
         return sharp(url).replace(tmdb, "$1$size/")
     }

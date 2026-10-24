@@ -621,7 +621,7 @@ class MainActivity : Screen() {
                 if (what == shown || (shown != null && touched)) return
                 shown = what
                 library = list
-                if (p == Page.HOME) Profiles.active(this)?.let { me -> background({ WatchNext.sync(applicationContext, cw, me.pin != null) }) {} }
+                if (p == Page.HOME) Profiles.active(this)?.let { me -> background({ WatchNext.sync(applicationContext, me.authKey, cw, me.pin != null) }) {} }
                 rows.filter { isInside(it.view, slot) }.forEach { r -> r.cards.forEach { it.unload() }; rows.remove(r) }
                 slot.removeAllViews()
                 if (p == Page.HOME) {
