@@ -29,6 +29,10 @@ object Settings {
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)
     fun subtitles(c: Context) = prefs(c).getBoolean("subtitles", true)
+    /** Two-letter code of the dub to start with: the TV's language unless one is picked. */
+    fun audioLanguage(c: Context): String = prefs(c).getString("audioLang", "").orEmpty().ifEmpty { Locale.getDefault().language }
+    fun subtitleSize(c: Context) = prefs(c).getInt("subSize", 100) // percent of Media3's default size
+    fun subtitleBackground(c: Context) = prefs(c).getBoolean("subBackground", true)
 }
 
 class SettingsActivity : Screen() {
@@ -47,11 +51,18 @@ class SettingsActivity : Screen() {
             listOf(true to "On", false to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate (24 Hz) so pans don't judder.",
             listOf(true to "On", false to "Off")),
+        Choice("audioLang", "Audio language", "The dub to start with when a file has several. Changeable while watching.",
+            listOf("" to "TV language", "en" to "English", "hi" to "Hindi", "es" to "Spanish", "fr" to "French",
+                "de" to "German", "ja" to "Japanese", "ko" to "Korean")),
         Choice("passthrough", "Surround sound", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes here, which always works.",
             listOf(false to "TV speakers", true to "Receiver")),
     )
     private val subtitles = listOf(
         Choice("subtitles", "Subtitles by default", "On: subtitles in the TV's language start with the video when there are any.",
+            listOf(true to "On", false to "Off")),
+        Choice("subSize", "Size", "How big subtitles are on screen.",
+            listOf(100 to "Medium", 130 to "Large", 160 to "Extra large", 80 to "Small")),
+        Choice("subBackground", "Dark background", "A dark box behind subtitles, for bright scenes.",
             listOf(true to "On", false to "Off")),
     )
 
@@ -174,6 +185,7 @@ class SettingsActivity : Screen() {
             fun current(): Int = c.values.indexOfFirst { (v, _) ->
                 when (v) {
                     is Boolean -> prefs.getBoolean(c.key, c.values[0].first as Boolean) == v
+                    is String -> prefs.getString(c.key, c.values[0].first as String) == v
                     else -> prefs.getInt(c.key, c.values[0].first as Int) == v
                 }
             }.coerceAtLeast(0)
@@ -189,7 +201,9 @@ class SettingsActivity : Screen() {
             } else text(c.values[current()].second, BODY - 1, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
             val r = row(c.label, value, c.hint) {
                 val (next, labelText) = c.values[(current() + 1) % c.values.size]
-                prefs.edit().apply { if (next is Boolean) putBoolean(c.key, next) else putInt(c.key, next as Int) }.apply()
+                prefs.edit().apply {
+                    when (next) { is Boolean -> putBoolean(c.key, next); is String -> putString(c.key, next); else -> putInt(c.key, next as Int) }
+                }.apply()
                 if (value is Switch) value.isChecked = next as Boolean else (value as TextView).text = labelText
             }
             if (firstId != null && i == 0) { r.id = firstId; r.post { r.requestFocus() } }
