@@ -51,7 +51,7 @@ class AddonsActivity : Screen() {
         })
         list.addView(text("The first addon that has something answers first. Select one to reorder or remove it.", BODY, color = TEXT_MID).marginTop(4))
         val add = row("+  Add by URL", "›") { askUrl() }.also { list.addView(it, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(16) }) }
-        message?.let { list.addView(text(it, BODY - 1, color = TEXT_MID).marginTop(16)) }
+        message?.let { list.addView(text(it, BODY, color = TEXT_MID).marginTop(16)) }
         var focused: View = add
         addons.forEach { a ->
             val r = row(a.name, if (a.locked) "Built-in  ›" else "›") { edit(a) }

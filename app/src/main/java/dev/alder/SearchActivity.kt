@@ -45,7 +45,7 @@ class SearchActivity : Screen() {
             hint = "Movie or show title"
             setHintTextColor(MUTED)
             setTextColor(Color.WHITE)
-            textSize = TITLE
+            textSize = BODY
             setSingleLine()
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             background = null
@@ -70,17 +70,17 @@ class SearchActivity : Screen() {
         input.setOnFocusChangeListener { _, has ->
             field.background = glass(14, has)
         }
-        val heading = text("", TITLE, bold = true).onArt()
+        val heading = text("", BODY, bold = true).onArt()
         val count = text("", SMALL, color = TEXT_MID).onArt()
         val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(PAD - 16), dp(28), 0, dp(28))
+            setPadding(dp(PAD), dp(28), 0, dp(28))
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-                addView(text("Search", HEADLINE, bold = true).onArt(), wrap().apply { marginStart = dp(22) })
+                addView(text("Search", DISPLAY, bold = true).onArt(), wrap().apply { marginStart = dp(22) })
             })
             addView(field, LinearLayout.LayoutParams(dp(GRID_W), -2).apply { topMargin = dp(18) })
             addView(LinearLayout(context).apply {
@@ -92,10 +92,10 @@ class SearchActivity : Screen() {
         }
 
         logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; adjustViewBounds = false }
-        name = text("", HEADLINE, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-        facts = text("", BODY, color = TEXT_HI).onArt()
+        name = text("", DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        facts = text("", SMALL, color = TEXT_HI).onArt()
         about = text("", BODY, color = TEXT_HI).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-        info = column(Gravity.START, logo.apply { layoutParams = LinearLayout.LayoutParams(dp(260), dp(70)) }, name, facts.marginTop(14), about.marginTop(10))
+        info = column(Gravity.START, logo.apply { layoutParams = LinearLayout.LayoutParams(dp(260), dp(70)) }, name, facts.marginTop(6), about.marginTop(8))
             .apply { visibility = View.INVISIBLE }
 
         setContentView(FrameLayout(this).apply {
@@ -105,7 +105,7 @@ class SearchActivity : Screen() {
             // Darkened only where words sit: under the grid on the left, and up from the bottom under the title's details.
             addView(View(context).apply { background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xE6000000.toInt(), 0xB3000000.toInt(), 0x33000000, 0)) }, FrameLayout.LayoutParams(-1, -1))
             addView(View(context).apply { background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xCC000000.toInt(), 0x40000000, 0)) }, FrameLayout.LayoutParams(-1, dp(300), Gravity.BOTTOM))
-            addView(ScrollView(context).apply { isVerticalScrollBarEnabled = false; isFillViewport = true; addView(left) }, FrameLayout.LayoutParams(dp(GRID_W + PAD + 40), -1))
+            addView(ScrollView(context).apply { isVerticalScrollBarEnabled = false; isFillViewport = true; addView(left) }, FrameLayout.LayoutParams(dp(GRID_W + PAD + 56), -1))
             addView(info, FrameLayout.LayoutParams(dp(300), -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(PAD), dp(44)) })
         })
 

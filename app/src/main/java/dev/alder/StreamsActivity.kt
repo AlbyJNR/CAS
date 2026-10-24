@@ -29,12 +29,12 @@ class StreamsActivity : Screen() {
         val header = column(Gravity.START).apply { setPadding(dp(PAD), dp(24), dp(24), dp(8)) }
         val name = intent.getStringExtra("name") ?: ""
         val logo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(40); maxWidth = dp(300) }
-        val title = text(name.uppercase(), TITLE, bold = true).onArt().apply { letterSpacing = 0.22f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        val title = text(name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         header.addView(FrameLayout(this).apply { addView(title); addView(logo) })
         Images.load(intent.getStringExtra("logo"), logo, dp(300), failed = { title.visibility = View.VISIBLE }) { title.visibility = View.INVISIBLE }
         // "S1 E3 · OUTKAST" for an episode; the label minus the title's name otherwise.
         val episode = intent.getStringExtra("episode") ?: intent.getStringExtra("label")?.removePrefix(name)?.trim(' ', '·')
-        if (!episode.isNullOrBlank()) header.addView(text(episode.uppercase(), SMALL, color = SUBTLE).onArt().apply { letterSpacing = 0.12f }.marginTop(8))
+        if (!episode.isNullOrBlank()) header.addView(text(episode, SMALL, color = SUBTLE).onArt().marginTop(8))
         header.addView(text("Choose a stream", DISPLAY, bold = true).onArt().marginTop(4))
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_MID).onArt().marginTop(10)
         header.addView(status)
@@ -91,7 +91,7 @@ class StreamsActivity : Screen() {
                 if (items.isEmpty()) return
                 sections[i].addView(LinearLayout(this).apply {
                     gravity = Gravity.CENTER_VERTICAL
-                    addView(text(addons[i].name, TITLE).onArt())
+                    addView(text(addons[i].name, BODY, bold = true).onArt())
                     addView(text("  ·  ${items.size} " + if (items.size == 1) "source" else "sources", SMALL, color = SUBTLE).onArt())
                 }.marginTop(28))
                 val rows = items.mapIndexed { n, it -> streamRow(it, n + 1).also(sections[i]::addView) }
@@ -169,7 +169,7 @@ class StreamsActivity : Screen() {
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
-        val num = text("%02d".format(number), TITLE, color = TEXT_MID).onArt().apply { setPadding(dp(8), 0, 0, 0) }
+        val num = text("%02d".format(number), BODY, color = TEXT_MID).onArt().apply { setPadding(dp(8), 0, 0, 0) }
         val head = text(name, BODY, bold = true).onArt().apply { setPadding(dp(12), dp(4), dp(14), dp(5)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT_HI).onArt().apply { maxLines = 5; setPadding(dp(12), 0, 0, 0) }
         return LinearLayout(this).apply {

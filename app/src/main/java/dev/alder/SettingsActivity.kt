@@ -146,8 +146,7 @@ class SettingsActivity : Screen() {
     }
 
     private fun heading(title: String) {
-        list.addView(text(title.uppercase(), SMALL, bold = true, color = TEXT_HI).apply {
-            letterSpacing = 0.12f
+        list.addView(text(title, BODY, bold = true).apply {
             setPadding(0, dp(8), 0, dp(4))
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))

@@ -137,7 +137,7 @@ class PlayerActivity : Screen() {
                 CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, Color.BLACK, null))
             setBackgroundColor(Color.BLACK)
         }
-        status = text("", TITLE).apply { gravity = Gravity.CENTER }
+        status = text("", BODY).apply { gravity = Gravity.CENTER }
         upNext = text("", BODY, bold = true, color = 0xFF111111.toInt()).apply {
             setPadding(dp(20), dp(12), dp(20), dp(12))
             background = rounded(0xF2FFFFFF.toInt(), 8)
@@ -447,9 +447,9 @@ class PlayerActivity : Screen() {
         row.addView(still, LinearLayout.LayoutParams(dp(185), dp(102)))
         Images.load(next.thumbnail, still, dp(370), orElse = meta?.background ?: intent.getStringExtra("background"))
         val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        upNextTimer = text("", SMALL, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f }
+        upNextTimer = text("", SMALL, bold = true, color = TEXT_HI).onArt()
         detail.addView(upNextTimer)
-        detail.addView(text("S${next.season} E${next.episode}  ·  ${next.title.uppercase()}", TITLE, bold = true).onArt().apply {
+        detail.addView(text("S${next.season} E${next.episode}  ·  ${next.title}", BODY, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         upNextMessage = text("", SMALL, color = TEXT_HI).onArt()
@@ -650,7 +650,7 @@ class PlayerActivity : Screen() {
 
     private fun buildControls(): FrameLayout {
         val name = intent.getStringExtra("name") ?: ""
-        val title = text(name.uppercase(Locale.getDefault()), TITLE, bold = true).onArt().apply { letterSpacing = 0.25f }
+        val title = text(name, BODY, bold = true).onArt()
         subtitle = text(intent.getStringExtra("label")?.substringAfter("  ·  ", "") ?: "", BODY, color = MUTED).onArt()
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -799,7 +799,7 @@ class PlayerActivity : Screen() {
         list.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(text("Playback options", TITLE).apply { letterSpacing = 0.06f }, wrap().apply { marginStart = dp(22) })
+            addView(text("Playback options", BODY, bold = true), wrap().apply { marginStart = dp(22) })
         }, wrap().apply { bottomMargin = dp(36) })
 
         val audio = audioGroups.filter { it.isTrackSupported(0) }
@@ -863,13 +863,13 @@ class PlayerActivity : Screen() {
 
     /** A heading and one row per choice; returns the chosen row, to focus. [pick] runs with the index chosen. */
     private fun section(list: LinearLayout, heading: String, labels: List<String>, chosen: Int, pick: (Int) -> Unit): View {
-        list.addView(text(heading, SMALL, bold = true, color = MUTED).apply { letterSpacing = 0.2f },
+        list.addView(text(heading, SMALL, bold = true, color = MUTED),
             wrap().apply { setMargins(dp(14), dp(32), 0, dp(8)) })
         val checks = mutableListOf<ImageView>()
         val names = mutableListOf<TextView>()
         val rows = labels.mapIndexed { i, label ->
-            val arrow = text("", TITLE)
-            val name = text(label, BODY + 2, color = if (i == chosen) Color.WHITE else TEXT_MID).apply {
+            val arrow = text("", BODY)
+            val name = text(label, BODY, color = if (i == chosen) Color.WHITE else TEXT_MID).apply {
                 setPadding(dp(14), dp(6), dp(14), dp(6)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             }
             names += name

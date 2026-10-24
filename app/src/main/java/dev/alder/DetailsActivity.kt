@@ -225,7 +225,7 @@ class DetailsActivity : Screen() {
         guide.addView(text(meta?.name ?: name, DISPLAY, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL
         }, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
-            leftMargin = dp(50); topMargin = dp(50)
+            leftMargin = dp(PAD); topMargin = dp(50)
         })
         val (pane, art) = glassPane(x, y, width, height)
         guideGlassArt = art
@@ -263,7 +263,7 @@ class DetailsActivity : Screen() {
             background = rounded(SURFACE, 8)
         }
         pane.addView(previewImage, FrameLayout.LayoutParams(previewWidth, dp(180)).apply { leftMargin = previewX; topMargin = dp(28) })
-        previewTitle = text("", TITLE, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        previewTitle = text("", BODY, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         pane.addView(previewTitle, FrameLayout.LayoutParams(previewWidth, -2).apply { leftMargin = previewX; topMargin = dp(220) })
         previewAbout = text("", BODY, color = TEXT_HI).apply {
             maxLines = if (largeText) 2 else 3
@@ -406,31 +406,23 @@ class DetailsActivity : Screen() {
         infoOverlay.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(text("Full synopsis", TITLE).onArt(), wrap().apply { marginStart = dp(16) })
+            addView(text("Full synopsis", BODY, bold = true).onArt(), wrap().apply { marginStart = dp(16) })
         }, FrameLayout.LayoutParams(-2, -2).apply {
-            leftMargin = dp(50); topMargin = dp(40)
+            leftMargin = dp(PAD); topMargin = dp(40)
         })
         val content = FrameLayout(this)
-        val title = text(m.name.uppercase(), DISPLAY, bold = true).onArt().apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-            setAutoSizeTextTypeUniformWithConfiguration(22, 38, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
-        }
-        content.addView(title, FrameLayout.LayoutParams(dp(420), dp(62)))
-        m.logo?.let { url ->
-            val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; visibility = View.INVISIBLE }
-            content.addView(logo, FrameLayout.LayoutParams(dp(420), dp(62)))
-            Images.load(url, logo, dp(840)) { title.visibility = View.INVISIBLE; logo.visibility = View.VISIBLE }
-        }
+        content.addView(text(m.name, DISPLAY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END },
+            FrameLayout.LayoutParams(dp(420), dp(62)))
         val facts = listOfNotNull(m.year?.trimEnd('–', '-', ' '), m.runtime,
-            m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString("   ·   ")
+            m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString(DOT)
         content.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, FrameLayout.LayoutParams(dp(430), -2).apply { topMargin = dp(68) })
-        content.addView(text("THE STORY", SMALL, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f },
+        content.addView(text("The story", SMALL, bold = true, color = TEXT_HI).onArt(),
             FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(113) })
         content.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(text(m.description ?: "No description available.", BODY + 2, color = TEXT_HI).onArt().apply {
+            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).onArt().apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
             })
         }, FrameLayout.LayoutParams(dp(420), dp(90)).apply { topMargin = dp(138) })
@@ -438,31 +430,19 @@ class DetailsActivity : Screen() {
         val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
         val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
         if (resumeAt > 0 && duration > resumeAt) content.addView(
-            text("${resumeAt / 60_000} min watched   ·   ${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
+            text("${resumeAt / 60_000} min watched$DOT${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
             FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(240) })
-        fun action(label: String, icon: Int, click: () -> Unit) = text(label, BODY).onArt().apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), 0, dp(16), 0)
-            setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
-            compoundDrawablePadding = dp(12)
-            isFocusable = true
-            isFocusableInTouchMode = true
-            setOnFocusChangeListener { v, focused ->
-                v.background = if (focused) glass(8, focused = true) else null
-            }
-            setOnClickListener { click() }
-        }
         val actions = LinearLayout(this)
-        val close = action("Back to title", R.drawable.ic_back) { hideInfo() }
-        actions.addView(close, LinearLayout.LayoutParams(dp(158), dp(44)))
+        val close = pill("Back to title", R.drawable.ic_back).apply { setOnClickListener { hideInfo() } }
+        actions.addView(close)
         if (resumeAt > 0) {
-            actions.addView(action("Start over", R.drawable.ic_play) {
-                openSources(target?.first ?: metaId, startOver = true)
-            }, LinearLayout.LayoutParams(dp(150), dp(44)).apply { leftMargin = dp(10) })
+            actions.addView(pill("Start over", R.drawable.ic_play).apply {
+                setOnClickListener { openSources(target?.first ?: metaId, startOver = true) }
+            }, wrap().apply { marginStart = dp(12) })
         }
         content.addView(actions, FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(282) })
         infoOverlay.addView(content, FrameLayout.LayoutParams(dp(440), dp(370)).apply {
-            leftMargin = dp(55); topMargin = dp(117)
+            leftMargin = dp(PAD); topMargin = dp(117)
         })
         root.addView(infoOverlay, FrameLayout.LayoutParams(-1, -1))
         close.requestFocus()

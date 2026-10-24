@@ -84,7 +84,7 @@ class ProfilesActivity : Screen() {
         }
         val content = android.widget.FrameLayout(this).apply {
             addView(text("Who’s watching?", DISPLAY, bold = true), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-                leftMargin = dp(48); topMargin = dp(70)
+                leftMargin = dp(PAD); topMargin = dp(70)
             })
             addView(tiles, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             addView(text("Manage profiles", BODY, color = TEXT_HI).apply {
@@ -96,7 +96,7 @@ class ProfilesActivity : Screen() {
                         .setItems(profiles.map { it.name }.toTypedArray()) { _, i -> showMenu(profiles[i]) }.show()
                 }
             }, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
-                leftMargin = dp(48); bottomMargin = dp(60)
+                leftMargin = dp(PAD - 16); bottomMargin = dp(60)
             })
         }
         setWindowed(content, onboardingBackdrop())
@@ -277,7 +277,7 @@ class ProfilesActivity : Screen() {
         val first = Profiles.all(this).isEmpty()
         val name = EditText(this).apply {
             hint = "Profile name"
-            textSize = TITLE
+            textSize = BODY
             setTextColor(Color.WHITE)
             setHintTextColor(0xFFB7C0CA.toInt())
             setPadding(dp(24), dp(18), dp(24), dp(18))
@@ -293,8 +293,8 @@ class ProfilesActivity : Screen() {
         name.setOnEditorActionListener { _, _, _ -> go(); true }
         next.setOnClickListener { go() }
         val copy = column(Gravity.START,
-            text(if (first) "Welcome" else "New profile", TITLE_1, bold = true),
-            text("First, name your profile.", HEADLINE).marginTop(8),
+            text(if (first) "Welcome" else "New profile", DISPLAY, bold = true),
+            text("First, name your profile.", BODY).marginTop(8),
             text("Your own history and recommendations.", BODY, color = TEXT_MID).marginTop(10),
             text("PROFILE NAME", SMALL, bold = true, color = TEXT_MID).marginTop(40),
             name,
@@ -303,7 +303,7 @@ class ProfilesActivity : Screen() {
         val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase() ?: "E", 96)
         val preview = column(Gravity.CENTER,
             avatar,
-            text("${name.text.ifEmpty { "Your name" }}", TITLE, bold = true).marginTop(18),
+            text("${name.text.ifEmpty { "Your name" }}", BODY, bold = true).marginTop(18),
         ).apply { gravity = Gravity.CENTER }
         name.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -331,21 +331,21 @@ class ProfilesActivity : Screen() {
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(avatar)
-                addView(text(name, TITLE).marginTop(0).apply { setPadding(dp(14), 0, 0, 0) })
+                addView(text(name, BODY, bold = true).marginTop(0).apply { setPadding(dp(14), 0, 0, 0) })
             }.marginTop(16),
             back.marginTop(28),
         ).apply { gravity = Gravity.CENTER }
         val steps = column(Gravity.START,
-            text("Connect Stremio", TITLE_1, bold = true),
-            text("Scan with $name’s phone to sign in.", HEADLINE).marginTop(8),
-            text("Or visit link.stremio.com and enter this code:", BODY + 2, color = TEXT_MID).marginTop(18),
+            text("Connect Stremio", DISPLAY, bold = true),
+            text("Scan with $name’s phone to sign in.", BODY).marginTop(8),
+            text("Or visit link.stremio.com and enter this code:", BODY, color = TEXT_MID).marginTop(18),
             code.marginTop(4),
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(View(this@ProfilesActivity).apply { background = rounded(0xFF0878FF.toInt(), 50) }, LinearLayout.LayoutParams(dp(12), dp(12)))
                 addView(status.apply { setPadding(dp(16), 0, 0, 0) })
             }.marginTop(4),
-            text("New to Stremio? Create an account at stremio.com", BODY + 1, color = TEXT_MID).marginTop(24),
+            text("New to Stremio? Create an account at stremio.com", BODY, color = TEXT_MID).marginTop(24),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
         val content = onboardingFrame("2 of 2", left, steps, dp(36), 0f, 1f, dp(340))
         setWindowed(content, onboardingBackdrop())
@@ -376,7 +376,7 @@ class ProfilesActivity : Screen() {
             val body = LinearLayout(this@ProfilesActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(50), dp(86), dp(50), dp(44))
+                setPadding(dp(PAD), dp(86), dp(PAD), dp(44))
                 addView(left, if (leftWidth > 0)
                     LinearLayout.LayoutParams(leftWidth, -1).apply { marginEnd = gap }
                 else LinearLayout.LayoutParams(0, -1, leftWeight).apply { marginEnd = gap })
@@ -385,7 +385,7 @@ class ProfilesActivity : Screen() {
             addView(body, android.widget.FrameLayout.LayoutParams(-1, -1))
             addView(LinearLayout(this@ProfilesActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(40), dp(36), dp(40), 0)
+                setPadding(dp(PAD), dp(36), dp(PAD), 0)
                 addView(text("ALDER", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
                 addView(text(step, SMALL, color = TEXT_MID))
             }, android.widget.FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP))
@@ -394,7 +394,7 @@ class ProfilesActivity : Screen() {
     private fun onboardingButton(label: String) = Button(this).apply {
         text = label
         isAllCaps = false
-        textSize = TITLE
+        textSize = BODY
         setTextColor(Color.WHITE)
         isFocusable = true
         setPadding(dp(26), dp(14), dp(26), dp(14))

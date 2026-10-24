@@ -208,19 +208,17 @@ abstract class Screen : Activity() {
         const val BUTTON_H = 32 // dp: the hero's pills
         const val DOT = "  ·  "
 
-        // Type scale (sp): Apple TV's (tvOS built-in text styles). tvOS sizes are points on a 1920 × 1080 screen, i.e.
-        // pixels; a 1080p Android TV has 2 px per dp, so each is half the point size. Nothing goes below Caption 2
-        // (23 pt, 11.5). Sizes are sp, so the TV's font size setting scales them; layouts must measure text, not assume
-        // its height. One-off glyphs (the sign-in code, avatar letters) keep their own sizes.
-        const val DISPLAY = 28.5f // Title 2 (57 pt): a screen's title, the screensaver's title
-        const val HEADLINE = 24f // Title 3 (48 pt): the featured title on Home and Search
-        const val TITLE = 19f // Headline (38 pt): row and section headings, panel titles
-        const val BODY = 14.5f // Body (29 pt): descriptions, buttons, list items
-        const val SMALL = 12.5f // Caption 1 (25 pt): facts, tags, secondary lines, labels
-        const val TITLE_1 = 38f // Title 1 (76 pt): onboarding's big welcome
+        // Three sizes, on every screen (sp, from Apple TV's text styles: tvOS points on a 1920 × 1080 screen, halved for
+        // a 1080p Android TV's 2 px per dp). One thing per screen is DISPLAY, about twice BODY, so the eye knows where
+        // to land; headings are BODY in bold, not a size of their own. Sizes are sp, so the TV's font size setting
+        // scales them; layouts must measure text, not assume its height. One-off glyphs (the sign-in code, PIN digits,
+        // avatar letters) keep their own sizes.
+        const val DISPLAY = 28.5f // Title 2 (57 pt): the screen's one title (a title's name, "Settings", "Who's watching?")
+        const val BODY = 14.5f // Body (29 pt): descriptions, headings (bold), navigation, list items
+        const val SMALL = 12.5f // Caption 1 (25 pt): facts, buttons, secondary lines, labels
 
-        // Each style's leading (sp), tvOS's line height halved like its size.
-        val LEADING = mapOf(TITLE_1 to 48f, DISPLAY to 33f, HEADLINE to 28f, TITLE to 23f, BODY to 18f, SMALL to 16f)
+        // Each size's leading (sp), tvOS's line height halved like its size.
+        val LEADING = mapOf(DISPLAY to 33f, BODY to 18f, SMALL to 16f)
 
         // Text on the glass, brightest first.
         const val TEXT_HI = 0xFFE2E4E7.toInt() // a title's facts line
