@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.app.Activity
 import android.content.Context

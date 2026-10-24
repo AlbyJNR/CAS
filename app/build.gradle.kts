@@ -4,11 +4,11 @@ plugins {
 
 // Framework Views only, like Plume. The only libraries are for playback: Media3 (ExoPlayer) and an ffmpeg audio decoder.
 android {
-    namespace = "dev.streamtv"
+    namespace = "dev.alder"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.streamtv"
+        applicationId = "dev.alder"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

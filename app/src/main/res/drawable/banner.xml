@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="320dp"
-    android:height="180dp"
-    android:viewportWidth="32"
-    android:viewportHeight="18">
-    <path android:fillColor="#16181C" android:pathData="M0,0h32v18h-32z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M13,4.5v9l7.5,-4.5z" />
-</vector>
+    android:height="180dp">
+    <item><color android:color="#000000" /></item>
+    <item android:width="140dp" android:height="140dp" android:gravity="center" android:drawable="@drawable/logo" />
+</layer-list>

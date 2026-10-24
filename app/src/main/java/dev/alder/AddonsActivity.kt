@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.app.AlertDialog
 import android.os.Bundle

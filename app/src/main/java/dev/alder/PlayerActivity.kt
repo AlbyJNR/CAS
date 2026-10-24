@@ -1,4 +1,4 @@
-package dev.streamtv
+package dev.alder
 
 import android.content.Context
 import android.content.Intent
@@ -100,7 +100,7 @@ class PlayerActivity : Screen() {
     private val countdownTask = Runnable { if (--countdown == 0) playNext() else countDown() }
     private val startTimeout = Runnable {
         if (started) return@Runnable
-        android.util.Log.w("StreamTV", "source ${at + 1}/${sources.size} timed out, state ${player.playbackState}")
+        android.util.Log.w("Alder", "source ${at + 1}/${sources.size} timed out, state ${player.playbackState}")
         next()
     }
 
@@ -201,7 +201,7 @@ class PlayerActivity : Screen() {
                     main.postDelayed({ if (!isFinishing) player.prepare() }, RETRY_WAIT)
                     return
                 }
-                android.util.Log.w("StreamTV", "source ${at + 1}/${sources.size} failed: ${e.errorCodeName}", e)
+                android.util.Log.w("Alder", "source ${at + 1}/${sources.size} failed: ${e.errorCodeName}", e)
                 next(e.errorCodeName)
             }
 
@@ -267,11 +267,11 @@ class PlayerActivity : Screen() {
             // ponytail: the TV's language and English, three files each in the addon's order; a language picker if asked
             val all = Stremio.addons(key).filter { it.serves("subtitles", type, videoId) }
                 .flatMap { a -> runCatching { a.subtitles(type, videoId) }
-                    .onFailure { android.util.Log.w("StreamTV", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
+                    .onFailure { android.util.Log.w("Alder", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
             all.filter { it.local }.take(3) + all.filter { !it.local && Locale(it.lang).language == "en" }.take(3)
         }) { r ->
             addonSubs = r.getOrDefault(emptyList())
-            android.util.Log.i("StreamTV", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
+            android.util.Log.i("Alder", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
         }
 
         background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
