@@ -18,7 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 
-// A living poster: sharp art, one glass watch window, and an episode guide that rises over the same scene.
+// A living poster: sharp art with the title low on the left as Home shows it, and an episode guide that rises over the same scene.
 class DetailsActivity : Screen() {
     private val type by lazy { intent.getStringExtra("type") ?: "movie" }
     private val metaId by lazy { intent.getStringExtra("id")!! }
@@ -32,7 +32,6 @@ class DetailsActivity : Screen() {
     private lateinit var root: FrameLayout
     private lateinit var hero: FrameLayout
     private lateinit var heroArt: ImageView
-    private lateinit var watchGlassArt: ImageView
     private var frostSource: Bitmap? = null
     private var frost: Bitmap? = null
     private lateinit var guideGlassArt: ImageView
@@ -103,102 +102,60 @@ class DetailsActivity : Screen() {
 
     private fun showHero(m: Meta?) {
         hero.removeAllViews()
-        val titleStack = column(Gravity.START)
-        val titleBox = FrameLayout(this)
-        // A long name without a logo shrinks to fit the logo's box instead of spilling under the facts line.
-        val title = text(m?.name ?: name, 38f, bold = true).onArt().apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setAutoSizeTextTypeUniformWithConfiguration(20, 38, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
-        }
-        titleBox.addView(title, FrameLayout.LayoutParams(-1, -1))
-        m?.logo?.let { url ->
-            val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; visibility = View.INVISIBLE }
-            titleBox.addView(logo, FrameLayout.LayoutParams(dp(350), dp(70)))
-            Images.load(url, logo, dp(700)) { title.visibility = View.INVISIBLE; logo.visibility = View.VISIBLE }
-        }
-        titleStack.addView(titleBox, LinearLayout.LayoutParams(dp(360), dp(70)))
+        // Home's hierarchy: the name is the one big thing, then one small facts line, the story across half the screen,
+        // where you are, and small pills. Low on the left, where Home's title sits above its row.
+        val stack = column(Gravity.START, text(m?.name ?: name, DISPLAY, bold = true).onArt().apply {
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+        })
         if (m == null) {
             val error = failed("Couldn't load this title's details.") { recreate() }
-            titleStack.addView(error.marginTop(16))
+            stack.addView(error.marginTop(16))
             error.post { error.getChildAt(1).requestFocus() }
         } else {
             val facts = listOfNotNull(
+                if (type == "series") "Series" else "Movie",
                 m.year?.trimEnd('–', '-', ' '),
-                m.genres.take(2).joinToString(" / ").ifEmpty { null },
+                m.genres.firstOrNull(),
+                m.runtime?.takeIf { type != "series" },
                 m.rating?.let { "IMDb $it" },
-            ).joinToString("  ·  ")
-            titleStack.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply {
-                maxWidth = dp(370); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-            }.marginTop(6))
-            m.description?.let { description ->
-                titleStack.addView(text(description, BODY, color = TEXT_HI).onArt().apply {
-                    maxWidth = dp(370); maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-                }.marginTop(22))
-            }
-            buildWatchWindow(m)
+            ).joinToString(DOT)
+            stack.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6))
+            m.description?.let { stack.addView(text(it, BODY, color = TEXT_HI).onArt().apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }.marginTop(8)) }
+            addWatch(m, stack)
         }
-        hero.addView(titleStack, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-            leftMargin = dp(50); topMargin = dp(74)
+        hero.addView(stack, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = dp(PAD); bottomMargin = dp(96)
         })
+        if (type == "series" && m?.videos?.isNotEmpty() == true) {
+            hero.addView(text("↓  Episodes", SMALL, color = TEXT_HI).onArt(), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(PAD); bottomMargin = dp(44)
+            })
+        }
     }
 
-    private fun buildWatchWindow(m: Meta) {
-        val x = dp(46)
-        val y = resources.displayMetrics.heightPixels * 47 / 100
-        val width = dp(450)
-        val height = dp(200)
-        val (glass, art) = glassPane(x, y, width, height)
-        watchGlassArt = art
-        syncGlassArt()
+    /** Where you are ("S5 E2 · First Days · 18 min left") with its bar, then Resume, Synopsis and My List. */
+    private fun addWatch(m: Meta, stack: LinearLayout) {
         val target = playTarget(m)
         val episode = target?.second
         val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
         val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
         val remaining = if (resumeAt > 0 && duration > resumeAt) "${(duration - resumeAt) / 60_000} min left" else null
+        val where = listOfNotNull(episode?.let { "S${it.season} E${it.episode}" }, episode?.title?.takeIf { it.isNotBlank() }, remaining).joinToString(DOT)
+        if (where.isNotEmpty()) stack.addView(text(where, SMALL, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(16))
+        if (remaining != null) stack.addView(progressBar(resumeAt.toFloat() / duration), LinearLayout.LayoutParams(dp(240), dp(3)).apply { topMargin = dp(8) })
 
-        glass.addView(text(if (resumeAt > 0) "CONTINUE WATCHING" else "READY TO WATCH", 11f, color = TEXT_HI).apply {
-            letterSpacing = 0.22f
-        }, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(16); topMargin = dp(12) })
-
-        val still = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(SURFACE)
-            clipToOutline = true
-            background = rounded(SURFACE, 8)
-        }
-        glass.addView(still, FrameLayout.LayoutParams(dp(160), dp(85)).apply { leftMargin = dp(16); topMargin = dp(38) })
-        Images.load(episode?.thumbnail ?: m.background, still, dp(400), orElse = m.background ?: m.poster)
-
-        val watchLine = column(Gravity.START)
-        watchLine.addView(text(episode?.let { "%02d / %s".format(it.episode, it.title.uppercase()) } ?: m.name.uppercase(), if (episode == null) 20f else TITLE, bold = true).apply {
-            maxWidth = dp(235); maxLines = if (episode == null) 2 else 1; ellipsize = TextUtils.TruncateAt.END
-        })
-        val context = listOfNotNull(episode?.let { "S${it.season} E${it.episode}" }, remaining ?: m.runtime).joinToString("  ·  ")
-        watchLine.addView(text(context, SMALL, color = TEXT_HI).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(7))
-        if (resumeAt > 0 && duration > resumeAt) {
-            watchLine.addView(progressBar(resumeAt.toFloat() / duration), LinearLayout.LayoutParams(dp(190), dp(4)).apply { topMargin = dp(10) })
-        }
-        glass.addView(watchLine, FrameLayout.LayoutParams(dp(245), -2).apply { leftMargin = dp(190); topMargin = dp(47) })
-
-        playButton = glassAction(if (resumeAt > 0) "Resume" else "Play", R.drawable.ic_play).apply {
+        playButton = pill(if (resumeAt > 0) "Resume" else "Play", R.drawable.ic_play).apply {
             setOnClickListener { openSources(target?.first ?: metaId, startOver = false) }
             // Held OK: every source, to choose one by hand.
             setOnLongClickListener { openSources(target?.first ?: metaId, startOver = false, pick = true); true }
         }
-        glass.addView(playButton, FrameLayout.LayoutParams(dp(156), dp(42)).apply { leftMargin = dp(16); topMargin = dp(142) })
-        infoButton = textAction("More info").apply { setOnClickListener { showInfo() } }
-        glass.addView(infoButton,
-            FrameLayout.LayoutParams(dp(92), dp(42)).apply { leftMargin = dp(188); topMargin = dp(142) })
-        listButton = textAction(if (Library.inList(item)) "✓  My List" else "+  My List").apply {
-            setOnClickListener { toggleList() }
-        }
-        glass.addView(listButton, FrameLayout.LayoutParams(dp(115), dp(42)).apply { leftMargin = dp(296); topMargin = dp(142) })
-        hero.addView(glass, FrameLayout.LayoutParams(width, height).apply { leftMargin = x; topMargin = y })
-        if (type == "series" && m.videos.isNotEmpty()) {
-            hero.addView(text("↓  Episodes", SMALL, color = TEXT_HI).onArt(), FrameLayout.LayoutParams(-2, -2).apply {
-                leftMargin = dp(54); topMargin = y + height + dp(18)
-            })
-        }
+        infoButton = pill("Synopsis").apply { setOnClickListener { showInfo() } }
+        listButton = pill(if (Library.inList(item)) "✓  My List" else "+  My List").apply { setOnClickListener { toggleList() } }
+        stack.addView(LinearLayout(this).apply {
+            addView(playButton, wrap().apply { marginEnd = dp(12) })
+            addView(infoButton, wrap().apply { marginEnd = dp(12) })
+            addView(listButton)
+        }, wrap().apply { topMargin = dp(if (where.isEmpty()) 18 else 16) })
         playButton.post { if (!guideOpen && !infoOpen) playButton.requestFocus() }
     }
 
@@ -229,7 +186,6 @@ class DetailsActivity : Screen() {
                 override fun getOutline(view: View, outline: android.graphics.Outline) =
                     outline.setRoundRect(0, 0, view.width, view.height, dp(14).toFloat())
             }
-            elevation = dp(8).toFloat()
         }
         val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         pane.addView(art, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).apply {
@@ -239,7 +195,7 @@ class DetailsActivity : Screen() {
         return pane to art
     }
 
-    /** Both panes show the hero art frosted (see [Images.frost]), made once per picture. */
+    /** The episode guide's pane shows the hero art frosted (see [Images.frost]), made once per picture. */
     private fun syncGlassArt() {
         val source = (heroArt.drawable as? BitmapDrawable)?.bitmap ?: return
         if (source !== frostSource) {
@@ -248,7 +204,6 @@ class DetailsActivity : Screen() {
             return
         }
         val f = frost ?: return
-        if (::watchGlassArt.isInitialized) watchGlassArt.setImageBitmap(f)
         if (::guideGlassArt.isInitialized) guideGlassArt.setImageBitmap(f)
     }
 
@@ -260,38 +215,44 @@ class DetailsActivity : Screen() {
         val y = dp(160)
         val width = screen.widthPixels - dp(56)
         val height = screen.heightPixels - y - dp(20)
+        val largeText = resources.configuration.fontScale > 1.15f
         guide = FrameLayout(this).apply { visibility = View.GONE }
         guide.addView(View(this).apply { setBackgroundColor(0x33000000) }, FrameLayout.LayoutParams(-1, -1))
-        val compactTitle = FrameLayout(this)
-        val fallback = text(meta?.name ?: name, 32f, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        compactTitle.addView(fallback, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.START))
-        meta?.logo?.let { url ->
-            val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; visibility = View.INVISIBLE }
-            compactTitle.addView(logo, FrameLayout.LayoutParams(dp(320), dp(60)))
-            Images.load(url, logo, dp(640)) { fallback.visibility = View.INVISIBLE; logo.visibility = View.VISIBLE }
-        }
-        guide.addView(compactTitle, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
-            leftMargin = dp(50); topMargin = dp(50)
+        guide.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(0xC000080A.toInt(), 0x9900080A.toInt(), 0x0000080A))
+        }, FrameLayout.LayoutParams(dp(450), dp(130)))
+        guide.addView(text(meta?.name ?: name, DISPLAY, bold = true).onArt().apply {
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL
+        }, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
+            leftMargin = dp(PAD); topMargin = dp(50)
         })
         val (pane, art) = glassPane(x, y, width, height)
         guideGlassArt = art
         syncGlassArt()
-        pane.addView(text("EPISODES", TITLE, bold = true).apply { letterSpacing = 0.24f },
-            FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(26); topMargin = dp(17) })
-        seasonButton = text("", SMALL, color = TEXT_HI).apply {
+        pane.addView(text("Episodes", BODY, bold = true),
+            FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(26); topMargin = dp(if (largeText) 12 else 17) })
+        seasonButton = text("", BODY, color = TEXT_HI).apply {
             id = View.generateViewId()
-            setPadding(dp(6), dp(3), dp(6), dp(3))
+            setPadding(dp(10), dp(3), dp(10), dp(3))
             isFocusable = true
-            setOnFocusChangeListener { _, has -> background = if (has) glass(6, focused = true) else null }
+            background = tile(8)
+            setOnFocusChangeListener { _, has ->
+                background = if (has) glass(8, focused = true) else tile(8)
+                setTextColor(if (has) Color.WHITE else TEXT_HI)
+                if (has) previewHint.text = "← / →  Change season"
+            }
             setOnClickListener { cycleSeason(1) }
         }
-        pane.addView(seasonButton, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(23); topMargin = dp(44) })
+        pane.addView(seasonButton, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(23); topMargin = dp(if (largeText) 52 else 44) })
 
         guideRows = column(Gravity.START)
         pane.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             addView(guideRows)
-        }, FrameLayout.LayoutParams(dp(365), height - dp(118)).apply { leftMargin = dp(26); topMargin = dp(78) })
+        }, FrameLayout.LayoutParams(dp(365), height - dp(if (largeText) 168 else 118)).apply {
+            leftMargin = dp(26); topMargin = dp(if (largeText) 96 else 78)
+        })
 
         val previewX = dp(425)
         val previewWidth = width - previewX - dp(28)
@@ -301,16 +262,25 @@ class DetailsActivity : Screen() {
             clipToOutline = true
             background = rounded(SURFACE, 8)
         }
-        pane.addView(previewImage, FrameLayout.LayoutParams(previewWidth, dp(195)).apply { leftMargin = previewX; topMargin = dp(28) })
-        previewTitle = text("", TITLE, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        pane.addView(previewTitle, FrameLayout.LayoutParams(previewWidth, -2).apply { leftMargin = previewX; topMargin = dp(232) })
-        previewAbout = text("", SMALL, color = TEXT_HI).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-        pane.addView(previewAbout, FrameLayout.LayoutParams(previewWidth, -2).apply { leftMargin = previewX; topMargin = dp(261) })
+        pane.addView(previewImage, FrameLayout.LayoutParams(previewWidth, dp(180)).apply { leftMargin = previewX; topMargin = dp(28) })
+        previewTitle = text("", BODY, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        pane.addView(previewTitle, FrameLayout.LayoutParams(previewWidth, -2).apply { leftMargin = previewX; topMargin = dp(220) })
+        previewAbout = text("", BODY, color = TEXT_HI).apply {
+            maxLines = if (largeText) 2 else 3
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        pane.addView(previewAbout, FrameLayout.LayoutParams(previewWidth, -2).apply {
+            leftMargin = previewX; topMargin = dp(if (largeText) 258 else 250)
+        })
         previewProgress = FrameLayout(this)
-        pane.addView(previewProgress, FrameLayout.LayoutParams(previewWidth, dp(4)).apply { leftMargin = previewX; topMargin = dp(311) })
-        previewHint = text("", SMALL, color = TEXT_HI)
-        pane.addView(previewHint, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = previewX; topMargin = dp(324) })
-        pane.addView(text("←  Back to title", SMALL, color = TEXT_HI),
+        pane.addView(previewProgress, FrameLayout.LayoutParams(previewWidth - dp(16), dp(4)).apply {
+            leftMargin = previewX + dp(8); topMargin = dp(196)
+        })
+        previewHint = text("", BODY, color = TEXT_MID)
+        pane.addView(previewHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = previewX; bottomMargin = dp(20)
+        })
+        pane.addView(text("BACK  Return to title", BODY, color = TEXT_MID),
             FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { leftMargin = dp(26); bottomMargin = dp(20) })
         guide.addView(pane, FrameLayout.LayoutParams(width, height).apply { leftMargin = x; topMargin = y })
         root.addView(guide, FrameLayout.LayoutParams(-1, -1))
@@ -321,7 +291,11 @@ class DetailsActivity : Screen() {
     private fun fillGuide() {
         val videos = meta?.videos.orEmpty()
         val seasonVideos = videos.filter { it.season == selectedSeason }
-        seasonButton.text = if (selectedSeason == 0) "SPECIALS  ⌄" else "SEASON $selectedSeason  ⌄"
+        val canChangeSeason = videos.map { it.season }.distinct().size > 1
+        seasonButton.text = (if (selectedSeason == 0) "Specials" else "Season $selectedSeason") +
+            if (canChangeSeason) "  ▾" else ""
+        seasonButton.isFocusable = canChangeSeason
+        seasonButton.background = if (canChangeSeason) tile(8) else null
         guideRows.removeAllViews()
         val watched = Library.watched(item, videos)
         val currentId = playTarget(meta)?.first
@@ -329,12 +303,8 @@ class DetailsActivity : Screen() {
             val row = FrameLayout(this).apply { tag = v.id; isFocusable = true }
             val mark = View(this).apply { background = rounded(0xFFF7D98F.toInt(), 2); visibility = View.INVISIBLE }
             row.addView(mark, FrameLayout.LayoutParams(dp(3), dp(32), Gravity.CENTER_VERTICAL or Gravity.START))
-            val number = text("%02d".format(v.episode), TITLE, color = TEXT_MID)
+            val number = text("%02d".format(v.episode), BODY, color = TEXT_MID)
             row.addView(number, FrameLayout.LayoutParams(dp(45), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(12) })
-            val label = text(v.title.ifEmpty { "Episode ${v.episode}" }, BODY).apply {
-                maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-            }
-            row.addView(label, FrameLayout.LayoutParams(dp(180), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(63) })
             val resumeAt = item?.let { Library.resumeAt(it, v.id) } ?: 0L
             val duration = item?.optJSONObject("state")?.takeIf { it.text("video_id") == v.id }?.optLong("duration") ?: 0L
             val status = when {
@@ -342,13 +312,19 @@ class DetailsActivity : Screen() {
                 resumeAt > 0 && duration > resumeAt -> "${(duration - resumeAt) / 60_000} min left"
                 else -> ""
             }
-            row.addView(text(status, SMALL, color = TEXT_MID).apply { gravity = Gravity.END },
+            val label = text(v.title.ifEmpty { "Episode ${v.episode}" }, BODY).apply {
+                maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+            }
+            row.addView(label, FrameLayout.LayoutParams(dp(if (status.isEmpty()) 290 else 180), -2, Gravity.CENTER_VERTICAL).apply {
+                leftMargin = dp(63)
+            })
+            if (status.isNotEmpty()) row.addView(text(status, SMALL, color = TEXT_MID).apply { gravity = Gravity.END },
                 FrameLayout.LayoutParams(dp(105), -2, Gravity.CENTER_VERTICAL or Gravity.END).apply { rightMargin = dp(8) })
             row.addView(View(this).apply { setBackgroundColor(0x40FFFFFF) },
                 FrameLayout.LayoutParams(-1, dp(1), Gravity.BOTTOM))
             row.setOnFocusChangeListener { _, focused ->
                 mark.visibility = if (focused) View.VISIBLE else View.INVISIBLE
-                row.setBackgroundColor(if (focused) 0x30374437 else Color.TRANSPARENT)
+                row.setBackgroundColor(if (focused) 0x593B4B49 else Color.TRANSPARENT)
                 number.setTextColor(if (focused) Color.WHITE else TEXT_MID)
                 label.setTextColor(if (focused) Color.WHITE else TEXT_HI)
                 if (focused) updatePreview(v)
@@ -368,12 +344,13 @@ class DetailsActivity : Screen() {
         }
         seasonVideos.firstOrNull { it.id == currentId }?.let(::updatePreview)
             ?: seasonVideos.firstOrNull()?.let(::updatePreview)
+        if (seasonButton.isFocused) previewHint.text = "← / →  Change season"
         if (guideOpen) episodeRows.firstOrNull()?.requestFocus()
     }
 
     private fun updatePreview(v: Video) {
         Images.load(v.thumbnail, previewImage, dp(800), orElse = meta?.background)
-        previewTitle.text = "%02d / %s".format(v.episode, v.title.uppercase())
+        previewTitle.text = "S${v.season} E${v.episode} · ${v.title.ifBlank { "Episode ${v.episode}" }}"
         previewAbout.text = v.overview ?: "Episode ${v.episode}"
         previewProgress.removeAllViews()
         val state = item?.optJSONObject("state")?.takeIf { it.text("video_id") == v.id }
@@ -382,7 +359,7 @@ class DetailsActivity : Screen() {
         if (resumeAt > 0 && duration > resumeAt) {
             previewProgress.addView(progressBar(resumeAt.toFloat() / duration), FrameLayout.LayoutParams(-1, -1))
         }
-        previewHint.text = if (resumeAt > 0) "Select to resume" else "Select to play"
+        previewHint.text = if (resumeAt > 0) "OK  Resume episode" else "OK  Play episode"
     }
 
     private fun cycleSeason(direction: Int) {
@@ -429,31 +406,23 @@ class DetailsActivity : Screen() {
         infoOverlay.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(text("More info", TITLE).onArt(), wrap().apply { marginStart = dp(16) })
+            addView(text("Full synopsis", BODY, bold = true).onArt(), wrap().apply { marginStart = dp(16) })
         }, FrameLayout.LayoutParams(-2, -2).apply {
-            leftMargin = dp(50); topMargin = dp(40)
+            leftMargin = dp(PAD); topMargin = dp(40)
         })
         val content = FrameLayout(this)
-        val title = text(m.name.uppercase(), 38f, bold = true).onArt().apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-            setAutoSizeTextTypeUniformWithConfiguration(22, 38, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
-        }
-        content.addView(title, FrameLayout.LayoutParams(dp(420), dp(62)))
-        m.logo?.let { url ->
-            val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; visibility = View.INVISIBLE }
-            content.addView(logo, FrameLayout.LayoutParams(dp(420), dp(62)))
-            Images.load(url, logo, dp(840)) { title.visibility = View.INVISIBLE; logo.visibility = View.VISIBLE }
-        }
+        content.addView(text(m.name, DISPLAY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END },
+            FrameLayout.LayoutParams(dp(420), dp(62)))
         val facts = listOfNotNull(m.year?.trimEnd('–', '-', ' '), m.runtime,
-            m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString("   ·   ")
+            m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString(DOT)
         content.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, FrameLayout.LayoutParams(dp(430), -2).apply { topMargin = dp(68) })
-        content.addView(text("THE STORY", 11f, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f },
+        content.addView(text("The story", SMALL, bold = true, color = TEXT_HI).onArt(),
             FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(113) })
         content.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(text(m.description ?: "No description available.", BODY + 2, color = TEXT_HI).onArt().apply {
+            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).onArt().apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
             })
         }, FrameLayout.LayoutParams(dp(420), dp(90)).apply { topMargin = dp(138) })
@@ -461,31 +430,19 @@ class DetailsActivity : Screen() {
         val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
         val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
         if (resumeAt > 0 && duration > resumeAt) content.addView(
-            text("${resumeAt / 60_000} min watched   ·   ${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
+            text("${resumeAt / 60_000} min watched$DOT${(duration - resumeAt + 59_999) / 60_000} min left", SMALL, color = MUTED).onArt(),
             FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(240) })
-        fun action(label: String, icon: Int, click: () -> Unit) = text(label, BODY).onArt().apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), 0, dp(16), 0)
-            setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
-            compoundDrawablePadding = dp(12)
-            isFocusable = true
-            isFocusableInTouchMode = true
-            setOnFocusChangeListener { v, focused ->
-                v.background = if (focused) glass(8, focused = true) else null
-            }
-            setOnClickListener { click() }
-        }
         val actions = LinearLayout(this)
-        val close = action("Back to title", R.drawable.ic_back) { hideInfo() }
-        actions.addView(close, LinearLayout.LayoutParams(dp(158), dp(44)))
+        val close = pill("Back to title", R.drawable.ic_back).apply { setOnClickListener { hideInfo() } }
+        actions.addView(close)
         if (resumeAt > 0) {
-            actions.addView(action("Start over", R.drawable.ic_play) {
-                openSources(target?.first ?: metaId, startOver = true)
-            }, LinearLayout.LayoutParams(dp(150), dp(44)).apply { leftMargin = dp(10) })
+            actions.addView(pill("Start over", R.drawable.ic_play).apply {
+                setOnClickListener { openSources(target?.first ?: metaId, startOver = true) }
+            }, wrap().apply { marginStart = dp(12) })
         }
         content.addView(actions, FrameLayout.LayoutParams(-2, -2).apply { topMargin = dp(282) })
         infoOverlay.addView(content, FrameLayout.LayoutParams(dp(440), dp(370)).apply {
-            leftMargin = dp(55); topMargin = dp(117)
+            leftMargin = dp(PAD); topMargin = dp(117)
         })
         root.addView(infoOverlay, FrameLayout.LayoutParams(-1, -1))
         close.requestFocus()
@@ -517,7 +474,7 @@ class DetailsActivity : Screen() {
     }
 
     private fun showSimilar(heading: String, titles: List<Meta>) {
-        page.addView(text(heading, TITLE, bold = true).onArt().apply {
+        page.addView(text(heading, BODY, bold = true).onArt().apply {
             setPadding(dp(PAD), 0, dp(PAD), 0)
         }.marginTop(28))
         val cards = LinearLayout(this).apply {
@@ -635,32 +592,6 @@ class DetailsActivity : Screen() {
             infoOpen -> hideInfo()
             guideOpen -> hideGuide()
             else -> super.onBackPressed()
-        }
-    }
-
-    private fun glassAction(label: String, icon: Int): TextView = text(label, BODY, bold = true).apply {
-        gravity = if (icon == 0) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
-        if (icon != 0) setPadding(dp(18), 0, dp(12), 0)
-        compoundDrawablePadding = dp(8)
-        isFocusable = true
-        fun style(focused: Boolean) {
-            setTextColor(Color.WHITE)
-            if (icon != 0) setCompoundDrawablesRelativeWithIntrinsicBounds(
-                getDrawable(icon)?.mutate()?.apply { setTint(Color.WHITE) }, null, null, null)
-            background = glass(10, focused)
-            animate().scaleX(if (focused) 1.03f else 1f).scaleY(if (focused) 1.03f else 1f).setDuration(150).start()
-            elevation = dp(if (focused) 10 else 2).toFloat()
-        }
-        style(false)
-        setOnFocusChangeListener { _, focused -> style(focused) }
-    }
-
-    private fun textAction(label: String): TextView = text(label, SMALL, color = TEXT_HI).apply {
-        gravity = Gravity.CENTER
-        isFocusable = true
-        setOnFocusChangeListener { _, focused ->
-            setTextColor(if (focused) Color.BLACK else TEXT_HI)
-            background = if (focused) rounded(Color.WHITE, 7) else null
         }
     }
 }

@@ -38,14 +38,24 @@ class AddonsActivity : Screen() {
     /** Redraws the list, focusing [focus] (an addon's URL), or "Add by URL" when null. */
     private fun show(focus: String?, message: String? = null) {
         list.removeAllViews()
-        list.addView(text("Addons", DISPLAY + 1, bold = true))
-        list.addView(text("The first addon that has something answers first.", SMALL, color = TEXT_MID).marginTop(4))
-        val add = row("+  Add by URL", "") { askUrl() }.also { list.addView(it, LinearLayout.LayoutParams(-1, dp(30)).apply { topMargin = dp(16) }) }
-        message?.let { list.addView(text(it, BODY - 1, color = TEXT_MID).marginTop(16)) }
+        list.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("‹", DISPLAY, color = TEXT_HI).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "Back"
+                isFocusable = true
+                setOnClickListener { finish() }
+                setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
+            }, LinearLayout.LayoutParams(dp(24), dp(35)))
+            addView(text("Addons", DISPLAY, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
+        })
+        list.addView(text("The first addon that has something answers first. Select one to reorder or remove it.", BODY, color = TEXT_MID).marginTop(4))
+        val add = row("+  Add by URL", "›") { askUrl() }.also { list.addView(it, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(16) }) }
+        message?.let { list.addView(text(it, BODY, color = TEXT_MID).marginTop(16)) }
         var focused: View = add
         addons.forEach { a ->
-            val r = row(a.name, if (a.locked) "Built-in" else "") { edit(a) }
-            list.addView(r, LinearLayout.LayoutParams(-1, dp(30)))
+            val r = row(a.name, if (a.locked) "Built-in  ›" else "›") { edit(a) }
+            list.addView(r, LinearLayout.LayoutParams(-1, dp(40)))
             if (a.transportUrl == focus) focused = r
         }
         focused.post { focused.requestFocus() }
@@ -54,8 +64,8 @@ class AddonsActivity : Screen() {
     private fun row(label: String, value: String, click: () -> Unit) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), 0, dp(10), 0)
-        addView(text(label, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
-        addView(text(value, SMALL, color = TEXT_MID))
+        addView(text(label, BODY, color = TEXT_HI).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(value, BODY, color = TEXT_MID))
         isFocusable = true
         setOnFocusChangeListener { v, has -> v.background = if (has) glass(6) else null }
         setOnClickListener { click() }

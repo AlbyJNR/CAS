@@ -75,7 +75,7 @@ class SettingsActivity : Screen() {
         list = column(Gravity.START).apply { setPadding(dp(PAD), dp(15), dp(PAD), dp(30)) }
         list.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            val back = text("‹", 28f, color = TEXT_HI).apply {
+            val back = text("‹", DISPLAY, color = TEXT_HI).apply {
                 gravity = Gravity.CENTER
                 contentDescription = "Back"
                 isFocusable = true
@@ -83,7 +83,7 @@ class SettingsActivity : Screen() {
                 setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
             }
             addView(back, LinearLayout.LayoutParams(dp(24), dp(35)))
-            addView(text("Settings", DISPLAY + 1, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
+            addView(text("Settings", DISPLAY, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
         })
 
         heading("General")
@@ -92,14 +92,6 @@ class SettingsActivity : Screen() {
                 .recoverCatching { startActivity(Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)) }
                 .onFailure { AlertDialog.Builder(this).setMessage("Language settings are unavailable on this TV.").setPositiveButton("OK", null).show() }
         }
-        action("Clear local storage", "", "Removes profiles, settings and saved data from this TV. Stremio accounts stay as they are.") {
-            AlertDialog.Builder(this).setTitle("Clear local storage?")
-                .setMessage("This removes saved profiles, settings, and cached data from this TV. It does not cancel your Stremio account.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Clear") { _, _ ->
-                    (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
-                }.show()
-        }
-
         heading("Addons")
         val signedIn = authKey != null
         addonCount = action("My addons", if (signedIn) "…" else "Sign in", "Add by URL, reorder or remove this profile's addons.") {
@@ -117,8 +109,16 @@ class SettingsActivity : Screen() {
         section("Streaming", streaming, firstRowId)
         section("Picture & Sound", pictureAndSound)
         section("Subtitles", subtitles)
+        heading("Storage")
+        action("Clear local storage", "", "Removes profiles, settings and saved data from this TV. Stremio accounts stay as they are.") {
+            AlertDialog.Builder(this).setTitle("Clear local storage?")
+                .setMessage("This removes saved profiles, settings, and cached data from this TV. It does not cancel your Stremio account.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Clear") { _, _ ->
+                    (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
+                }.show()
+        }
 
-        hint = text("", SMALL, color = TEXT_MID).apply { setPadding(dp(PAD), dp(10), dp(PAD), dp(18)) }
+        hint = text("", BODY, color = TEXT_MID).apply { setPadding(dp(PAD), dp(10), dp(PAD), dp(18)) }
         val scroll = ScrollView(this).apply {
             isFocusable = false
             isVerticalScrollBarEnabled = false
@@ -146,8 +146,7 @@ class SettingsActivity : Screen() {
     }
 
     private fun heading(title: String) {
-        list.addView(text(title.uppercase(), SMALL - 1, bold = true, color = TEXT_HI).apply {
-            letterSpacing = 0.12f
+        list.addView(text(title, BODY, bold = true).apply {
             setPadding(0, dp(8), 0, dp(4))
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         list.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
@@ -158,7 +157,7 @@ class SettingsActivity : Screen() {
         gravity = Gravity.CENTER_VERTICAL
         val indicator = View(context).apply { setBackgroundColor(Color.WHITE); visibility = View.INVISIBLE }
         addView(indicator, LinearLayout.LayoutParams(dp(3), -1))
-        addView(text(label, BODY - 1, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
         addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
         setPadding(0, dp(4), dp(8), dp(4))
         focusable(grow = 1f)
@@ -168,12 +167,12 @@ class SettingsActivity : Screen() {
             if (has) hint.text = hintText
         }
         setOnClickListener { click() }
-        list.addView(this, LinearLayout.LayoutParams(-1, dp(28)))
+        list.addView(this, LinearLayout.LayoutParams(-1, dp(40)))
     }
 
     /** A row that opens something: its value (if any) and a ›. Returns the value text, to update. */
     private fun action(label: String, value: String, hintText: String, click: () -> Unit): TextView {
-        val v = text(if (value.isEmpty()) "›" else "$value  ›", BODY - 1, color = TEXT_HI)
+        val v = text(if (value.isEmpty()) "›" else "$value  ›", BODY, color = TEXT_HI)
         row(label, v, hintText, click)
         return v
     }
@@ -198,7 +197,7 @@ class SettingsActivity : Screen() {
                 showText = false
                 thumbTintList = ColorStateList.valueOf(Color.WHITE)
                 trackTintList = ColorStateList.valueOf(0xFF65717D.toInt())
-            } else text(c.values[current()].second, BODY - 1, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+            } else text(c.values[current()].second, BODY, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
             val r = row(c.label, value, c.hint) {
                 val (next, labelText) = c.values[(current() + 1) % c.values.size]
                 prefs.edit().apply {
