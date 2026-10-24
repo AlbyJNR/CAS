@@ -10,12 +10,10 @@
   <a href="LICENSE"><img alt="GPL-3.0 License" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
 </p>
 
-<!-- Screenshots: add docs/home.jpg and docs/details.jpg taken from the TV, then uncomment.
 <p align="center">
   <img src="docs/home.jpg" alt="Alder home screen" width="49%">
   <img src="docs/details.jpg" alt="Alder title page" width="49%">
 </p>
--->
 
 Alder is built on top of Stremio. Your account, add-ons, library and watch progress stay exactly where they are, and everything you do in Alder syncs back to Stremio on your phone and computer. What's new is the app you watch in: made for a TV and a remote, quick to open, and quiet enough that the film is the main thing on screen.
 
