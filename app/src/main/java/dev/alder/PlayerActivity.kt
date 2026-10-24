@@ -447,7 +447,7 @@ class PlayerActivity : Screen() {
         row.addView(still, LinearLayout.LayoutParams(dp(185), dp(102)))
         Images.load(next.thumbnail, still, dp(370), orElse = meta?.background ?: intent.getStringExtra("background"))
         val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        upNextTimer = text("", 11f, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f }
+        upNextTimer = text("", SMALL, color = TEXT_HI).onArt().apply { letterSpacing = 0.2f }
         detail.addView(upNextTimer)
         detail.addView(text("S${next.season} E${next.episode}  ·  ${next.title.uppercase()}", TITLE, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
@@ -457,7 +457,7 @@ class PlayerActivity : Screen() {
         upNextProgress = progressBar(1f, 0xFFF7D98F.toInt())
         detail.addView(upNextProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(9) })
         val actions = LinearLayout(this)
-        fun action(label: String, click: () -> Unit) = text(label, SMALL).onArt().apply {
+        fun action(label: String, click: () -> Unit) = text(label, BODY).onArt().apply {
             gravity = Gravity.CENTER
             isFocusable = true
             isFocusableInTouchMode = true
@@ -468,7 +468,7 @@ class PlayerActivity : Screen() {
         }
         val playNow = action("▶  Play now") { playNext() }
         actions.addView(playNow, LinearLayout.LayoutParams(dp(116), dp(40)))
-        actions.addView(action("Back to stay") { dismissUpNext() },
+        actions.addView(action("Keep watching") { dismissUpNext() },
             LinearLayout.LayoutParams(dp(112), dp(40)).apply { leftMargin = dp(8) })
         detail.addView(actions, wrap().apply { topMargin = dp(8) })
         row.addView(detail, LinearLayout.LayoutParams(dp(245), -2).apply { leftMargin = dp(16) })

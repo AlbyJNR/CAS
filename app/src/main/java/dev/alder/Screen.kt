@@ -80,13 +80,20 @@ abstract class Screen : Activity() {
         }
     }
 
+    /**
+     * Text in Alder's type: Apple TV's styles. Like tvOS, everything is Medium (crisper from the couch than Regular) and
+     * [bold] is its emphasized weight; each style's own leading comes with its size (see [LEADING]).
+     */
     protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = Color.WHITE) =
         TextView(this).apply {
             text = value
             textSize = sp
             setTextColor(color)
-            // Roboto's real medium weight: crisper on a TV than a smeared fake bold.
-            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            LEADING[sp]?.let { lead ->
+                val want = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, lead, resources.displayMetrics)
+                setLineSpacing(want - paint.getFontMetricsInt(null), 1f)
+            }
         }
 
     protected fun column(gravity: Int, vararg views: View) = LinearLayout(this).apply {
@@ -102,13 +109,11 @@ abstract class Screen : Activity() {
 
     protected fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    /** Remote-friendly focus: the focused view grows a little and gets a white outline. */
+    /** Remote-friendly focus: the focused view grows a little. */
     protected fun <V : View> V.focusable(grow: Float = 1.06f) = apply {
         isFocusable = true
-        val outline = GradientDrawable().apply { setStroke(dp(3), Color.WHITE); cornerRadius = dp(TILE_RADIUS).toFloat() }
         setOnFocusChangeListener { v, has ->
             v.animate().scaleX(if (has) grow else 1f).scaleY(if (has) grow else 1f).setDuration(120).start()
-            v.foreground = if (has) outline else null
         }
     }
 
@@ -139,16 +144,35 @@ abstract class Screen : Activity() {
 
     protected fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
 
-    /**
-     * The app's one glass: Plume's dark card. Near-black at 70%, a shade lighter at the top so it looks lit from above,
-     * and a faint white hairline for its edge. [focused] is more solid (80%) with a white edge. Every glass surface
-     * (panes, pills, buttons, the current tab) takes it from here.
-     */
+    /** Borderless dark glass; focus is shown by a lighter fill and each control's scale or text treatment. */
     protected fun glass(radiusDp: Int, focused: Boolean = false) =
-        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (focused) GLASS_LIT else GLASS).apply {
+        GradientDrawable().apply {
+            setColor(if (focused) GLASS_FOCUSED else GLASS)
             cornerRadius = dp(radiusDp).toFloat()
-            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else GLASS_EDGE)
         }
+
+    /**
+     * The hero's buttons (Home, the title page): small pills of one height, frosted white at rest so they read as
+     * buttons on any art, solid white with dark words once the remote is on one.
+     */
+    protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
+        isFocusable = true
+        gravity = Gravity.CENTER_VERTICAL
+        minHeight = dp(BUTTON_H)
+        setPadding(dp(if (icon != 0) 14 else 16), 0, dp(16), 0)
+        compoundDrawablePadding = dp(6)
+        if (icon != 0) setCompoundDrawablesRelative(getDrawable(icon)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
+        fun style(focused: Boolean) {
+            background = rounded(if (focused) Color.WHITE else GLASS_HIGH, BUTTON_H / 2)
+            setTextColor(if (focused) INK else Color.WHITE)
+            compoundDrawablesRelative[0]?.setTint(if (focused) INK else Color.WHITE)
+        }
+        style(false)
+        setOnFocusChangeListener { v, has ->
+            style(has)
+            v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(150).start()
+        }
+    }
 
     /** A thin watched-so-far bar: accent (or [color]) over a faint track. */
     protected fun progressBar(progress: Float, color: Int = ACCENT) = LinearLayout(this).apply {
@@ -180,12 +204,23 @@ abstract class Screen : Activity() {
     companion object {
         const val PAD = 56 // dp: the side margin, clear of the TV's edges
         const val TILE_RADIUS = 12
+        const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
+        const val BUTTON_H = 32 // dp: the hero's pills
+        const val DOT = "  ·  "
 
-        // Type scale (sp). One-off glyphs (the sign-in code, avatar letters) keep their own sizes.
-        const val DISPLAY = 34f // a screen's title
-        const val TITLE = 20f // a row or section heading
-        const val BODY = 16f // descriptions, buttons, list items
-        const val SMALL = 14f // facts under a row, tags, secondary lines
+        // Type scale (sp): Apple TV's (tvOS built-in text styles). tvOS sizes are points on a 1920 × 1080 screen, i.e.
+        // pixels; a 1080p Android TV has 2 px per dp, so each is half the point size. Nothing goes below Caption 2
+        // (23 pt, 11.5). Sizes are sp, so the TV's font size setting scales them; layouts must measure text, not assume
+        // its height. One-off glyphs (the sign-in code, avatar letters) keep their own sizes.
+        const val DISPLAY = 28.5f // Title 2 (57 pt): a screen's title, the screensaver's title
+        const val HEADLINE = 24f // Title 3 (48 pt): the featured title on Home and Search
+        const val TITLE = 19f // Headline (38 pt): row and section headings, panel titles
+        const val BODY = 14.5f // Body (29 pt): descriptions, buttons, list items
+        const val SMALL = 12.5f // Caption 1 (25 pt): facts, tags, secondary lines, labels
+        const val TITLE_1 = 38f // Title 1 (76 pt): onboarding's big welcome
+
+        // Each style's leading (sp), tvOS's line height halved like its size.
+        val LEADING = mapOf(TITLE_1 to 48f, DISPLAY to 33f, HEADLINE to 28f, TITLE to 23f, BODY to 18f, SMALL to 16f)
 
         // Text on the glass, brightest first.
         const val TEXT_HI = 0xFFE2E4E7.toInt() // a title's facts line
@@ -196,11 +231,11 @@ abstract class Screen : Activity() {
         const val SURFACE = 0xFF24272D.toInt() // placeholder while a picture loads
         const val GLASS_LOW = 0x24FFFFFF // the "Add profile" tile
         const val GLASS_HIGH = 0x40FFFFFF // progress track
-        // Glass (see glass()): top and bottom of the tint, at rest and focused, and its hairline edge.
-        val GLASS = intArrayOf(0xB30B0B0B.toInt(), 0xB3040404.toInt())
-        val GLASS_LIT = intArrayOf(0xCC141414.toInt(), 0xCC070707.toInt())
-        const val GLASS_EDGE = 0x33FFFFFF
+        // Flat translucent fills keep the glass quiet while focus remains visible.
+        const val GLASS = 0xB3080808.toInt()
+        const val GLASS_FOCUSED = 0xD0252525.toInt()
 
+        const val INK = 0xFF111111.toInt() // dark words on a white button
         const val ACCENT = 0xFFE5484D.toInt()
         const val GREEN = 0xFF46D369.toInt() // ratings
 

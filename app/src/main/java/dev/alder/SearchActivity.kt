@@ -80,7 +80,7 @@ class SearchActivity : Screen() {
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(ImageView(context).apply { setImageResource(R.drawable.ic_back) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-                addView(text("Search", DISPLAY - 6, bold = true).onArt(), wrap().apply { marginStart = dp(22) })
+                addView(text("Search", HEADLINE, bold = true).onArt(), wrap().apply { marginStart = dp(22) })
             })
             addView(field, LinearLayout.LayoutParams(dp(GRID_W), -2).apply { topMargin = dp(18) })
             addView(LinearLayout(context).apply {
@@ -92,9 +92,9 @@ class SearchActivity : Screen() {
         }
 
         logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; adjustViewBounds = false }
-        name = text("", DISPLAY - 6, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        name = text("", HEADLINE, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         facts = text("", BODY, color = TEXT_HI).onArt()
-        about = text("", BODY, color = TEXT_HI).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setLineSpacing(dp(3).toFloat(), 1f) }
+        about = text("", BODY, color = TEXT_HI).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         info = column(Gravity.START, logo.apply { layoutParams = LinearLayout.LayoutParams(dp(260), dp(70)) }, name, facts.marginTop(14), about.marginTop(10))
             .apply { visibility = View.INVISIBLE }
 

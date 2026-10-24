@@ -25,18 +25,19 @@ class StreamsActivity : Screen() {
         val key = authKey ?: return finish()
         val type = intent.getStringExtra("type") ?: "movie"
         val videoId = intent.getStringExtra("videoId")!!
-        val list = column(Gravity.START).apply { setPadding(dp(PAD), dp(36), dp(24), dp(72)) }
+        val list = column(Gravity.START).apply { setPadding(dp(PAD), 0, dp(24), dp(72)) }
+        val header = column(Gravity.START).apply { setPadding(dp(PAD), dp(24), dp(24), dp(8)) }
         val name = intent.getStringExtra("name") ?: ""
         val logo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(40); maxWidth = dp(300) }
         val title = text(name.uppercase(), TITLE, bold = true).onArt().apply { letterSpacing = 0.22f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        list.addView(FrameLayout(this).apply { addView(title); addView(logo) })
+        header.addView(FrameLayout(this).apply { addView(title); addView(logo) })
         Images.load(intent.getStringExtra("logo"), logo, dp(300), failed = { title.visibility = View.VISIBLE }) { title.visibility = View.INVISIBLE }
         // "S1 E3 · OUTKAST" for an episode; the label minus the title's name otherwise.
         val episode = intent.getStringExtra("episode") ?: intent.getStringExtra("label")?.removePrefix(name)?.trim(' ', '·')
-        if (!episode.isNullOrBlank()) list.addView(text(episode.uppercase(), SMALL, color = SUBTLE).onArt().apply { letterSpacing = 0.12f }.marginTop(8))
-        list.addView(text("Choose a stream", DISPLAY, bold = true).onArt().marginTop(4))
+        if (!episode.isNullOrBlank()) header.addView(text(episode.uppercase(), SMALL, color = SUBTLE).onArt().apply { letterSpacing = 0.12f }.marginTop(8))
+        header.addView(text("Choose a stream", DISPLAY, bold = true).onArt().marginTop(4))
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_MID).onArt().marginTop(10)
-        list.addView(status)
+        header.addView(status)
 
         val art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         val still = intent.getStringExtra("still")
@@ -50,14 +51,17 @@ class StreamsActivity : Screen() {
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0x59000000, 0))
             }, FrameLayout.LayoutParams(-1, -1))
-            addView(ScrollView(context).apply {
-                isVerticalScrollBarEnabled = false
-                // Keeps the focused source clear of the hint band at the bottom: scrolling stops short of a fading edge.
-                isVerticalFadingEdgeEnabled = true
-                setFadingEdgeLength(dp(96))
-                addView(list)
-            },
-                FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1))
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(header, LinearLayout.LayoutParams(-1, -2))
+                addView(ScrollView(context).apply {
+                    isVerticalScrollBarEnabled = false
+                    // Keeps the focused source clear of the hint band at the bottom: scrolling stops short of a fading edge.
+                    isVerticalFadingEdgeEnabled = true
+                    setFadingEdgeLength(dp(96))
+                    addView(list)
+                }, LinearLayout.LayoutParams(-1, 0, 1f))
+            }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 52 / 100, -1))
             // The hint sits on its own dark band, so the list scrolling under it stays out of the way.
             addView(FrameLayout(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF2000000.toInt(), 0xCC000000.toInt(), 0))
@@ -165,9 +169,9 @@ class StreamsActivity : Screen() {
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
-        val num = text("%02d".format(number), TITLE, color = TEXT_MID).onArt()
+        val num = text("%02d".format(number), TITLE, color = TEXT_MID).onArt().apply { setPadding(dp(8), 0, 0, 0) }
         val head = text(name, BODY, bold = true).onArt().apply { setPadding(dp(12), dp(4), dp(14), dp(5)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT_HI).onArt().apply { setLineSpacing(dp(2).toFloat(), 1f); maxLines = 5; setPadding(dp(12), 0, 0, 0) }
+        val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT_HI).onArt().apply { maxLines = 5; setPadding(dp(12), 0, 0, 0) }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(LinearLayout(context).apply {
@@ -177,7 +181,7 @@ class StreamsActivity : Screen() {
             addView(View(context).apply { setBackgroundColor(0x2EFFFFFF) }, LinearLayout.LayoutParams(-1, dp(1)))
             isFocusable = true
             setOnFocusChangeListener { _, has ->
-                head.background = if (has) glass(16, focused = true) else null
+                background = if (has) glass(12, focused = true) else null
                 num.text = if (has) "%02d ›".format(number) else "%02d".format(number)
                 num.setTextColor(if (has) Color.WHITE else TEXT_MID)
             }

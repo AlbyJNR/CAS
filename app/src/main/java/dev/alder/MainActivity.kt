@@ -6,9 +6,11 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -50,6 +52,7 @@ class MainActivity : Screen() {
     private var genre: String? = null
     private var libraryByName = false
     private lateinit var filter: TextView
+    private var search: TextView? = null
     private val rows = mutableListOf<Row>()
     private var focusedSomething = false
     private val metas = mutableMapOf<String, Meta>() // full details, fetched once per title
@@ -60,9 +63,13 @@ class MainActivity : Screen() {
     // Not glass: a light darkening of the art's top edge while the top bar shows. The left and bottom shades are painted
     // into the art itself ([shaded]).
     private lateinit var topShade: View
-    // Where you are among the page's rows: a thin track in the left margin, beside the cards, with a thumb per row.
+    // Brief row-position cue in the left margin, beside the cards.
     private lateinit var track: FrameLayout
     private lateinit var thumb: View
+    // A chevron in the right margin while the row the remote is in has more cards past the screen's edge.
+    private lateinit var moreHint: ImageView
+    private var indicatedRow: View? = null
+    private val hideTrack = Runnable { track.animate().alpha(0f).setDuration(250).start() }
     private var artTask = Runnable {}
     private val artW by lazy { resources.displayMetrics.widthPixels }
 
@@ -80,8 +87,12 @@ class MainActivity : Screen() {
         val dw = src.width * scale
         val dh = src.height * scale
         canvas.drawBitmap(src, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
-        GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xD9000000.toInt(), 0x73000000, 0))
-            .apply { setBounds(0, 0, w * 2 / 3, h); draw(canvas) }
+        // Dark enough under the words (which end near 45% across) that a white car or a sky can't wash them out, then
+        // gone by three quarters across so the picture keeps its right side.
+        canvas.drawRect(0f, 0f, w * 0.75f, h.toFloat(), Paint().apply {
+            shader = LinearGradient(0f, 0f, w * 0.75f, 0f, intArrayOf(0xE0000000.toInt(), 0xCC000000.toInt(), 0x99000000.toInt(), 0),
+                floatArrayOf(0f, 0.45f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        })
         // A long, gentle darkening from the middle of the screen down: the art never stops, it just gets darker.
         GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0, 0x73000000, 0xD9000000.toInt(), 0xF2000000.toInt()))
             .apply { setBounds(0, h - h * 55 / 100, w, h); draw(canvas) }
@@ -93,13 +104,13 @@ class MainActivity : Screen() {
     private var heroItem: Item? = null
     private lateinit var browseInfo: LinearLayout
     private lateinit var heroName: TextView
-    private lateinit var heroLogo: ImageView
     private lateinit var heroFacts: TextView
+    private var heroBottom = 0 // px from the screen's foot to the hero block, for a poster row
+    private var wideRow = false // the row the remote is in has wide cards (Continue Watching): the hero sits lower
     private lateinit var heroAbout: TextView
     private lateinit var heroActions: LinearLayout
     private lateinit var heroResume: TextView
     private lateinit var heroDetails: TextView
-    private lateinit var heroProgress: FrameLayout
 
     // Cinema: one title, low on the left; the stage takes the remote's keys while it shows.
     private var cinema: List<Item> = emptyList()
@@ -145,7 +156,10 @@ class MainActivity : Screen() {
         }
 
         val screenH = resources.displayMetrics.heightPixels
-        val rowTop = screenH - dp(ROW_H + SAFE_BOTTOM) // one row on screen; the track in the left margin says where you are
+        // A row heading's real height: the TV's font size setting can make it taller than any fixed guess.
+        val headingH = text("", BODY, bold = true).lineHeight
+        val rowH = headingH + dp(ROW_TOP_ROOM + CARD_H + ROW_BOTTOM_ROOM)
+        val rowTop = screenH - rowH - dp(SAFE_BOTTOM) // one row on screen; the track in the left margin says where you are
         content = column(Gravity.START)
         scroller = object : ScrollView(this) {
             private var last: View? = null
@@ -184,12 +198,20 @@ class MainActivity : Screen() {
             addView(artBack, FrameLayout.LayoutParams(-1, -1))
             addView(art, FrameLayout.LayoutParams(-1, -1))
             addView(topShade, FrameLayout.LayoutParams(-1, dp(HEADER_H + 96)))
-            addView(scroller, FrameLayout.LayoutParams(-1, dp(ROW_H)).apply { topMargin = rowTop })
-            track = FrameLayout(context).apply { background = rounded(0x33FFFFFF, 2); alpha = 0f }
-            thumb = View(context).apply { background = rounded(Color.WHITE, 2) }
+            addView(scroller, FrameLayout.LayoutParams(-1, rowH).apply { topMargin = rowTop })
+            track = FrameLayout(context).apply { alpha = 0f }
+            thumb = View(context).apply { background = rounded(0xB3FFFFFF.toInt(), 2) }
             track.addView(thumb, FrameLayout.LayoutParams(-1, dp(12)))
-            addView(track, FrameLayout.LayoutParams(dp(3), dp(CARD_H)).apply { leftMargin = dp(PAD) / 2; topMargin = rowTop + dp(24 + ROW_TOP_ROOM) })
-            addView(browseInfo(), FrameLayout.LayoutParams(dp(INFO_W), -2).apply { leftMargin = dp(PAD); topMargin = dp(HEADER_H + 8) })
+            addView(track, FrameLayout.LayoutParams(dp(2), dp(CARD_H)).apply { leftMargin = dp(PAD) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM) })
+            moreHint = ImageView(context).apply { setImageResource(R.drawable.ic_back); scaleX = -1f; alpha = 0f }
+            addView(moreHint, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END).apply {
+                rightMargin = (dp(PAD) - dp(32)) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM + CARD_H / 2 - 16)
+            })
+            // Sits on the row band, so a larger font size grows it upwards into the art, never down into the rows.
+            addView(browseInfo(), FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM).apply {
+                heroBottom = screenH - rowTop + dp(HERO_GAP)
+                leftMargin = dp(PAD); bottomMargin = heroBottom
+            })
             addView(stage(), FrameLayout.LayoutParams(-1, -1))
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-1, dp(HEADER_H))) // fades in if the page wants it
         })
@@ -251,78 +273,70 @@ class MainActivity : Screen() {
             }
         }.apply { setPadding(dp(PAD), dp(18), dp(PAD), dp(6)) }
 
-        val avatar = LinearLayout(this).apply {
+        // The profile: a round avatar on the margin. OK opens a small menu (switch profile, settings).
+        val avatar = text(profile.name.take(1).uppercase(), BODY, bold = true).apply {
+            gravity = Gravity.CENTER
+            isFocusable = true
+            contentDescription = "Profile"
+            fun style(focused: Boolean) {
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(profile.color); if (focused) setStroke(dp(2), Color.WHITE) }
+            }
+            style(false)
+            setOnFocusChangeListener { v, has ->
+                style(has)
+                v.animate().scaleX(if (has) 1.1f else 1f).scaleY(if (has) 1.1f else 1f).setDuration(120).start()
+            }
+            setOnClickListener { profileMenu() }
+        }
+        // Every destination in one dark capsule, Search included: one place for the eye instead of words across the top.
+        val nav = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(4), dp(10), dp(4))
-            addView(text(profile.name.take(1).uppercase(), BODY, bold = true).apply {
-                gravity = Gravity.CENTER
-                background = rounded(profile.color, 8)
-            }, LinearLayout.LayoutParams(dp(32), dp(32)))
-            addView(text("▾", SMALL, color = MUTED), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = rounded(NAV_FILL, NAV_R + 4)
+        }
+        fun navItem(label: String, open: () -> Unit) = text(label, BODY).apply {
+            setPadding(dp(16), dp(7), dp(16), dp(7))
             isFocusable = true
-            setOnFocusChangeListener { v, has -> v.background = if (has) glass(8, focused = true) else null }
-            setOnClickListener { switchProfile() }
+            setOnFocusChangeListener { _, _ -> styleNav() }
+            setOnClickListener { open() }
+            nav.addView(this)
         }
-        val nav = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        Page.entries.forEach { p ->
-            val item = text(p.label, BODY).onArt().apply {
-                setPadding(dp(18), dp(8), dp(18), dp(8))
-                isFocusable = true
-                setOnFocusChangeListener { _, _ -> styleNav() }
-                setOnClickListener { showPage(p) }
-            }
-            navItems[p] = item
-            nav.addView(item, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(2); marginEnd = dp(2) })
-        }
-        fun icon(res: Int, label: String, page: Class<*>) = ImageView(this).apply {
-            setImageResource(res)
-            setColorFilter(Color.WHITE)
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            isFocusable = true
-            setOnFocusChangeListener { _, has ->
-                background = if (has) rounded(Color.WHITE, 10) else null
-                setColorFilter(if (has) Color.BLACK else Color.WHITE)
-            }
-            setOnClickListener { startActivity(Intent(this@MainActivity, page)) }
-            contentDescription = label
-        }
-        filter = text("", BODY).onArt().apply {
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+        Page.entries.forEach { p -> navItems[p] = navItem(p.label) { showPage(p) } }
+        search = navItem("Search") { startActivity(Intent(this, SearchActivity::class.java)) }
+        filter = text("", SMALL).apply {
+            setPadding(dp(14), dp(7), dp(14), dp(7))
             isFocusable = true
             setOnFocusChangeListener { _, _ -> styleNav() }
             setOnClickListener { pickFilter() }
         }
-        val icons = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(filter, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-            addView(icon(R.drawable.ic_search, "Search", SearchActivity::class.java), LinearLayout.LayoutParams(dp(40), dp(40)))
-            addView(icon(R.drawable.ic_settings, "Settings", SettingsActivity::class.java),
-                LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginStart = dp(8) })
-        }
-        header.addView(avatar, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
+        header.addView(avatar, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        header.addView(icons, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+        header.addView(filter, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
     }
 
-    /** A quiet tinted tab marks the page; white appears only when the remote focuses navigation. */
+    private fun profileMenu() {
+        AlertDialog.Builder(this).setItems(arrayOf("Switch profile", "Settings")) { _, i ->
+            if (i == 0) switchProfile() else startActivity(Intent(this, SettingsActivity::class.java))
+        }.show()
+    }
+
+    /** Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item. */
     private fun styleNav() {
-        navItems.forEach { (p, item) ->
+        (navItems.toList() + listOfNotNull(search?.let { null to it })).forEach { (p, item) ->
             val focused = item.isFocused
             item.background = when {
-                focused -> rounded(Color.WHITE, 12)
-                p == page -> glass(12)
+                focused -> rounded(Color.WHITE, NAV_R)
+                p == page -> rounded(GLASS_HIGH, NAV_R)
                 else -> null
             }
             item.setTextColor(if (focused) Color.BLACK else if (p == page) Color.WHITE else TEXT_MID)
-            item.typeface = Typeface.create(if (p == page || focused) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-            if (focused) item.setShadowLayer(0f, 0f, 0f, 0) else item.onArt() // no shadow on the white pill
         }
         if (!::filter.isInitialized) return
         filter.visibility = if (page in listOf(Page.MOVIES, Page.SHOWS, Page.LIBRARY)) View.VISIBLE else View.GONE
         filter.text = if (page == Page.LIBRARY) (if (libraryByName) "A–Z  ▾" else "Recent  ▾") else "${genre ?: "All genres"}  ▾"
-        filter.background = if (filter.isFocused) rounded(Color.WHITE, 12) else glass(12)
+        filter.background = rounded(if (filter.isFocused) Color.WHITE else NAV_FILL, NAV_R)
         filter.setTextColor(if (filter.isFocused) Color.BLACK else Color.WHITE)
     }
 
@@ -378,7 +392,12 @@ class MainActivity : Screen() {
         topShade.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         // Lighter in the cinema (only its few words sit low on the left), full while browsing under the cards.
         browseInfo.animate().alpha(if (cinemaOn) 0f else 1f).setDuration(250).start()
-        if (cinemaOn) track.animate().alpha(0f).setDuration(250).start() // browsing brings it back on the next row focus
+        if (cinemaOn) {
+            main.removeCallbacks(hideTrack)
+            indicatedRow = null
+            track.animate().alpha(0f).setDuration(250).start()
+            moreHint.animate().alpha(0f).setDuration(250).start()
+        }
         cinemaInfo.animate().alpha(if (cinemaOn && cinemaReady) 1f else 0f).setDuration(250).start()
         dots.animate().alpha(if (cinemaOn && cinemaReady && cinema.size > 1) 1f else 0f).setDuration(250).start()
     }
@@ -391,13 +410,13 @@ class MainActivity : Screen() {
         cinemaLine = text("", SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(INFO_W) }
         // Resume, focused as tvOS draws it: a compact, near-white rounded button with dark text. The time left is in
         // the line above, so the button carries no bar of its own.
-        cinemaPlay = text("", BODY, bold = true, color = 0xFF111111.toInt()).apply {
+        cinemaPlay = text("", BODY, bold = true, color = INK).apply {
             gravity = Gravity.CENTER_VERTICAL
             compoundDrawablePadding = dp(8)
             setPadding(dp(16), dp(8), dp(22), dp(8))
             background = rounded(0xF2FFFFFF.toInt(), 8)
             elevation = dp(6).toFloat()
-            setCompoundDrawablesRelativeWithIntrinsicBounds(getDrawable(R.drawable.ic_play)?.mutate()?.apply { setTint(0xFF111111.toInt()) }, null, null, null)
+            setCompoundDrawablesRelativeWithIntrinsicBounds(getDrawable(R.drawable.ic_play)?.mutate()?.apply { setTint(INK) }, null, null, null)
         }
         cinemaInfo = column(Gravity.START,
             FrameLayout(this).apply { addView(cinemaName); addView(cinemaLogo) },
@@ -486,39 +505,34 @@ class MainActivity : Screen() {
 
     private fun browseInfo(): View {
         heroName = text("", DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-        heroLogo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; minimumHeight = dp(64); maxHeight = dp(64); maxWidth = dp(280) }
-        heroFacts = text("", SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        heroAbout = text("", SMALL, color = TEXT_MID).onArt().apply { setLines(2); ellipsize = TextUtils.TruncateAt.END; setLineSpacing(0f, 1.15f) }
-        fun action(label: String, primary: Boolean) = text(label, BODY, bold = primary).apply {
-            isFocusable = true
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = if (primary) glass(10) else null
-            setOnFocusChangeListener { v, has ->
-                v.background = if (has) rounded(Color.WHITE, 10) else if (primary) glass(10) else null
-                setTextColor(if (has) Color.BLACK else Color.WHITE)
-                if (primary) compoundDrawablesRelative[0]?.setTint(if (has) Color.BLACK else Color.WHITE)
-                v.animate().scaleX(if (has) 1.04f else 1f).scaleY(if (has) 1.04f else 1f).setDuration(150).start()
-            }
-        }
-        heroResume = action("Resume", true).apply {
-            compoundDrawablePadding = dp(10)
-            setCompoundDrawablesRelativeWithIntrinsicBounds(getDrawable(R.drawable.ic_play)?.mutate(), null, null, null)
+                heroFacts = text("", SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        heroAbout = text("", BODY, color = TEXT_HI).onArt().apply { setLines(2); ellipsize = TextUtils.TruncateAt.END }
+        heroResume = pill("Resume", R.drawable.ic_play).apply {
             setOnClickListener { heroItem?.let(::play) }
             setOnLongClickListener { heroItem?.let { play(it, pick = true) }; true }
         }
-        heroDetails = action("More info", false).apply { setOnClickListener { heroItem?.let(::openDetails) } }
+        heroDetails = pill("More info").apply { setOnClickListener { heroItem?.let(::openDetails) } }
         heroActions = LinearLayout(this).apply {
-            addView(heroResume)
-            addView(heroDetails, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+            // The gap belongs to Resume, so More info alone still starts on the margin.
+            addView(heroResume, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(12) })
+            addView(heroDetails)
         }
-        heroProgress = FrameLayout(this)
+        // No progress line here: the focused card already shows it, right below.
         browseInfo = column(Gravity.START,
-            FrameLayout(this).apply { addView(heroName); addView(heroLogo) },
-            heroFacts.marginTop(8),
-            heroAbout.marginTop(6),
-            heroActions.marginTop(14),
-            heroProgress.marginTop(8),
-        ).apply { alpha = 0f }
+            heroName,
+            heroFacts.marginTop(6),
+            heroAbout.marginTop(8),
+            heroActions.marginTop(16),
+        ).apply {
+            alpha = 0f
+            // Too tall for the art above the rows (a large font size, a two-line name): the description gives up lines
+            // until the block clears the top bar's words (they end well above its 76 dp). showHero gives them back for
+            // the next title.
+            addOnLayoutChangeListener { _, _, top, _, _, _, _, _, _ ->
+                val lines = heroAbout.maxLines
+                if (top < dp(HEADER_H - 12) && lines > 0) heroAbout.post { heroAbout.setLines(lines - 1) }
+            }
+        }
         return browseInfo
     }
 
@@ -526,19 +540,13 @@ class MainActivity : Screen() {
     private fun showHero(item: Item) {
         heroItem = item
         heroName.text = item.name
-        heroName.visibility = if (item.logo == null) View.VISIBLE else View.GONE
-        val logoUrl = item.logo
-        if (logoUrl == null) { heroLogo.setImageDrawable(null); heroLogo.tag = null }
-        else if (heroLogo.tag != logoUrl) Images.load(logoUrl, heroLogo, dp(LOGO_W), urgent = true, failed = { if (heroItem === item) heroName.visibility = View.VISIBLE })
-        // Something you're watching says where you are and what this episode is about; anything else, its genre, year,
-        // rating and story. The card shows the bar.
-        heroFacts.text = if (item.left != null) where(item) else item.facts.joinToString(DOT)
+        // Calm, like Apple TV: the logo, one quiet line of what it is ("Series · 2022 · Crime"), and two lines of story
+        // (the episode's, for something you're watching). Time left and progress live on the card.
+        heroFacts.text = facts(item)
+        heroAbout.setLines(2)
         heroAbout.text = episode(item)?.overview?.takeIf { it.isNotBlank() } ?: item.about
         heroActions.visibility = if (page == Page.HOME) View.VISIBLE else View.GONE
         heroResume.visibility = if (item.resume) View.VISIBLE else View.GONE
-        heroProgress.removeAllViews()
-        heroProgress.visibility = if (page == Page.HOME && item.progress > 0f) View.VISIBLE else View.GONE
-        if (heroProgress.visibility == View.VISIBLE) heroProgress.addView(progressBar(item.progress), FrameLayout.LayoutParams(dp(184), dp(2)))
         showArt(item)
     }
 
@@ -548,6 +556,13 @@ class MainActivity : Screen() {
         val code = parts.firstOrNull { it.startsWith("S") && " E" in it }
         val about = if (code != null) listOfNotNull(code, episode(item)?.title?.takeIf { it.isNotEmpty() }) else item.facts
         return (about + listOfNotNull(parts.lastOrNull { it.endsWith("left") })).joinToString(DOT)
+    }
+
+    /** "Series · 2022 · Crime": the kind, the year and the first genre, nothing that needs reading twice. */
+    private fun facts(item: Item): String {
+        val year = item.facts.firstOrNull { it.firstOrNull()?.isDigit() == true }
+        val genre = item.facts.firstOrNull { it.firstOrNull()?.isDigit() == false && !it.startsWith("IMDb") }?.substringBefore(",")
+        return listOfNotNull(if (item.type == "series") "Series" else "Movie", year, genre).joinToString(DOT)
     }
 
     /** The episode Continue Watching points at, once the title's details are in. */
@@ -569,6 +584,10 @@ class MainActivity : Screen() {
         content.removeAllViews()
         rows.forEach { r -> r.cards.forEach { it.unload() } }
         rows.clear()
+        main.removeCallbacks(hideTrack)
+        indicatedRow = null
+        track.animate().alpha(0f).setDuration(200).start()
+        moreHint.alpha = 0f
         if (p == Page.HOME) cinema = emptyList() // other pages keep Home's, so the screensaver works there too
         focusedSomething = false
         scroller.scrollTo(0, 0)
@@ -734,7 +753,7 @@ class MainActivity : Screen() {
     private fun later(all: List<Item>): ((Int) -> List<Item>)? =
         if (all.size <= PAGE) null else { from -> all.drop(from).take(PAGE) }
 
-    private fun row(title: String, items: List<Item>, more: ((Int) -> List<Item>)? = null): Row = Row(title, items, more).also {
+    private fun row(title: String, items: List<Item>, more: ((Int) -> List<Item>)? = null, wide: Boolean = false): Row = Row(title, items, more, wide).also {
         rows += it
         main.post(::updateImages)
         if (!focusedSomething && mode == Mode.BROWSE) {
@@ -760,9 +779,13 @@ class MainActivity : Screen() {
      */
     /**
      * A row of cards. With [more], it asks for the titles after the ones it has when the remote gets near its end (a
-     * catalog's next page, or the rest of a long library), and stops once an answer brings nothing new.
+     * catalog's next page, or the rest of a long library), and stops once an answer brings nothing new. A [wide] row
+     * (Continue Watching) shows 16:9 art with the name, time left and progress on the card, two poster columns wide, and
+     * ends on the same foot line as the poster rows.
      */
-    private inner class Row(title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?) {
+    private inner class Row(title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?, val wide: Boolean = false) {
+        val cardW = if (wide) WIDE_W else CARD_W
+        val cardH = if (wide) WIDE_H else CARD_H
         val items = first.toMutableList()
         val cards = items.mapIndexed { i, item -> Card(item, i) }.toMutableList()
         private var fetching = false
@@ -776,7 +799,7 @@ class MainActivity : Screen() {
             // Room above and below for the focused card to grow into without being clipped.
             setPadding(dp(PAD), dp(ROW_TOP_ROOM), dp(PAD), dp(ROW_BOTTOM_ROOM))
             clipToPadding = false
-            cards.forEachIndexed { i, c -> addView(c, LinearLayout.LayoutParams(dp(CARD_W), dp(CARD_H)).apply { if (i > 0) marginStart = dp(GAP) }) }
+            cards.forEachIndexed { i, c -> addView(c, LinearLayout.LayoutParams(dp(cardW), dp(cardH)).apply { if (i > 0) marginStart = dp(GAP) }) }
         }
         val scroller: HorizontalScrollView = object : HorizontalScrollView(this@MainActivity) {
             override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect) = 0
@@ -802,12 +825,13 @@ class MainActivity : Screen() {
             setOnScrollChangeListener { _, _, _, _, _ -> loadRest(this@Row) }
         }
         // The row the remote is in has a bright title; the next one, peeking in below, is a quiet hint.
+        // One line, always: the row band is measured for one, and a second would push the cards off the screen.
         private val heading = text(title, BODY, bold = true).onArt().apply {
-            setPadding(dp(PAD), 0, 0, 0)
-            translationY = dp(10).toFloat() // clear the hero progress line without leaving a gap before the next shelf
+            setPadding(dp(PAD), 0, dp(PAD), 0)
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             alpha = QUIET
         }
-        val view: View = column(Gravity.START, heading, scroller)
+        val view: View = column(Gravity.START, heading, scroller).apply { if (wide) setPadding(0, dp(CARD_H - WIDE_H), 0, 0) }
 
         /** In or out of this row: its title brightens or quiets, its cards come forward or settle back. */
         fun light(on: Boolean) {
@@ -834,10 +858,19 @@ class MainActivity : Screen() {
             if (!held) listOf(index - 1, index + 1).mapNotNull { items.getOrNull(it) }.forEach(::warm)
             anim?.cancel()
             val startScroll = scroller.scrollX
-            val targetScroll = minOf(index * (dp(CARD_W) + dp(GAP)), (strip.width - scroller.width).coerceAtLeast(0))
+            val targetScroll = minOf(index * (dp(cardW) + dp(GAP)), (strip.width - scroller.width).coerceAtLeast(0))
             // Only whole cards show: one slid into either margin hides, so the row starts and ends on the margins.
             val right = scroller.width - dp(PAD) / 2
             cards.forEach { c -> c.show(!(c.left - targetScroll < dp(PAD) / 2 || c.right - targetScroll > right)) }
+            val beyond = cards.any { it.right - targetScroll > right }
+            moreHint.animate().alpha(if (beyond && mode == Mode.BROWSE) 0.9f else 0f).setDuration(200).start()
+            moreHint.translationY = if (wide) dp(CARD_H - WIDE_H + WIDE_H / 2 - CARD_H / 2).toFloat() else 0f
+            if (wideRow != wide) {
+                wideRow = wide
+                browseInfo.layoutParams = (browseInfo.layoutParams as FrameLayout.LayoutParams).apply {
+                    bottomMargin = heroBottom - if (wide) dp(CARD_H - WIDE_H) else 0
+                }
+            }
             // A held key repeats every 50 ms. Restarting a slowing-down slide on each repeat made the row lurch and brake
             // twenty times a second; a straight slide that lasts until the next repeat joins them into one glide.
             anim = ValueAnimator.ofInt(startScroll, targetScroll).setDuration(if (held) ViewConfiguration.getKeyRepeatDelay().toLong() else 200).apply {
@@ -861,7 +894,7 @@ class MainActivity : Screen() {
                     val card = Card(item, items.size)
                     items += item
                     cards += card
-                    strip.addView(card, LinearLayout.LayoutParams(dp(CARD_W), dp(CARD_H)).apply { marginStart = dp(GAP) })
+                    strip.addView(card, LinearLayout.LayoutParams(dp(cardW), dp(cardH)).apply { marginStart = dp(GAP) })
                     card.alpha = 0f // shows once focus moves near, like the cards past the right margin
                     card.dim(active)
                     if (loaded) card.load()
@@ -869,14 +902,16 @@ class MainActivity : Screen() {
             }
         }
 
-        /** One title: its wide art with the logo bottom left (the name when there's no logo), and progress. */
+        /** One title: its poster (the name only when there's none), or in a wide row its art with name, time left and progress. */
         inner class Card(val item: Item, val index: Int) : FrameLayout(this@MainActivity) {
             // Fading, a card that may overlap itself is drawn into a layer of its own first: an extra pass for every
             // card fading in or out. Fading each part on its own looks the same over 150 ms.
             override fun hasOverlappingRendering() = false
             // Grey only until the art arrives, so the GPU doesn't paint a hidden layer under every card.
             private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            private val name = text(item.name, SMALL, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; visibility = View.INVISIBLE }
+            private val name = text(item.name, if (wide) BODY else SMALL, bold = true).apply {
+                maxLines = if (wide) 1 else 2; ellipsize = TextUtils.TruncateAt.END; visibility = if (wide) View.VISIBLE else View.INVISIBLE
+            }
             private var shown: String? = null
             private var wanted = false // near the screen: load when the details arrive
             // The poster appears once it's decoded; until then the card is a plain dark tile.
@@ -894,28 +929,35 @@ class MainActivity : Screen() {
                 setBackgroundColor(SURFACE)
                 face.addView(image, LayoutParams(-1, -1))
                 face.addView(View(context).apply {
-                    background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xCC000000.toInt(), 0x00000000))
-                }, LayoutParams(-1, dp(CARD_H * 4 / 10), Gravity.BOTTOM))
-                face.addView(name, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(12), 0, dp(12), dp(if (item.progress > 0) 14 else 10)) })
+                    background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x66000000, 0x00000000))
+                }, LayoutParams(-1, dp(cardH * (if (wide) 6 else 4) / 10), Gravity.BOTTOM))
+                val inset = if (wide) 14 else 12
+                face.addView(name, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12)) })
+                // Time left as a quiet label in the corner, where the eye checks before choosing what to resume.
+                val timeLeft = item.left?.split(DOT)?.lastOrNull { it.endsWith("left") }
+                if (wide && timeLeft != null) face.addView(text(timeLeft, SMALL, bold = true).apply {
+                    background = rounded(0x99000000.toInt(), 8)
+                    setPadding(dp(8), dp(3), dp(8), dp(4))
+                }, LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(10), dp(10), 0) })
                 addView(face, LayoutParams(-1, -1))
-                if (item.progress > 0) addView(progressBar(item.progress), LayoutParams(-1, dp(4), Gravity.BOTTOM))
+                // A white bar inset and rounded inside the card's dark foot, so it reads as a bar and not a cropped edge.
+                if (item.progress > 0) addView(progressBar(item.progress, Color.WHITE).apply { background = rounded(0x4DFFFFFF, 2); clipToOutline = true },
+                    LayoutParams(-1, dp(3), Gravity.BOTTOM).apply { setMargins(dp(inset), 0, dp(inset), dp(11)) })
                 addView(shade, LayoutParams(-1, -1))
                 isFocusable = true
                 tag = "card:${item.id}"
                 item.onFill += { if (wanted) load() }
                 setOnFocusChangeListener { _, has ->
-                    // Focus grows into the gaps without moving its neighbours; a fine edge stays visible on matching art.
+                    // Focus grows into the gaps without moving its neighbours, and wears a white edge that reads from the
+                    // couch on any poster (the clip to the card's outline keeps it inside the rounded corners).
                     animate().scaleX(if (has) GROW else 1f).scaleY(if (has) GROW else 1f).translationZ(if (has) dp(LIFT).toFloat() else 0f).setDuration(180).start()
-                    foreground = if (has) GradientDrawable().apply {
-                        cornerRadius = dp(RADIUS).toFloat()
-                        setStroke(dp(1), FOCUS_EDGE)
-                    } else null
+                    foreground = if (has) GradientDrawable().apply { cornerRadius = dp(RADIUS).toFloat(); setStroke(dp(3), Color.WHITE) } else null
                     if (has) {
                         focus(index)
                         showHero(item)
                     }
                 }
-                setOnClickListener { if (page == Page.HOME && item.resume) play(item) else openDetails(item) }
+                setOnClickListener { openDetails(item) }
                 if (item.resume) setOnLongClickListener { play(item, pick = true); true }
             }
 
@@ -933,15 +975,17 @@ class MainActivity : Screen() {
             /** On screen (or nearly): the poster (the wide art cropped for a title without one, else its name). */
             fun load() {
                 wanted = true
-                if (item.poster == null && item.art == null) fill(item)
-                val url = item.poster ?: item.art ?: run { if (item.settled) { name.visibility = View.VISIBLE; face.alpha = 1f }; return }
+                // A wide card waits for the title's art (it comes with its details) and takes the poster only if there's none.
+                val pick = if (wide) item.art ?: item.poster?.takeIf { item.settled } else item.poster ?: item.art
+                if (pick == null || (wide && item.art == null)) fill(item)
+                val url = pick ?: run { if (item.settled) { name.visibility = View.VISIBLE; face.alpha = 1f }; return }
                 if (url == shown) return
                 shown = url
                 face.animate().cancel()
                 face.alpha = 0f
                 var now = true // from memory: no fade, it's simply there
-                Images.load(url, image, dp(CARD_W), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
-                    name.visibility = View.INVISIBLE
+                Images.load(url, image, dp(cardW), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
+                    name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
                 }
                 now = false
@@ -1016,7 +1060,8 @@ class MainActivity : Screen() {
         val offset = s.optLong("timeOffset")
         // "S1 E3" for an episode (ids look like tt123:1:3), and how much is left.
         val episode = videoId?.split(":")?.takeIf { it.size == 3 }?.let { "S${it[1]} E${it[2]}" }
-        val left = if (duration > 0 && offset > 1) "${(duration - offset) / 60_000} min left" else null
+        val mins = (duration - offset) / 60_000
+        val left = if (duration > 0 && offset > 1) (if (mins >= 60) "${mins / 60}h ${mins % 60}m left" else "$mins min left") else null
         val progress = if (duration > 0) (offset.toFloat() / duration).coerceIn(0f, 1f) else 0f
         return Item(
             item.getString("_id"), item.optString("type"), item.optString("name"), item.text("poster"),
@@ -1045,7 +1090,7 @@ class MainActivity : Screen() {
 
     // ---------- vertical movement ----------
 
-    /** Shows the focused row in the row band (one row at a time) and moves the track's thumb to it. */
+    /** Shows the focused row in the row band and briefly reveals its position when changing rows. */
     private fun snapTo(focused: View) {
         val rowView = rows.firstOrNull { isInside(focused, it.view) }?.view ?: return
         scroller.smoothScrollTo(0, offsetIn(rowView).coerceAtLeast(0))
@@ -1055,7 +1100,12 @@ class MainActivity : Screen() {
         val thumbH = maxOf(dp(12), dp(CARD_H) / maxOf(n, 1))
         thumb.layoutParams = thumb.layoutParams.apply { height = thumbH }
         thumb.animate().translationY(if (n > 1) (dp(CARD_H) - thumbH) * at / (n - 1f) else 0f).setDuration(200).start()
-        track.animate().alpha(if (n > 1 && mode == Mode.BROWSE) 1f else 0f).setDuration(200).start()
+        if (rowView !== indicatedRow) {
+            indicatedRow = rowView
+            main.removeCallbacks(hideTrack)
+            track.animate().alpha(if (n > 1 && mode == Mode.BROWSE) 1f else 0f).setDuration(200).start()
+            main.postDelayed(hideTrack, 1200)
+        }
     }
 
     // ---------- memory: pictures only near the screen ----------
@@ -1109,26 +1159,29 @@ class MainActivity : Screen() {
     }
 
     private companion object {
-        const val FOCUS_EDGE = 0xFFE8E0CE.toInt()
         const val HEADER_H = 76 // dp
-        // 2:3 posters, six across with the same margin on both sides (56 + 6 × 124 + 5 × 20 + 56 = 956 of 960 dp), the
-        // size Stremio's TV app uses (125 × 183 dp); Netflix and Stremio both browse by poster.
-        const val CARD_W = 124
-        const val CARD_H = 186
-        const val INFO_W = 360 // the text block top left: a third of the screen, clear of the art's middle
+        // 2:3 posters, six and a bit across (56 + 7 × 120 + 6 × 16 = 992 of 960 dp): the seventh runs off the edge to
+        // say there's more, like the TV apps the layout follows.
+        const val CARD_W = 120
+        const val CARD_H = 180
+        // Continue Watching: 16:9, four across (4 × 200 + 3 × 16 = 848 dp, the row between the margins).
+        const val WIDE_W = 200
+        const val WIDE_H = WIDE_W * 9 / 16
+        const val INFO_W = 360 // the cinema's line
+        const val NAV_R = 18 // dp: the top bar's pills
+        const val NAV_FILL = 0x99141619.toInt() // the top bar's capsule and the filter pill
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
-        const val DOT = "  ·  "
-        const val GAP = 20
-        const val RADIUS = 16
-        const val GROW = 1.06f // the focused card: grows into the gaps without touching its neighbours
+        const val GAP = 16
+        const val RADIUS = 12
+        const val GROW = 1.08f // the focused card: grows into the gaps (4 dp a side of 16) without touching its neighbours
         const val LIFT = 8 // dp it rises, for its shadow
-        const val ROW_TOP_ROOM = 16 // dp between the row title and its cards, including focus growth
+        const val ROW_TOP_ROOM = 12 // dp between the row title and its cards, including focus growth
         const val ROW_BOTTOM_ROOM = 14 // dp below the cards, for the focused one's growth and shadow
         const val SAFE_BOTTOM = 12 // dp below the row band; with its own 14 dp the cards end 26 dp (5%) from the edge, which TVs may crop
-        const val DIM = 0.20f // how dark the other cards in the row the remote is in get
+        const val DIM = 0.45f // how dark the other cards in the row the remote is in get: enough that the focused one stands out at 3 m
         const val QUIET = 0.65f // the next row remains visible without competing with the active one
-        const val ROW_H = 24 + ROW_TOP_ROOM + CARD_H + ROW_BOTTOM_ROOM
+        const val HERO_GAP = 12 // dp between the focused title's block and the row heading below it
         const val RISE = 200 // dp the rows travel when they come up from the cinema
         const val PAGE = 25 // cards a row starts with; more come as the remote nears its end
         const val AHEAD = 6 // cards from a row's end when the next page is asked for
