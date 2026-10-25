@@ -43,6 +43,7 @@ object Profiles {
         val prefs = prefs(context)
         save(prefs, all(context).filterNot { it.id == id })
         if (prefs.getString("active", null) == id) prefs.edit().remove("active").apply()
+        Settings.forget(context, id)
     }
 
     /** Rename or set the PIN of a profile (clearPin removes it), keeping its place in the list. */

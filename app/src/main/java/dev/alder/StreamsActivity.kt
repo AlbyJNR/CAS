@@ -143,40 +143,72 @@ class StreamsActivity : Screen() {
     /**
      * The order to try sources in: the file played last time for this video (debrid links expire, so the link is fresh
      * but the release is the same), then the release the previous episode used (AIOStreams' bingeGroup), then the
-     * addon's own order, with releases above the screen's resolution or HDR on a screen without it moved down.
+     * addon's own order, with releases above the screen's resolution or HDR on a screen without it moved down, 3D and
+     * hard-coded subtitles last, and then Settings' stream preferences. The sort is stable, so ties keep the addon's order.
      */
     private fun rank(streams: List<Stream>, videoId: String): List<Stream> {
         val prefs = getSharedPreferences("sources", MODE_PRIVATE)
         val file = prefs.getString("file:$videoId", null)
         val binge = prefs.getString("binge:${intent.getStringExtra("id")}", null)
         val tv = Device.of(this)
+        val prefer = preference()
         return streams.sortedWith(compareByDescending<Stream> { file != null && it.filename == file }
             .thenByDescending { binge != null && it.bingeGroup == binge }
-            .thenByDescending { it.fit(tv) })
+            .thenBy { it.awkward }
+            .thenByDescending { it.fit(tv) }
+            .thenByDescending(prefer))
     }
 
-    /** Within Settings' limits (quality, file size, HDR). Unknown sizes and resolutions pass. */
+    /** Settings' stream preferences as a score, higher first. At "No preference" with TV speakers, every source scores 0. */
+    private fun preference(): (Stream) -> Int {
+        val release = Settings.release(this)
+        val hdr = Settings.hdrPref(this)
+        val dub = Settings.dub(this)
+        val language = Settings.audioLanguage(this)
+        val receiver = Settings.passthrough(this)
+        return { s ->
+            when (release) {
+                "remux" -> if (s.remux) 3 else if (s.bluray) 1 else 0
+                "encode" -> if (s.remux) -2 else if (s.bluray || s.web) 2 else 0
+                "web" -> if (s.web && !s.remux) 2 else if (s.remux) -2 else 0
+                else -> 0
+            } + when (hdr) {
+                "dv" -> if (s.dolbyVision) 2 else if (s.hdr) 1 else 0
+                "hdr10" -> if (s.hdr) 2 else 0
+                else -> 0
+            } + when (dub) {
+                "original" -> if (s.dubbed) -2 else 0
+                "mine" -> if (s.mentions(language)) 2 else if (s.multiAudio) 1 else 0
+                else -> 0
+            } + if (receiver && s.bigAudio) 1 else 0 // a receiver gets Atmos and lossless tracks; TV speakers don't
+        }
+    }
+
+    /** Within Settings' limits (quality, file size, HDR), and never a cam or screener. Unknown sizes and resolutions pass. */
     private fun wanted(s: Stream): Boolean {
         val maxHeight = intent.getIntExtra("maxHeight", 0).takeIf { it > 0 } ?: Settings.maxHeight(this) // the player asks for less
         val maxBytes = Settings.maxSizeGb(this) * 1_073_741_824L
         return (maxHeight == 0 || s.height == 0 || s.height <= maxHeight) && (maxBytes == 0L || s.size == 0L || s.size <= maxBytes) &&
-            (Settings.hdr(this) || !s.isHdr)
+            (Settings.hdr(this) || !s.isHdr) && !s.cam
     }
 
     /**
-     * One source: its number, the addon's name for it ("Torrentio · 2160p") and the addon's own lines (release, audio,
-     * size, languages). Focus is the shared white row.
+     * One source: its number, the addon's name for it ("Torrentio · 2160p"), the release tags Settings' preferences use
+     * ("REMUX · DV · Atmos") and the addon's own lines (release, audio, size, languages). Focus is the shared white row.
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
         val num = text("%02d".format(number), BODY, color = TEXT_MID).onArt().apply { setPadding(dp(8), 0, 0, 0) }
         val head = text(name, BODY, bold = true).onArt().apply { setPadding(dp(12), dp(4), dp(14), dp(5)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT_HI).onArt().apply { maxLines = 5; setPadding(dp(12), 0, 0, 0) }
+        val info = column(Gravity.START, head)
+        s.tags.takeIf { it.isNotEmpty() }?.let { info.addView(text(it.joinToString("  ·  "), SMALL, color = SUBTLE).onArt().apply { setPadding(dp(12), 0, 0, 0) }.marginTop(2)) }
+        info.addView(lines.marginTop(4))
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(LinearLayout(context).apply {
                 addView(num, LinearLayout.LayoutParams(dp(56), -2).apply { topMargin = dp(2) })
-                addView(column(Gravity.START, head, lines.marginTop(4)), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(info, LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(12), 0, dp(12)) })
             rowFocus(12)
             setOnClickListener {

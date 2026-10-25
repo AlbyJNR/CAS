@@ -16,12 +16,28 @@ import android.widget.Switch
 import android.widget.TextView
 import java.util.Locale
 
-/** Choices kept on this TV, shared by every profile (they're about the TV and the sound system, not the person). */
+/**
+ * Choices kept on this TV. Most are shared by every profile (they're about the TV and the sound system); taste (release
+ * type, dubs) is kept per profile under "key@profileId".
+ */
 object Settings {
     private fun prefs(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
     fun maxHeight(c: Context) = prefs(c).getInt("maxHeight", 0) // 0: no limit
     fun maxSizeGb(c: Context) = prefs(c).getInt("maxSizeGb", 0) // 0: no limit
-    fun hdr(c: Context) = prefs(c).getBoolean("hdr", true)
+    /** "": as the addon orders them, "dv" or "hdr10": that first, "off": plain releases only. */
+    fun hdrPref(c: Context): String {
+        val p = prefs(c)
+        if (!p.contains("hdrPref")) p.edit().putString("hdrPref", if (p.getBoolean("hdr", true)) "" else "off").remove("hdr").apply() // was On/Off
+        return p.getString("hdrPref", "").orEmpty()
+    }
+    fun hdr(c: Context) = hdrPref(c) != "off"
+    /** "": no preference, "remux", "encode" (smaller BluRay and web encodes) or "web". */
+    fun release(c: Context) = prefs(c).getString(profileKey(c, "release"), "").orEmpty()
+    /** "": no preference, "original": dubs last, "mine": the audio language first. */
+    fun dub(c: Context) = prefs(c).getString(profileKey(c, "dub"), "").orEmpty()
+    fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
+    /** A removed profile's taste goes with it, so a new profile in its place starts with none. */
+    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId").apply()
     fun alwaysList(c: Context) = prefs(c).getBoolean("alwaysList", false)
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)
@@ -33,7 +49,7 @@ object Settings {
 }
 
 class SettingsActivity : Screen() {
-    private class Choice(val key: String, val label: String, val hint: String, val values: List<Pair<Any, String>>)
+    private class Choice(val key: String, val label: String, val hint: String, val values: List<Pair<Any, String>>, val perProfile: Boolean = false)
 
     private val streaming = listOf(
         Choice("alwaysList", "Play", "What Play and Resume do. Holding OK always shows every source.",
@@ -42,15 +58,19 @@ class SettingsActivity : Screen() {
             listOf(0 to "No limit", 2160 to "4K", 1080 to "1080p", 720 to "720p")),
         Choice("maxSizeGb", "Largest file", "For slow connections: big files take longer to start.",
             listOf(0 to "No limit", 40 to "40 GB", 20 to "20 GB", 10 to "10 GB", 5 to "5 GB")),
+        Choice("release", "Release type", "Which kind of file is tried first, for this profile. REMUX is the full Blu-ray: the best picture and the biggest files.",
+            listOf("" to "No preference", "remux" to "Full Blu-ray (REMUX)", "encode" to "Smaller encodes", "web" to "Web releases"), perProfile = true),
     )
     private val pictureAndSound = listOf(
-        Choice("hdr", "HDR and Dolby Vision", "Off picks plain releases, for a TV that shows HDR washed out.",
-            listOf(true to "On", false to "Off")),
+        Choice("hdrPref", "HDR and Dolby Vision", "Which goes first when a title has both. Off picks plain releases, for a TV that shows HDR washed out.",
+            listOf("" to "On", "dv" to "Dolby Vision first", "hdr10" to "HDR10 first", "off" to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate (24 Hz) so pans don't judder.",
             listOf(true to "On", false to "Off")),
         Choice("audioLang", "Audio language", "The dub to start with when a file has several. Changeable while watching.",
             listOf("" to "TV language", "en" to "English", "hi" to "Hindi", "es" to "Spanish", "fr" to "French",
                 "de" to "German", "ja" to "Japanese", "ko" to "Korean")),
+        Choice("dub", "Dubbed releases", "For this profile. Original first puts dubbed releases last; My language first puts releases in the audio language above first.",
+            listOf("" to "No preference", "original" to "Original first", "mine" to "My language first"), perProfile = true),
         Choice("passthrough", "Surround sound", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes here, which always works.",
             listOf(false to "TV speakers", true to "Receiver")),
     )
@@ -91,8 +111,13 @@ class SettingsActivity : Screen() {
             background({ Stremio.addons(key, refresh = true) }) { r -> addonCount.text = r.fold({ "${it.size} installed  ›" }, { "Sync failed" }) }
         }
 
-        val firstRowId = View.generateViewId()
-        section("Streaming", streaming, firstRowId)
+        Settings.hdrPref(this) // moves the old HDR On/Off over before the rows read it
+        heading("Streaming")
+        presetRow().let { r -> r.post { r.requestFocus() } }
+        section(null, streaming)
+        action("More filters", "", "Release groups, codecs and the rest are set in AIOStreams.") {
+            choose("More filters", listOf("OK"), "Release groups, codecs, languages and more are set in AIOStreams' own settings: open it from Stremio on your phone or at web.stremio.com. This TV follows its order.") {}
+        }
         section("Picture & Sound", pictureAndSound)
         section("Subtitles", subtitles)
         heading("Storage")
@@ -157,17 +182,38 @@ class SettingsActivity : Screen() {
         return v
     }
 
-    private fun section(title: String, choices: List<Choice>, firstId: Int? = null) {
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        heading(title)
-        choices.forEachIndexed { i, c ->
-            fun current(): Int = c.values.indexOfFirst { (v, _) ->
-                when (v) {
-                    is Boolean -> prefs.getBoolean(c.key, c.values[0].first as Boolean) == v
-                    is String -> prefs.getString(c.key, c.values[0].first as String) == v
-                    else -> prefs.getInt(c.key, c.values[0].first as Int) == v
-                }
-            }.coerceAtLeast(0)
+    private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+    /** Redraws every row's value: a preset changes several rows, and any row can change which preset shows. */
+    private val refresh = mutableListOf<() -> Unit>()
+
+    private fun key(c: Choice) = if (c.perProfile) Settings.profileKey(this, c.key) else c.key
+    private fun stored(c: Choice): Any = when (val d = c.values[0].first) {
+        is Boolean -> prefs.getBoolean(key(c), d)
+        is String -> prefs.getString(key(c), d).orEmpty()
+        else -> prefs.getInt(key(c), d as Int)
+    }
+    private fun store(c: Choice, v: Any) = prefs.edit().apply {
+        when (v) { is Boolean -> putBoolean(key(c), v); is String -> putString(key(c), v); else -> putInt(key(c), v as Int) }
+    }.apply()
+    private fun choice(key: String) = (streaming + pictureAndSound).first { it.key == key }
+
+    /** "Streams": a starting point that sets the rows it names; any other mix of them shows as Custom. */
+    private fun presetRow(): View {
+        val value = text("", BODY, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        fun current() = PRESETS.indexOfFirst { (_, rows) -> rows.all { (k, v) -> stored(choice(k)) == v } }
+        refresh += { value.text = PRESETS.getOrNull(current())?.first ?: "Custom" }
+        refresh.last()()
+        return row("Streams", value, "Best picture: full Blu-ray and Dolby Vision first. Balanced: smaller encodes, 20 GB at most. " +
+            "Fast start: web releases, 1080p, 10 GB at most. Addon's order: as your addons sort them.") {
+            PRESETS[(current() + 1) % PRESETS.size].second.forEach { (k, v) -> store(choice(k), v) }
+            refresh.forEach { it() }
+        }
+    }
+
+    private fun section(title: String?, choices: List<Choice>) {
+        title?.let(::heading)
+        choices.forEach { c ->
+            fun current(): Int = c.values.indexOfFirst { it.first == stored(c) }.coerceAtLeast(0)
             // On/Off choices are switches; the rest name their value.
             val isSwitch = c.values.map { it.second }.toSet() == setOf("On", "Off")
             val value: View = if (isSwitch) Switch(this).apply {
@@ -178,15 +224,21 @@ class SettingsActivity : Screen() {
                 thumbTintList = ColorStateList.valueOf(Color.WHITE)
                 trackTintList = ColorStateList.valueOf(0xFF65717D.toInt())
             } else text(c.values[current()].second, BODY, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-            val r = row(c.label, value, c.hint) {
-                val (next, labelText) = c.values[(current() + 1) % c.values.size]
-                prefs.edit().apply {
-                    when (next) { is Boolean -> putBoolean(c.key, next); is String -> putString(c.key, next); else -> putInt(c.key, next as Int) }
-                }.apply()
-                if (value is Switch) value.isChecked = next as Boolean else (value as TextView).text = labelText
+            refresh += { if (value is Switch) value.isChecked = c.values[current()].first as Boolean else (value as TextView).text = c.values[current()].second }
+            row(c.label, value, c.hint) {
+                store(c, c.values[(current() + 1) % c.values.size].first)
+                refresh.forEach { it() }
             }
-            if (firstId != null && i == 0) { r.id = firstId; r.post { r.requestFocus() } }
         }
     }
 
+    private companion object {
+        /** Presets and the rows each sets. The first is how the app picked before there were presets. */
+        val PRESETS = listOf(
+            "Addon's order" to mapOf("release" to "", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 0),
+            "Best picture" to mapOf("release" to "remux", "hdrPref" to "dv", "maxHeight" to 0, "maxSizeGb" to 0),
+            "Balanced" to mapOf("release" to "encode", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 20),
+            "Fast start" to mapOf("release" to "web", "hdrPref" to "", "maxHeight" to 1080, "maxSizeGb" to 10),
+        )
+    }
 }

@@ -182,10 +182,34 @@ class Stream(
         else -> 0
     }
     val isHdr get() = hdr || dolbyVision
-    private val dolbyVision = Regex("\\b(dv|dovi|dolby.?vision)\\b").containsMatchIn(words)
-    private val hdr = Regex("\\bhdr|\\bp8\\b|hybrid").containsMatchIn(words) // P8 and hybrid DV carry an HDR10 base
+    val dolbyVision = Regex("\\b(dv|dovi|dolby.?vision)\\b").containsMatchIn(words)
+    val hdr = Regex("\\bhdr|\\bp8\\b|hybrid").containsMatchIn(words) // P8 and hybrid DV carry an HDR10 base
     private val hevc = Regex("hevc|[xh].?265").containsMatchIn(words)
     private val av1 = Regex("\\bav1\\b").containsMatchIn(words)
+
+    // The release type and extras, for Settings' stream preferences.
+    val remux = Regex("\\bremux\\b").containsMatchIn(words)
+    val bluray = !remux && Regex("blu.?ray|\\bbd.?rip|\\bbr.?rip").containsMatchIn(words)
+    val web = Regex("web.?(dl|rip)|\\bweb\\b").containsMatchIn(words)
+    /** Filmed in a cinema or a screener: never picked. */
+    val cam = Regex("\\b(cam|camrip|hdcam|ts|hdts|telesync|tc|telecine|scr|screener|dvdscr)\\b").containsMatchIn(words)
+    private val threeD = Regex("\\b3d\\b").containsMatchIn(words)
+    private val hardSubs = Regex("\\bhc\\b|hardcoded|hardsub").containsMatchIn(words)
+    /** 3D or subtitles burnt into the picture: picked last. */
+    val awkward get() = threeD || hardSubs
+    val bigAudio = Regex("atmos|truehd|dts.?hd|dts.?x\\b").containsMatchIn(words) // what a receiver gains from
+    val multiAudio = Regex("\\b(multi|dual)\\b").containsMatchIn(words)
+    val dubbed = Regex("\\bdub(bed)?\\b").containsMatchIn(words)
+    /** Whether the names mention this language ("hindi" for "hi"). */
+    fun mentions(language: String) = Locale(language).getDisplayLanguage(Locale.ENGLISH).lowercase().let { it.length > 2 && it in words }
+
+    /** Short tags for the source list: "REMUX · DV · Atmos". */
+    val tags get() = listOfNotNull(
+        "REMUX".takeIf { remux }, "BluRay".takeIf { bluray }, "WEB".takeIf { web && !remux && !bluray },
+        "DV".takeIf { dolbyVision }, "HDR".takeIf { hdr }, "Atmos".takeIf { "atmos" in words },
+        "TrueHD".takeIf { "truehd" in words }, "DTS-HD".takeIf { Regex("dts.?hd").containsMatchIn(words) },
+        "Multi audio".takeIf { multiAudio }, "Dub".takeIf { dubbed }, "3D".takeIf { threeD }, "Hard subs".takeIf { hardSubs },
+    )
 
     /**
      * Whether this TV can decode it at all. Dolby Vision without an HDR10 base named (profile 5, common on web
