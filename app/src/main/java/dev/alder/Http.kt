@@ -23,10 +23,10 @@ object Http {
 
     fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
 
-    fun bytes(url: String): ByteArray = request(url, null).second
+    fun bytes(url: String): ByteArray = request(url, null, cache = true).second
 
     private fun text(url: String, json: String?, keep: Boolean): String {
-        val (code, body) = request(url, json)
+        val (code, body) = request(url, json, cache = false)
         return String(body, Charsets.UTF_8).also { if (keep && code < 400) keep(url, json, it) }
     }
 
@@ -68,8 +68,11 @@ object Http {
 
     // No disconnect(): a response read to the end and closed hands its connection back for the next request to the same
     // host. Disconnecting threw it away, so every picture paid a fresh TCP and TLS handshake first.
-    private fun request(url: String, json: String?): Pair<Int, ByteArray> {
+    // [cache]: pictures only. The response cache kept an addon's 404 and, revalidated with a 304, served it forever
+    // (AIOMetadata's movie search); answers have their own copy in [saved].
+    private fun request(url: String, json: String?, cache: Boolean): Pair<Int, ByteArray> {
         val c = URL(url).openConnection() as HttpURLConnection
+        c.useCaches = cache
         c.connectTimeout = 10_000
         c.readTimeout = 20_000
         if (json != null) {

@@ -137,17 +137,14 @@ class SearchActivity : Screen() {
                         runCatching { f.get((deadline - System.currentTimeMillis()).coerceAtLeast(0), java.util.concurrent.TimeUnit.MILLISECONDS) }
                             .getOrElse { Result.failure(it) }.onFailure { failed = true }.getOrDefault(emptyList())
                     }
-                    .distinctBy { it.id }.take(24).toList().sortedWith(compareBy<Meta> {
-                    when {
-                        it.name.equals(query, ignoreCase = true) || it.name.equals("The $query", ignoreCase = true) -> 0
-                        it.name.startsWith(query, ignoreCase = true) || it.name.startsWith("The $query", ignoreCase = true) -> 1
-                        else -> 2
-                    }
-                }.thenByDescending { it.rating?.toDoubleOrNull() ?: 0.0 })
+                    // Like Stremio: each addon's own ranking, addons in installed order, one section per type.
+                    // Re-sorting here put the films last (Cinemeta sends them without a rating).
+                    .distinctBy { it.id }.groupBy { it.type }.mapValues { it.value.take(PER_TYPE) }
                 titles to failed
             }) { answer ->
                 if (current != request) return@background
-                val (titles, failed) = answer.getOrElse { emptyList<Meta>() to true }
+                val (sections, failed) = answer.getOrElse { emptyMap<String, List<Meta>>() to true }
+                val titles = sections.values.flatten()
                 if (titles.isEmpty() && failed) {
                     heading.text = ""
                     grid.addView(failed("Search is unavailable right now.") { search(moveFocus = true) })
@@ -156,12 +153,17 @@ class SearchActivity : Screen() {
                 if (titles.isNotEmpty()) remember(query)
                 heading.text = if (titles.isNotEmpty()) "Results for “$query”" else "No matches for “$query”"
                 count.text = if (titles.isEmpty()) "" else if (titles.size == 1) "1 title" else "${titles.size} titles"
-                titles.chunked(COLUMNS).forEach { row ->
-                    grid.addView(LinearLayout(this).apply { clipChildren = false; row.forEach { addView(card(it), LinearLayout.LayoutParams(dp(CARD_W), -2).apply { marginEnd = dp(CARD_GAP) }) } },
-                        wrap().apply { bottomMargin = dp(CARD_GAP) })
+                var first: View? = null
+                sections.forEach { (type, list) ->
+                    if (sections.size > 1) grid.addView(text(when (type) { "movie" -> "Movies"; "series" -> "Series"; else -> type.replaceFirstChar(Char::uppercaseChar) }, SMALL, bold = true, color = TEXT_MID).onArt(),
+                        wrap().apply { bottomMargin = dp(10); if (grid.childCount > 0) topMargin = dp(8) })
+                    list.chunked(COLUMNS).forEach { row ->
+                        grid.addView(LinearLayout(this).apply { clipChildren = false; row.forEach { addView(card(it).also { c -> if (first == null) first = c }, LinearLayout.LayoutParams(dp(CARD_W), -2).apply { marginEnd = dp(CARD_GAP) }) } },
+                            wrap().apply { bottomMargin = dp(CARD_GAP) })
+                    }
                 }
                 titles.firstOrNull()?.let(::show)
-                if (moveFocus) (grid.getChildAt(0) as? LinearLayout)?.getChildAt(0)?.requestFocus()
+                if (moveFocus) first?.requestFocus()
             }
         }
         typed = Runnable { search(moveFocus = false) }
@@ -247,6 +249,7 @@ class SearchActivity : Screen() {
         const val GRID_W = COLUMNS * CARD_W + (COLUMNS - 1) * CARD_GAP
         const val SEARCH_WAIT = 6000L // ms: addons that haven't answered by then are left out
         const val RECENT = 6 // searches remembered
+        const val PER_TYPE = 12 // results shown for each of movies and series
         const val TYPING_PAUSE = 500L // ms after the last letter before searching
         val searchPool = java.util.concurrent.Executors.newFixedThreadPool(8)
     }
