@@ -57,7 +57,7 @@ class DetailsActivity : Screen() {
         val artWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         heroArt = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
-        hero = FrameLayout(this)
+        hero = FrameLayout(this).apply { clipChildren = false } // a focused pill grows past the text block's edge
         page = column(Gravity.START, hero).apply { setPadding(0, 0, 0, dp(48)) }
         hero.layoutParams = LinearLayout.LayoutParams(-1, screenHeight)
         root = FrameLayout(this).apply {

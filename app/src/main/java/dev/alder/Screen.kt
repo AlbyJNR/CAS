@@ -171,7 +171,8 @@ abstract class Screen : Activity() {
         setPadding(dp(if (icon != 0) 14 else 16), 0, dp(16), 0)
         compoundDrawablePadding = dp(6)
         if (icon != 0) setCompoundDrawablesRelative(getDrawable(icon)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
-        val rest = glassOver(this, BUTTON_H / 2)
+        // Light frost at rest, like a visionOS button: the dark panel glass made a small pill a murky blob on dark art.
+        val rest = glassOver(this, BUTTON_H / 2, PILL_GLASS)
         fun style(focused: Boolean) {
             background = if (focused) rounded(Color.WHITE, BUTTON_H / 2) else rest
             setTextColor(if (focused) INK else Color.WHITE)
@@ -238,10 +239,10 @@ abstract class Screen : Activity() {
      * Frosted glass, as the episode list draws it: the art behind, blurred, seen through a rounded pane under the
      * glass tint. A background for [host] (pills, the top bar, panels); without a [backdrop] it's the plain tint.
      */
-    protected fun glassOver(host: View, radiusDp: Int): Drawable {
-        val behind = backdrop ?: return rounded(GLASS, radiusDp)
+    protected fun glassOver(host: View, radiusDp: Int, tint: Int = GLASS): Drawable {
+        val behind = backdrop ?: return rounded(tint, radiusDp)
         frostHosts += host
-        return Frost(host, behind, dp(radiusDp).toFloat())
+        return Frost(host, behind, dp(radiusDp).toFloat(), tint)
     }
 
     /** The art behind changed: glass redraws with the new picture once it's blurred. */
@@ -252,14 +253,14 @@ abstract class Screen : Activity() {
         val src = (d as? BitmapDrawable)?.bitmap ?: return frostBitmap
         if (src !== frostSource) {
             frostSource = src
-            background({ Images.frost(src, 240) }) { r -> if (frostSource === src) { frostBitmap = r.getOrNull(); refrost() } }
+            background({ Images.frost(src, FROST_W) }) { r -> if (frostSource === src) { frostBitmap = r.getOrNull(); refrost() } }
         }
         return frostBitmap
     }
 
-    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float) : Drawable() {
+    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float, tintColor: Int) : Drawable() {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS }
+        private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tintColor }
         private val path = Path()
         private val at = IntArray(2)
         private val art = IntArray(2)
@@ -272,8 +273,9 @@ abstract class Screen : Activity() {
                 canvas.save()
                 canvas.clipPath(path)
                 // The blurred art lines up with the sharp art behind: where the host sits on screen, through the same crop.
-                host.getLocationInWindow(at)
-                behind.getLocationInWindow(art)
+                // On screen, not in the window: a menu's glass lives in a dialog's window over the screen's art.
+                host.getLocationOnScreen(at)
+                behind.getLocationOnScreen(art)
                 canvas.translate((art[0] - at[0]).toFloat(), (art[1] - at[1]).toFloat())
                 canvas.concat(behind.imageMatrix)
                 canvas.drawBitmap(f, null, Rect(0, 0, d?.intrinsicWidth ?: f.width, d?.intrinsicHeight ?: f.height), paint)
@@ -287,8 +289,8 @@ abstract class Screen : Activity() {
         @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
-    /** A thin watched-so-far bar: accent (or [color]) over a faint track. */
-    protected fun progressBar(progress: Float, color: Int = ACCENT) = LinearLayout(this).apply {
+    /** A thin watched-so-far bar: white (as on every card) over a faint track. */
+    protected fun progressBar(progress: Float, color: Int = Color.WHITE) = LinearLayout(this).apply {
         val p = progress.coerceIn(0.02f, 1f)
         setBackgroundColor(GLASS_HIGH)
         addView(View(context).apply { setBackgroundColor(color) }, LinearLayout.LayoutParams(0, -1, p))
@@ -320,7 +322,7 @@ abstract class Screen : Activity() {
         }
         dialog.setContentView(android.widget.ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            background = glass(16)
+            background = glassOver(this, 16) // the episode list's glass, over the screen's art
             addView(list)
         })
         dialog.window?.apply {
@@ -343,6 +345,7 @@ abstract class Screen : Activity() {
         const val PAD = 56 // dp: the side margin, clear of the TV's edges
         const val TILE_RADIUS = 12
         const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges
+        const val FROST_W = 360 // px the art is shrunk to before the blur: wider is less blur (240 read as fog, 480 as smeared)
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 32 // dp: the hero's pills
         const val FOCUS_GROW = 1.06f // how much a focused pill grows, everywhere
@@ -383,6 +386,7 @@ abstract class Screen : Activity() {
         // Flat translucent fills keep the glass quiet while focus remains visible.
         const val GLASS = 0xB3080808.toInt()
         const val GLASS_FOCUSED = 0xD0252525.toInt()
+        const val PILL_GLASS = 0x40FFFFFF // a resting pill: frosted art, lifted with a white veil
 
         const val INK = 0xFF111111.toInt() // dark words on a white button
         const val ACCENT = 0xFFE5484D.toInt()

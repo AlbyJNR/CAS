@@ -204,9 +204,10 @@ class MainActivity : Screen() {
                 rightMargin = (dp(PAD) - dp(32)) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM + CARD_H / 2 - 16)
             })
             // Sits on the row band, so a larger font size grows it upwards into the art, never down into the rows.
-            addView(browseInfo(), FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM).apply {
+            addView(browseInfo(), FrameLayout.LayoutParams(dp(HERO_W + 2 * FOCUS_ROOM), -2, Gravity.BOTTOM).apply {
                 heroBottom = screenH - rowTop + dp(HERO_GAP)
-                leftMargin = dp(PAD); bottomMargin = heroBottom
+                // Room inside the block for the focused Resume to grow into (it was cut flat on the left).
+                leftMargin = dp(PAD - FOCUS_ROOM); bottomMargin = heroBottom
             })
             addView(stage(), FrameLayout.LayoutParams(-1, -1))
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-1, dp(HEADER_H))) // fades in if the page wants it
@@ -342,7 +343,7 @@ class MainActivity : Screen() {
                 }
             }.inNav()
         }
-        nav.background = glassOver(nav, NAV_R + 4)
+        nav.background = rounded(GLASS, NAV_R + 4) // a plain dark capsule: words only, nothing to frost for
         header.addView(avatar, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         styleNav()
@@ -361,7 +362,7 @@ class MainActivity : Screen() {
 
     /**
      * Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item. A page with a
-     * filter says so on its name ("Movies ▾", "Movies · Comedy ▾").
+     * filter in use shows on its name ("Movies · Comedy"); OK on the open page picks it.
      */
     private fun styleNav() {
         navItems.forEach { (p, item) ->
@@ -373,7 +374,7 @@ class MainActivity : Screen() {
             }
             item.setTextColor(if (focused) INK else if (p == page) Color.WHITE else TEXT_MID)
             val choice = if (p != page) null else if (p == Page.LIBRARY) "A–Z".takeIf { libraryByName } else genre
-            item.text = p.label + (choice?.let { DOT + it } ?: "") + if (p in FILTERED) "  ▾" else ""
+            item.text = p.label + (choice?.let { DOT + it } ?: "")
         }
         search?.let {
             it.background = if (it.isFocused) rounded(Color.WHITE, NAV_R) else null
@@ -569,6 +570,7 @@ class MainActivity : Screen() {
             heroActions.marginTop(16),
         ).apply {
             alpha = 0f
+            setPadding(dp(FOCUS_ROOM), 0, dp(FOCUS_ROOM), 0)
             // Too tall for the art above the rows (a large font size, a two-line name): the description gives up lines
             // until the block clears the top bar's words (they end well above its 76 dp). showHero gives them back for
             // the next title.
@@ -735,7 +737,10 @@ class MainActivity : Screen() {
                     val more: ((Int) -> List<Item>)? = if (catalog.pages && picked == null) { from ->
                         if (from < items.size) items.drop(from).take(PAGE) else catalog.addon.catalog(catalog, from).map(::metaItem)
                     } else later(items)
-                    if (items.isNotEmpty()) slot.addView(row(title, items.take(START), more).view)
+                    // The two rows the remote can reach at once are made now; the rest, out of sight below, one at a time
+                    // after the switch has drawn, so making their cards doesn't stall the page coming in.
+                    fun add() { if (g == generation && items.isNotEmpty()) slot.addView(row(title, items.take(START), more).view) }
+                    if (i < 2) add() else main.postDelayed(::add, ROW_LATER + i * ROW_STAGGER)
                     // Nothing to continue: the cinema shows the first catalog's top titles instead.
                     if (p == Page.HOME && i == 0 && items.isNotEmpty()) main.postDelayed({ if (cinema.isEmpty() && page == p) startCinema(items.take(CINEMA_MAX)) }, 1500)
                     main.post(::updateImages)
@@ -977,9 +982,14 @@ class MainActivity : Screen() {
             override fun hasOverlappingRendering() = false
             // Grey only until the art arrives, so the GPU doesn't paint a hidden layer under every card.
             private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            private val name = text(item.name, if (wide) BODY else SMALL, bold = true).apply {
-                maxLines = if (wide) 1 else 2; ellipsize = TextUtils.TruncateAt.END; visibility = if (wide) View.VISIBLE else View.INVISIBLE
+            // The name in words: always on a wide card, on a poster only when it has no picture. Made only then: a
+            // text view per card was a good part of the cost of making a row.
+            private val nameMade = lazy {
+                text(item.name, if (wide) BODY else SMALL, bold = true).apply { maxLines = if (wide) 1 else 2; ellipsize = TextUtils.TruncateAt.END }
+                    .also { face.addView(it, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12)) }) }
             }
+            private val name by nameMade
+            private val inset = if (wide) 14 else 12
             private var shown: String? = null
             private var wanted = false // near the screen: load when the details arrive
             // The poster appears once it's decoded; until then the card is a plain dark tile.
@@ -996,11 +1006,11 @@ class MainActivity : Screen() {
                 clipToOutline = true
                 setBackgroundColor(SURFACE)
                 face.addView(image, LayoutParams(-1, -1))
-                face.addView(View(context).apply {
+                // A dark foot under the words or the progress bar; a plain poster needs none.
+                if (wide || item.progress > 0) face.addView(View(context).apply {
                     background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x66000000, 0x00000000))
                 }, LayoutParams(-1, dp(cardH * (if (wide) 6 else 4) / 10), Gravity.BOTTOM))
-                val inset = if (wide) 14 else 12
-                face.addView(name, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12)) })
+                if (wide) name.visibility = View.VISIBLE
                 // Time left as a quiet label in the corner, where the eye checks before choosing what to resume.
                 val timeLeft = item.left?.split(DOT)?.lastOrNull { it.endsWith("left") }
                 if (wide && timeLeft != null) face.addView(text(timeLeft, SMALL, bold = true).apply {
@@ -1052,7 +1062,7 @@ class MainActivity : Screen() {
                 face.alpha = 0f
                 var now = true // from memory: no fade, it's simply there
                 Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
-                    name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
+                    if (nameMade.isInitialized()) name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
                 }
                 now = false
@@ -1245,7 +1255,7 @@ class MainActivity : Screen() {
         const val RADIUS = 12
         const val ROW_TOP_ROOM = HEADING_GAP + 9 // dp between the row title and its cards, plus the focused card's growth (5% of 180 dp a side)
         const val ROW_BOTTOM_ROOM = 14 // dp below the cards, for the focused one's growth and shadow
-        const val SAFE_BOTTOM = 12 // dp below the row band; with its own 14 dp the cards end 26 dp (5%) from the edge, which TVs may crop
+        const val SAFE_BOTTOM = 22 // dp below the row band: a focused card (grown 9 dp) still ends 27 dp (5%) from the edge, inside what TVs crop
         const val DIM = 0.45f // how dark the other cards in the row the remote is in get: enough that the focused one stands out at 3 m
         const val QUIET = 0.65f // the next row remains visible without competing with the active one
         const val HERO_GAP = SECTION_GAP // dp between the focused title's block and the row heading below it
@@ -1253,9 +1263,12 @@ class MainActivity : Screen() {
         // Cards a row starts with (a screenful and a bit), then how many come at a time as the remote nears its end.
         // Building every row's 25 cards at once held the main thread for over a second on a page switch (about 3.6 ms
         // a card), so the first row's posters, already decoded, didn't show until every row was made.
+        const val FOCUS_ROOM = 8 // dp around the title block for a focused pill to grow into
         const val START = 9
+        const val ROW_LATER = 350L // ms after a page opens before its rows out of sight are made
+        const val ROW_STAGGER = 60L // ms between them
         const val PAGE = 12
-        const val AHEAD = 6 // cards from a row's end when the next page is asked for
+        const val AHEAD = 8 // cards from a row's end when the next page is asked for: early enough that a row of 9 grows before it would stop short of the margin
         const val FIRST = 8 // cards per row loaded before it's scrolled sideways (a screenful and two)
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)
