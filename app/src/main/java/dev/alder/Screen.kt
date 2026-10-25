@@ -297,6 +297,41 @@ abstract class Screen : Activity() {
 
     protected fun isInside(v: View, parent: View): Boolean = generateSequence(v) { it.parent as? View }.any { it === parent }
 
+    /**
+     * A short list to pick from (a menu, a genre, a yes or no), on a dark glass panel with the app's white focus, in
+     * place of Android's grey dialog. [checked] gets a tick (the choice in use); the remote starts on [focus].
+     */
+    protected fun choose(title: String, items: List<String>, message: String? = null, checked: Int = -1,
+                         focus: Int = maxOf(checked, 0), pick: (Int) -> Unit) {
+        val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
+        val list = column(Gravity.START).apply { setPadding(dp(12), dp(16), dp(12), dp(12)) }
+        val words = column(Gravity.START, text(title, BODY, bold = true)).apply { setPadding(dp(16), 0, dp(16), dp(10)) }
+        message?.let { words.addView(text(it, SMALL, color = TEXT_MID).marginTop(6)) }
+        list.addView(words, LinearLayout.LayoutParams(-1, -2))
+        val rows = items.mapIndexed { i, label ->
+            text(label, BODY).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(10), dp(16), dp(10))
+                if (i == checked) setCompoundDrawablesRelative(null, null, getDrawable(R.drawable.ic_check)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null)
+                rowFocus()
+                setOnClickListener { dialog.dismiss(); pick(i) }
+                list.addView(this, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        dialog.setContentView(android.widget.ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            background = glass(16)
+            addView(list)
+        })
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            setLayout(dp(340), -2)
+            setDimAmount(0.6f)
+        }
+        dialog.show()
+        rows.getOrNull(focus)?.requestFocus()
+    }
+
     /** Something didn't load: what went wrong in a line, and a button to try again. */
     protected fun failed(message: String, retry: () -> Unit) = column(Gravity.START,
         text(message, BODY, color = TEXT_MID),

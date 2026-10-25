@@ -49,17 +49,16 @@ class Addon(val descriptor: JSONObject) {
         return type in types && (prefixes == null || prefixes.any { id.startsWith(it) })
     }
 
-    // Catalogs and details are kept on disk as they arrive; the saved* versions read last time's answer, no network.
-    fun catalog(c: Catalog): List<Meta> = get(true, "catalog", c.type, c.id).optJSONArray("metas").objects().map(::Meta)
+    // Catalogs (one [genre] of them with Stremio's `genre` extra) and details are kept on disk as they arrive; the saved*
+    // versions read last time's answer, no network.
+    fun catalog(c: Catalog, genre: String? = null): List<Meta> = get(true, *catalogPath(c, genre)).optJSONArray("metas").objects().map(::Meta)
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
     fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
 
-    /** One genre of a catalog (Stremio's `genre` extra); not kept on disk. */
-    fun catalog(c: Catalog, genre: String): List<Meta> =
-        get(false, "catalog", c.type, c.id, "genre=$genre").optJSONArray("metas").objects().map(::Meta)
+    fun savedCatalog(c: Catalog, genre: String? = null): List<Meta>? = saved(*catalogPath(c, genre))?.optJSONArray("metas")?.objects()?.map(::Meta)
 
-    fun savedCatalog(c: Catalog): List<Meta>? = saved("catalog", c.type, c.id)?.optJSONArray("metas")?.objects()?.map(::Meta)
+    private fun catalogPath(c: Catalog, genre: String?) = listOfNotNull("catalog", c.type, c.id, genre?.let { "genre=$it" }).toTypedArray()
 
     /** The addon's first advertised search catalog for each title type. */
     fun search(query: String): List<Meta> {
@@ -129,7 +128,7 @@ class Meta(json: JSONObject) {
     /** The title as artwork (AIOMetadata and Cinemeta provide it), shown instead of plain text when present. */
     val logo = json.text("logo")
     val description = json.text("description")
-    val year = json.text("releaseInfo")
+    val year = json.text("releaseInfo")?.trimEnd('–', '-', ' ') // "2026–" (still running) reads as 2026 everywhere
     val runtime = json.text("runtime")
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)

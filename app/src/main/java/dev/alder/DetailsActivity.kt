@@ -111,7 +111,7 @@ class DetailsActivity : Screen() {
         } else {
             val facts = listOfNotNull(
                 if (type == "series") "Series" else "Movie",
-                m.year?.trimEnd('–', '-', ' '),
+                m.year,
                 m.genres.firstOrNull(),
                 m.runtime?.takeIf { type != "series" },
                 m.rating?.let { "IMDb $it" },
@@ -358,7 +358,7 @@ class DetailsActivity : Screen() {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(0xC9000808.toInt(), 0x99000808.toInt(), 0x00000000))
         }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 3 / 5, -1))
-        val facts = listOfNotNull(m.year?.trimEnd('–', '-', ' '), m.runtime,
+        val facts = listOfNotNull(m.year, m.runtime,
             m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString(DOT)
         val story = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false

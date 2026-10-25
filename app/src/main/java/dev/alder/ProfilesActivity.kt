@@ -91,8 +91,7 @@ class ProfilesActivity : Screen() {
                 setPadding(dp(16), dp(10), dp(16), dp(10))
                 rowFocus(8)
                 setOnClickListener {
-                    AlertDialog.Builder(this@ProfilesActivity).setTitle("Manage profiles")
-                        .setItems(profiles.map { it.name }.toTypedArray()) { _, i -> showMenu(profiles[i]) }.show()
+                    choose("Manage profiles", profiles.map { it.name }) { i -> showMenu(profiles[i]) }
                 }
             }, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
                 leftMargin = dp(PAD - 16); bottomMargin = dp(60)
@@ -138,10 +137,7 @@ class ProfilesActivity : Screen() {
             },
             "Remove profile" to { withPin(p) { showPicker(); confirmRemove(p) } },
         )
-        AlertDialog.Builder(this)
-            .setTitle(p.name)
-            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
-            .show()
+        choose(p.name, items.map { it.first }) { i -> items[i].second() }
     }
 
     /** Runs [then] straight away, or once the profile's PIN is typed, so a locked profile can't be changed around it. */
@@ -245,17 +241,14 @@ class ProfilesActivity : Screen() {
     }
 
     private fun confirmRemove(p: Profile) {
-        AlertDialog.Builder(this)
-            .setTitle("Remove ${p.name}?")
-            .setMessage("This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.")
-            .setPositiveButton("Remove") { _, _ ->
-                Profiles.remove(this, p.id)
-                background({ Http.forget() }) {}
-                background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
-                if (Profiles.all(this).isEmpty()) showName() else showPicker()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        choose("Remove ${p.name}?", listOf("Cancel", "Remove"),
+            "This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.") { i ->
+            if (i == 0) return@choose
+            Profiles.remove(this, p.id)
+            background({ Http.forget() }) {}
+            background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
+            if (Profiles.all(this).isEmpty()) showName() else showPicker()
+        }
     }
 
     // ---------- add a profile ----------

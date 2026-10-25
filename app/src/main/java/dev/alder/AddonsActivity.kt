@@ -68,14 +68,13 @@ class AddonsActivity : Screen() {
             if (i > 0) "Move up" to { save(addons.toMutableList().apply { add(i - 1, removeAt(i)) }, a.transportUrl) } else null,
             if (i < addons.size - 1) "Move down" to { save(addons.toMutableList().apply { add(i + 1, removeAt(i)) }, a.transportUrl) } else null,
             if (!a.locked) "Remove" to {
-                AlertDialog.Builder(this).setMessage("Remove ${a.name} from this profile?")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Remove") { _, _ -> save(addons - a, addons.getOrNull(i + 1)?.transportUrl) }.show()
+                choose("Remove ${a.name} from this profile?", listOf("Cancel", "Remove")) { n ->
+                    if (n == 1) save(addons - a, addons.getOrNull(i + 1)?.transportUrl)
+                }
                 Unit
             } else null,
         )
-        AlertDialog.Builder(this).setTitle(a.name)
-            .setItems(actions.map { it.first }.toTypedArray()) { _, n -> actions[n].second() }.show()
+        choose(a.name, actions.map { it.first }) { n -> actions[n].second() }
     }
 
     private fun askUrl() {

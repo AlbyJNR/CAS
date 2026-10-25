@@ -1,7 +1,6 @@
 package dev.alder
 
 import android.content.Context
-import android.app.AlertDialog
 import android.app.ActivityManager
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -79,7 +78,7 @@ class SettingsActivity : Screen() {
         action("Language", Locale.getDefault().displayLanguage, "The TV's own language setting; the app follows it.") {
             runCatching { startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS).setData(android.net.Uri.parse("package:$packageName"))) }
                 .recoverCatching { startActivity(Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)) }
-                .onFailure { AlertDialog.Builder(this).setMessage("Language settings are unavailable on this TV.").setPositiveButton("OK", null).show() }
+                .onFailure { choose("Language settings are unavailable on this TV.", listOf("OK")) {} }
         }
         heading("Addons")
         val signedIn = authKey != null
@@ -98,11 +97,10 @@ class SettingsActivity : Screen() {
         section("Subtitles", subtitles)
         heading("Storage")
         action("Clear local storage", "", "Removes profiles, settings and saved data from this TV. Stremio accounts stay as they are.") {
-            AlertDialog.Builder(this).setTitle("Clear local storage?")
-                .setMessage("This removes saved profiles, settings, and cached data from this TV. It does not cancel your Stremio account.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Clear") { _, _ ->
-                    (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
-                }.show()
+            choose("Clear local storage?", listOf("Cancel", "Clear"),
+                "This removes saved profiles, settings, and cached data from this TV. It does not cancel your Stremio account.") { i ->
+                if (i == 1) (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
+            }
         }
 
         hint = text("", BODY, color = TEXT_MID).apply { setPadding(0, dp(10), 0, dp(18)) }

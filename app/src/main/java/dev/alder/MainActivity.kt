@@ -1,7 +1,6 @@
 package dev.alder
 
 import android.animation.ValueAnimator
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -52,9 +51,7 @@ class MainActivity : Screen() {
     // Movies and Shows can show one genre (null: everything); Library sorts by last change or by name.
     private var genre: String? = null
     private var libraryByName = false
-    private lateinit var filter: TextView
-    private var search: TextView? = null
-    private var filterRest: android.graphics.drawable.Drawable? = null
+    private var search: ImageView? = null
     private val rows = mutableListOf<Row>()
     private var focusedSomething = false
     private val metas = mutableMapOf<String, Meta>() // full details, fetched once per title
@@ -163,8 +160,6 @@ class MainActivity : Screen() {
         val rowTop = screenH - rowH - dp(SAFE_BOTTOM) // one row on screen; the track in the left margin says where you are
         content = column(Gravity.START)
         scroller = object : ScrollView(this) {
-            private var last: View? = null
-
             override fun requestChildFocus(child: View, focused: View) {
                 super.requestChildFocus(child, focused)
                 last = focused
@@ -222,13 +217,30 @@ class MainActivity : Screen() {
             if (mode == Mode.CINEMA) chrome() // the top bar shows only while the remote is on it
         }
         showPage(Page.HOME)
+        main.postDelayed(::warmPages, WARM_AFTER)
     }
 
-    // Back from a title or the player: Continue Watching may have moved on, so this asks Stremio, not the disk.
+    /**
+     * Once Home has settled: the top rows' first posters on Shows and Movies, from last time's catalogs, so opening those
+     * pages from the top bar draws them at once instead of as blank tiles.
+     */
+    private fun warmPages() = background({
+        val catalogs = Stremio.savedAddons(profile.authKey).orEmpty().flatMap { it.catalogs }
+        for (p in listOf(Page.SHOWS, Page.MOVIES)) {
+            catalogs.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it.rank } }.sortedBy { it.second }.take(2)
+                .forEach { (c, _) -> c.addon.savedCatalog(c)?.take(FIRST)?.forEach { Images.prefetch(it.poster ?: it.background, (dp(CARD_W) * CARD_GROW).toInt()) } }
+        }
+    }) {}
+
+    // Back from a title or the player: Continue Watching may have moved on, so this asks Stremio, not the disk. Only
+    // the library's rows are redrawn, so the remote stays where it was on the rest of the page.
     override fun onRestart() {
         super.onRestart()
-        if (page == Page.HOME || page == Page.LIBRARY) showPage(page, quick = false)
+        refreshLibrary?.invoke()
     }
+
+    private var refreshLibrary: (() -> Unit)? = null // the open page's library rows (Home, Library), asked again
+    private var last: View? = null // where the remote last was in the rows
 
     override fun onResume() {
         super.onResume()
@@ -254,6 +266,11 @@ class MainActivity : Screen() {
             if (event.action == KeyEvent.ACTION_DOWN) enterBrowse()
             return true
         }
+        // Down from the top bar goes to the titles, past Resume (one Up from the cards), to where the remote last was.
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && event.action == KeyEvent.ACTION_DOWN && header.hasFocus()) {
+            val to = last?.takeIf { it.isAttachedToWindow && it.isShown } ?: firstRow()?.let { it.cards[it.selected] }
+            if (to != null) { to.requestFocus(); return true }
+        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -274,72 +291,94 @@ class MainActivity : Screen() {
             }
         }.apply { setPadding(dp(PAD), dp(18), dp(PAD), dp(6)) }
 
-        // The profile: a round avatar on the margin. OK opens a small menu (switch profile, settings).
-        val avatar = text(profile.name.take(1).uppercase(), BODY, bold = true).apply {
+        // The profile: a small round avatar on the margin. OK opens a small menu (switch profile, settings).
+        val avatar = text(profile.name.take(1).uppercase(), SMALL, bold = true).apply {
             gravity = Gravity.CENTER
-            isFocusable = true
             contentDescription = "Profile"
+            // Focused it turns white with a dark letter, like every small control; its colour alone was too faint at 3 m.
             fun style(focused: Boolean) {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(profile.color) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (focused) Color.WHITE else profile.color) }
+                setTextColor(if (focused) INK else Color.WHITE)
             }
             style(false)
-            setOnFocusChangeListener { v, has ->
-                style(has)
-                v.animate().scaleX(if (has) FOCUS_GROW else 1f).scaleY(if (has) FOCUS_GROW else 1f).setDuration(120).start()
-            }
+            cardFocus(::style)
             setOnClickListener { profileMenu() }
         }
-        // Every destination in one dark capsule, Search included: one place for the eye instead of words across the top.
+        // Every destination in one dark capsule, Search first as an icon (Left from Home), like Google TV's top bar.
         val nav = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        fun navItem(label: String, open: () -> Unit) = text(label, BODY).apply {
-            setPadding(dp(16), dp(7), dp(16), dp(7))
+        // A gap between pills, so the open page's and the focused one never touch.
+        fun <V : View> V.inNav(width: Int = -2, height: Int = -2) = apply {
             isFocusable = true
+            nav.addView(this, LinearLayout.LayoutParams(width, height).apply { if (nav.childCount > 0) marginStart = dp(NAV_GAP) })
+        }
+        // As tall as the words' pills (match parent), the glyph 18 dp inside it.
+        search = ImageView(this).apply {
+            setImageResource(R.drawable.ic_search)
+            contentDescription = "Search"
+            setPadding(dp(13), dp(7), dp(13), dp(7))
             setOnFocusChangeListener { _, _ -> styleNav() }
-            setOnClickListener { open() }
-            nav.addView(this)
+            setOnClickListener { startActivity(Intent(this@MainActivity, SearchActivity::class.java)) }
+        }.inNav(width = dp(44), height = -1)
+        // A page opens as soon as the remote rests on its name: no OK. OK on the open page's name opens its filter
+        // (genre, or Library's order), so the filter is never across other pages' names.
+        Page.entries.forEach { p ->
+            navItems[p] = text(p.label, BODY).apply {
+                setPadding(dp(16), dp(7), dp(16), dp(7))
+                setOnFocusChangeListener { _, has ->
+                    styleNav()
+                    main.removeCallbacks(switchPage)
+                    if (has && p != page) { pending = p; main.postDelayed(switchPage, SWITCH_WAIT) }
+                }
+                setOnClickListener {
+                    main.removeCallbacks(switchPage)
+                    when {
+                        p != page -> { jump = true; showPage(p) }
+                        p in FILTERED -> pickFilter()
+                        else -> firstRow()?.focusFirst()
+                    }
+                }
+            }.inNav()
         }
         nav.background = glassOver(nav, NAV_R + 4)
-        Page.entries.forEach { p -> navItems[p] = navItem(p.label) { showPage(p) } }
-        search = navItem("Search") { startActivity(Intent(this, SearchActivity::class.java)) }
-        filter = text("", BODY).apply {
-            setPadding(dp(16), dp(11), dp(16), dp(11))
-            isFocusable = true
-            setOnFocusChangeListener { _, _ -> styleNav() }
-            setOnClickListener { pickFilter() }
-        }
-        header.addView(avatar, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.START or Gravity.CENTER_VERTICAL))
+        header.addView(avatar, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        filterRest = glassOver(filter, NAV_R + 4)
-        header.addView(filter, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
     }
 
+    private var pending = Page.HOME
+    private var jump = false // OK on a page's name: go down into its rows once they're in
+    private val switchPage = Runnable { if (pending != page && navItems[pending]?.isFocused == true) { jump = false; showPage(pending) } }
+
     private fun profileMenu() {
-        AlertDialog.Builder(this).setItems(arrayOf("Switch profile", "Settings")) { _, i ->
+        choose(profile.name, listOf("Switch profile", "Settings")) { i ->
             if (i == 0) switchProfile() else startActivity(Intent(this, SettingsActivity::class.java))
-        }.show()
+        }
     }
 
-    /** Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item. */
+    /**
+     * Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item. A page with a
+     * filter says so on its name ("Movies ▾", "Movies · Comedy ▾").
+     */
     private fun styleNav() {
-        (navItems.toList() + listOfNotNull(search?.let { null to it })).forEach { (p, item) ->
+        navItems.forEach { (p, item) ->
             val focused = item.isFocused
             item.background = when {
                 focused -> rounded(Color.WHITE, NAV_R)
                 p == page -> rounded(GLASS_HIGH, NAV_R)
                 else -> null
             }
-            item.setTextColor(if (focused) Color.BLACK else if (p == page) Color.WHITE else TEXT_MID)
+            item.setTextColor(if (focused) INK else if (p == page) Color.WHITE else TEXT_MID)
+            val choice = if (p != page) null else if (p == Page.LIBRARY) "A–Z".takeIf { libraryByName } else genre
+            item.text = p.label + (choice?.let { DOT + it } ?: "") + if (p in FILTERED) "  ▾" else ""
         }
-        if (!::filter.isInitialized) return
-        filter.visibility = if (page in listOf(Page.MOVIES, Page.SHOWS, Page.LIBRARY)) View.VISIBLE else View.GONE
-        filter.text = if (page == Page.LIBRARY) (if (libraryByName) "A–Z  ▾" else "Recent  ▾") else "${genre ?: "All genres"}  ▾"
-        filter.background = if (filter.isFocused) rounded(Color.WHITE, NAV_R + 4) else filterRest
-        filter.setTextColor(if (filter.isFocused) Color.BLACK else Color.WHITE)
+        search?.let {
+            it.background = if (it.isFocused) rounded(Color.WHITE, NAV_R) else null
+            it.setColorFilter(if (it.isFocused) INK else TEXT_MID)
+        }
     }
 
     /** Library flips between Recent and A–Z; Movies and Shows offer every genre their catalogs can filter by. */
@@ -349,8 +388,13 @@ class MainActivity : Screen() {
         val genres = (Stremio.savedAddons(profile.authKey) ?: emptyList()).flatMap { it.catalogs }
             .filter { it.type == type }.flatMap { it.genres }.filterNot { it.equals("All", true) }.distinct().sorted() // "All" is one addon's no-filter
         val choices = listOf("All genres") + genres
-        AlertDialog.Builder(this).setTitle("Genre")
-            .setItems(choices.toTypedArray()) { _, i -> genre = if (i == 0) null else choices[i]; showPage(page) }.show()
+        // Opens on the genre in use; picking one goes down into its rows.
+        choose("Genre", choices, checked = choices.indexOf(genre).coerceAtLeast(0)) { i ->
+            if ((if (i == 0) null else choices[i]) == genre) return@choose
+            genre = if (i == 0) null else choices[i]
+            jump = true
+            showPage(page)
+        }
     }
 
     // ---------- the art, and what shows over it ----------
@@ -394,7 +438,7 @@ class MainActivity : Screen() {
         header.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         topShade.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         // Lighter in the cinema (only its few words sit low on the left), full while browsing under the cards.
-        browseInfo.animate().alpha(if (cinemaOn) 0f else 1f).setDuration(250).start()
+        browseInfo.animate().alpha(if (cinemaOn || heroItem == null) 0f else 1f).setDuration(250).start()
         if (cinemaOn) {
             main.removeCallbacks(hideTrack)
             indicatedRow = null
@@ -547,6 +591,7 @@ class MainActivity : Screen() {
         heroAbout.text = episode(item)?.overview?.takeIf { it.isNotBlank() } ?: item.about
         // Kept in the layout when hidden, so the title block sits at the same height on every row and every page.
         heroActions.visibility = if (item.resume) View.VISIBLE else View.INVISIBLE
+        if (mode == Mode.BROWSE) browseInfo.animate().alpha(1f).setDuration(150).start()
         showArt(item)
     }
 
@@ -579,6 +624,7 @@ class MainActivity : Screen() {
         if (p != page) genre = null // a genre belongs to the page it was picked on
         page = p
         val g = ++generation
+        refreshLibrary = null
         touched = false
         styleNav()
         content.removeAllViews()
@@ -590,6 +636,9 @@ class MainActivity : Screen() {
         moreHint.alpha = 0f
         if (p == Page.HOME) cinema = emptyList() // other pages keep Home's, so the screensaver works there too
         focusedSomething = false
+        // The last page's title goes with it; an empty page (no library yet, no catalogs) shows none.
+        heroItem = null
+        browseInfo.animate().alpha(0f).setDuration(150).start()
         scroller.scrollTo(0, 0)
         mode = Mode.BROWSE
         main.removeCallbacks(advance)
@@ -608,18 +657,20 @@ class MainActivity : Screen() {
             failedShown = true
             val view = failed("Couldn't reach Stremio. Check the TV's connection.") { showPage(page) }.apply { setPadding(dp(PAD), 0, 0, 0) }
             content.addView(view, 0)
-            view.post { if (!focusedSomething) view.getChildAt(1).requestFocus() }
+            view.post { if (!focusedSomething && !header.hasFocus()) view.getChildAt(1).requestFocus() }
         }
 
         if (p == Page.HOME || p == Page.LIBRARY) {
             val slot = slot()
             var shown: String? = null // what's on screen, to tell whether the fresh library changed anything
             var fresh = false
-            fun show(list: List<JSONObject>) {
+            fun show(list: List<JSONObject>, force: Boolean = false) {
                 val cw = Library.continueWatching(list)
                 val what = (if (p == Page.HOME) cw else list).joinToString { it.optString("_id") + it.optJSONObject("state")?.optLong("timeOffset") }
-                if (what == shown || (shown != null && touched)) return
+                if (what == shown || (shown != null && touched && !force)) return
                 shown = what
+                // The remote was on one of these titles: it stays on that title wherever it moved (watched: to the front).
+                val was = (currentFocus?.takeIf { isInside(it, slot) })?.tag
                 library = list
                 if (p == Page.HOME) Profiles.active(this)?.let { me -> background({ WatchNext.sync(applicationContext, me.authKey, cw, me.pin != null) }) {} }
                 rows.filter { isInside(it.view, slot) }.forEach { r -> r.cards.forEach { it.unload() }; rows.remove(r) }
@@ -627,19 +678,22 @@ class MainActivity : Screen() {
                 if (p == Page.HOME) {
                     val items = cw.map(::libraryItem)
                     if (items.isNotEmpty()) {
-                        slot.addView(row("Continue Watching", items.take(PAGE), later(items)).view)
+                        slot.addView(row("Continue Watching", items.take(START), later(items)).view)
                         startCinema(items.take(CINEMA_MAX))
                     }
                 } else {
                     showLibrary(slot)
                 }
+                if (was != null) (slot.findViewWithTag(was) ?: rows.firstOrNull { isInside(it.view, slot) }?.cards?.firstOrNull())?.requestFocus()
             }
-            if (quick) background({ Stremio.savedLibrary(key) }) { r -> if (g == generation && !fresh) r.getOrNull()?.let(::show) }
-            background({ Stremio.library(key) }) { result ->
+            if (quick) background({ Stremio.savedLibrary(key) }) { r -> if (g == generation && !fresh) r.getOrNull()?.let { show(it) } }
+            fun ask(force: Boolean) = background({ Stremio.library(key) }) { result ->
                 if (g != generation) return@background
                 fresh = true
-                result.fold(::show) { if (shown == null) failedToLoad(it) }
+                result.fold({ show(it, force) }) { if (shown == null) failedToLoad(it) }
             }
+            ask(false)
+            refreshLibrary = { ask(true) }
         }
         if (p == Page.LIBRARY) return
 
@@ -666,19 +720,22 @@ class MainActivity : Screen() {
                 val title = shelf.title
                 val slot = slot()
                 background({
-                    if (picked != null) catalog.addon.catalog(catalog, picked) to false
-                    else (if (quick) catalog.addon.savedCatalog(catalog) else null)?.let { it to true } ?: (catalog.addon.catalog(catalog) to false)
+                    (if (quick) catalog.addon.savedCatalog(catalog, picked) else null)?.let { it to true } ?: (catalog.addon.catalog(catalog, picked) to false)
                 }) { answer ->
                     if (g != generation) return@background
                     val (metas, wasSaved) = answer.getOrNull() ?: (emptyList<Meta>() to false)
-                    if (wasSaved) background({ catalog.addon.catalog(catalog) }) {} // fresh for next time
+                    // Fresh for next time, with the top rows' first posters fetched too: recommendations change on
+                    // every refresh, and the next visit drew blank tiles while they downloaded.
+                    if (wasSaved) background({ catalog.addon.catalog(catalog, picked) }) { fresh ->
+                        if (i < 3) fresh.getOrNull()?.take(FIRST)?.forEach { Images.prefetch(it.poster ?: it.background, (dp(CARD_W) * CARD_GROW).toInt()) }
+                    }
                     val items = metas.map(::metaItem)
                     // The rest of the first page first, then the addon's next pages when it takes `skip`.
                     // ponytail: a genre row stops at its first page; add genre&skip paging if those rows feel short
                     val more: ((Int) -> List<Item>)? = if (catalog.pages && picked == null) { from ->
                         if (from < items.size) items.drop(from).take(PAGE) else catalog.addon.catalog(catalog, from).map(::metaItem)
                     } else later(items)
-                    if (items.isNotEmpty()) slot.addView(row(title, items.take(PAGE), more).view)
+                    if (items.isNotEmpty()) slot.addView(row(title, items.take(START), more).view)
                     // Nothing to continue: the cinema shows the first catalog's top titles instead.
                     if (p == Page.HOME && i == 0 && items.isNotEmpty()) main.postDelayed({ if (cinema.isEmpty() && page == p) startCinema(items.take(CINEMA_MAX)) }, 1500)
                     main.post(::updateImages)
@@ -742,8 +799,8 @@ class MainActivity : Screen() {
             return
         }
         val column = column(Gravity.START)
-        items.filter { it.type == "movie" }.takeIf { it.isNotEmpty() }?.let { column.addView(row("Movies", it.take(PAGE), later(it)).view) }
-        items.filter { it.type == "series" }.takeIf { it.isNotEmpty() }?.let { column.addView(row("Shows", it.take(PAGE), later(it)).view) }
+        items.filter { it.type == "movie" }.takeIf { it.isNotEmpty() }?.let { column.addView(row("Movies", it.take(START), later(it)).view) }
+        items.filter { it.type == "series" }.takeIf { it.isNotEmpty() }?.let { column.addView(row("Shows", it.take(START), later(it)).view) }
         slot.addView(column)
     }
 
@@ -751,7 +808,7 @@ class MainActivity : Screen() {
 
     /** The rest of a list already in hand, a page at a time: a row of hundreds of cards would be slow to build. */
     private fun later(all: List<Item>): ((Int) -> List<Item>)? =
-        if (all.size <= PAGE) null else { from -> all.drop(from).take(PAGE) }
+        if (all.size <= START) null else { from -> all.drop(from).take(PAGE) }
 
     private fun row(title: String, items: List<Item>, more: ((Int) -> List<Item>)? = null, wide: Boolean = false): Row = Row(title, items, more, wide).also {
         rows += it
@@ -761,12 +818,22 @@ class MainActivity : Screen() {
             main.removeCallbacks(focusTop)
             main.postDelayed(focusTop, 400)
         }
+        // A page opened by resting on its name: the remote stays in the top bar and the top row's first title shows
+        // above as soon as the top rows are in (they answer within a few tens of ms of each other).
+        if (header.hasFocus()) { main.removeCallbacks(heroTop); main.postDelayed(heroTop, 150) }
     }
 
     private val focusTop = Runnable {
         if (focusedSomething || mode != Mode.BROWSE) return@Runnable
         focusedSomething = true
+        if (header.hasFocus() && !jump) return@Runnable
+        jump = false
         firstRow()?.focusFirst()
+    }
+
+    private val heroTop = Runnable {
+        val first = firstRow()?.takeIf { header.hasFocus() && mode == Mode.BROWSE } ?: return@Runnable
+        first.items[first.selected].takeIf { it !== heroItem }?.let { fill(it); showHero(it) }
     }
 
     /** The row nearest the top of the page: where Up goes back to the cinema from. */
@@ -1169,6 +1236,10 @@ class MainActivity : Screen() {
         const val WIDE_H = WIDE_W * 9 / 16
         const val INFO_W = 360 // the cinema's line
         const val NAV_R = 18 // dp: the top bar's pills
+        const val NAV_GAP = 4 // dp between them
+        const val WARM_AFTER = 3000L // ms after launch before other pages' posters are fetched ahead
+        const val SWITCH_WAIT = 300L // ms the remote rests on a page's name before it opens: passing over names opens nothing
+        val FILTERED = setOf(Page.SHOWS, Page.MOVIES, Page.LIBRARY) // pages with a filter (genre, or Library's order)
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
         const val RADIUS = 12
@@ -1179,7 +1250,11 @@ class MainActivity : Screen() {
         const val QUIET = 0.65f // the next row remains visible without competing with the active one
         const val HERO_GAP = SECTION_GAP // dp between the focused title's block and the row heading below it
         const val RISE = 200 // dp the rows travel when they come up from the cinema
-        const val PAGE = 25 // cards a row starts with; more come as the remote nears its end
+        // Cards a row starts with (a screenful and a bit), then how many come at a time as the remote nears its end.
+        // Building every row's 25 cards at once held the main thread for over a second on a page switch (about 3.6 ms
+        // a card), so the first row's posters, already decoded, didn't show until every row was made.
+        const val START = 9
+        const val PAGE = 12
         const val AHEAD = 6 // cards from a row's end when the next page is asked for
         const val FIRST = 8 // cards per row loaded before it's scrolled sideways (a screenful and two)
         const val CINEMA_MAX = 8
