@@ -893,7 +893,6 @@ class PlayerActivity : Screen() {
             if (primary) {
                 fun face(focused: Boolean) = GradientDrawable().apply {
                     setColor(TEXT); cornerRadius = dp(radius).toFloat()
-                    if (focused) setStroke(dp(2), TUNGSTEN)
                 }
                 background = face(false)
                 setOnFocusChangeListener { view, focused ->

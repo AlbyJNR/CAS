@@ -211,12 +211,12 @@ abstract class Screen : Activity() {
 
     protected fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
 
-    /** House Lights' single glass recipe; focused controls add their own tungsten rim. */
+    /** House Lights' single glass recipe; focus brightens the face (no rim: dots are the only indicator). */
     protected fun glass(radiusDp: Int, focused: Boolean = false): Drawable {
         val face = GradientDrawable().apply {
             setColor(if (focused) GLASS_FOCUSED else GLASS)
             cornerRadius = dp(radiusDp).toFloat()
-            setStroke(dp(1), if (focused) TUNGSTEN else GLASS_EDGE)
+            setStroke(dp(1), GLASS_EDGE)
         }
         return LayerDrawable(arrayOf(face, Highlight(dp(radiusDp).toFloat())))
     }
@@ -238,7 +238,7 @@ abstract class Screen : Activity() {
         return shape.apply { op(lower, Path.Op.DIFFERENCE) }
     }
 
-    /** The warm-white primary action; focus adds the tungsten rim. */
+    /** The warm-white primary action; focus lifts and grows it. */
     protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
         isFocusable = true
         gravity = Gravity.CENTER_VERTICAL
@@ -250,7 +250,6 @@ abstract class Screen : Activity() {
             background = GradientDrawable().apply {
                 setColor(TEXT)
                 cornerRadius = dp(BUTTON_H / 2).toFloat()
-                if (focused) setStroke(dp(2), TUNGSTEN)
             }
             setTextColor(BASE)
             compoundDrawablesRelative[0]?.setTint(BASE)
@@ -285,7 +284,7 @@ abstract class Screen : Activity() {
         minHeight = dp(CHIP_H)
         setPadding(dp(16), 0, dp(16), 0)
         background = glass(CHIP_H / 2)
-        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has) }
+        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has); v.grow(has).start() }
     }
 
     /** A [chip]'s open state: the tungsten dot and full-strength words. */
@@ -367,7 +366,6 @@ abstract class Screen : Activity() {
             v.background = if (has) GradientDrawable().apply {
                 setColor(ROW_FOCUSED)
                 cornerRadius = dp(radiusDp).toFloat()
-                setStroke(dp(2), TUNGSTEN)
             } else rest()
             also(has)
         }
@@ -394,7 +392,7 @@ abstract class Screen : Activity() {
         foreground = if (on) GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
             cornerRadius = dp(radiusDp).toFloat()
-            setStroke(dp(2), TUNGSTEN)
+            setStroke(dp(1), TUNGSTEN_RIM) // a hairline: the glow and the lift carry focus
         } else null
         if (on && android.os.Build.VERSION.SDK_INT >= 28) {
             val poster = posterBitmap(this)
@@ -573,13 +571,14 @@ abstract class Screen : Activity() {
         const val TEXT_2 = 0xB8F3EEE6.toInt()
         const val TEXT_3 = 0x73F3EEE6
         const val TUNGSTEN = 0xFFF3D9B1.toInt()
+        const val TUNGSTEN_RIM = 0x99F3D9B1.toInt()
         const val TUNGSTEN_GLOW = 0x59F3D9B1
         const val GLASS = 0x4D28221C
-        const val GLASS_FOCUSED = 0x6628221C
+        const val GLASS_FOCUSED = 0x3DF3EEE6 // a lit face: with no rim, the fill alone carries focus
         const val GLASS_EDGE = 0x24FFF0DC
         const val GLASS_HIGHLIGHT = 0x4DFFF5E6
         const val ROW_FOCUSED = 0x29F3EEE6
-        const val PROGRESS_TRACK = 0x99000000.toInt()
+        const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
         private val pool = Executors.newFixedThreadPool(6)
     }
 }

@@ -119,7 +119,7 @@ class ProfilesActivity : Screen() {
         }
         profiles.forEach { p ->
             val last = text("", SMALL, color = TEXT_3).apply {
-                gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
             }
             tiles.addView(tile(p, last) { focus(p) }.apply {
                 setOnClickListener { enter(p) }
@@ -179,13 +179,12 @@ class ProfilesActivity : Screen() {
         }
         val circle = FrameLayout(this).apply {
             clipChildren = false
-            addView(View(context).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(TUNGSTEN) } },
-                FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER))
-            addView(View(context).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(BASE) } },
-                FrameLayout.LayoutParams(dp(106), dp(106), Gravity.CENTER))
             addView(face, FrameLayout.LayoutParams(dp(100), dp(100), Gravity.CENTER))
-            getChildAt(0).visibility = View.INVISIBLE
-            getChildAt(1).visibility = View.INVISIBLE
+        }
+        // No ring: like the top bar, a dot under the name marks the remote's portrait.
+        val dot = View(this).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(TUNGSTEN) }
+            visibility = View.INVISIBLE
         }
         val name = text(if (add) "Add" else profile?.name.orEmpty().replaceFirstChar { it.titlecase() } + if (profile?.pin != null) "  🔒" else "",
             BODY, color = TEXT_2).apply { gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -193,11 +192,11 @@ class ProfilesActivity : Screen() {
             addView(circle, LinearLayout.LayoutParams(dp(112), dp(112)))
             addView(name, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
             if (last != null) addView(last, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
+            addView(dot, LinearLayout.LayoutParams(dp(5), dp(5)).apply { topMargin = dp(8); gravity = Gravity.CENTER_HORIZONTAL })
             isFocusable = true
             clipChildren = false
             setOnFocusChangeListener { _, has ->
-                circle.getChildAt(0).visibility = if (has) View.VISIBLE else View.INVISIBLE
-                circle.getChildAt(1).visibility = if (has) View.VISIBLE else View.INVISIBLE
+                dot.visibility = if (has) View.VISIBLE else View.INVISIBLE
                 circle.grow(has, 1.1f).start()
                 face.alpha = if (has) 1f else 0.6f
                 name.setTextColor(if (has) TEXT else TEXT_2)

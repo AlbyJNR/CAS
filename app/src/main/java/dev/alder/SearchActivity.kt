@@ -13,6 +13,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -198,7 +199,8 @@ class SearchActivity : Screen() {
             isVerticalScrollBarEnabled = false
             addView(results)
         }
-        root.addView(resultsScroll, FrameLayout.LayoutParams(dp((width - 368).toInt()), dp((height - 220).toInt())).apply {
+        // Runs to the screen's right edge, as Home's rows do: stopping 48 dp short sliced the last poster in half.
+        root.addView(resultsScroll, FrameLayout.LayoutParams(dp((width - 320).toInt()), dp((height - 220).toInt())).apply {
             leftMargin = dp(320); topMargin = dp(220)
         })
         window.setBackgroundDrawable(null)
@@ -572,9 +574,19 @@ class SearchActivity : Screen() {
             val row = LinearLayout(this).apply {
                 clipChildren = false
                 clipToPadding = false
-                setPadding(dp(6), 0, dp(6), 0)
+                setPadding(dp(6), 0, dp(48), 0) // the last card rests at the screen's margin
             }
-            val scroller = HorizontalScrollView(this).apply {
+            // Slides like Home's rows (below, on focus) instead of scrolling just far enough, which left cards cut at both edges.
+            val scroller = object : HorizontalScrollView(this) {
+                override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect) = 0
+
+                // At either end the remote stays put, as on Home, instead of jumping to the row below.
+                override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                    val key = event.keyCode
+                    if (key == android.view.KeyEvent.KEYCODE_DPAD_RIGHT && row.getChildAt(row.childCount - 1)?.isFocused == true) return true
+                    return super.dispatchKeyEvent(event)
+                }
+            }.apply {
                 isHorizontalScrollBarEnabled = false
                 addView(row)
             }
@@ -610,11 +622,23 @@ class SearchActivity : Screen() {
                 resultsScroll.clipToPadding = true
                 shade.animate().alpha(if (has) 0f else 0.5f).setDuration(150).start()
                 if (has) {
+                    // The focused row snaps to the pane's top, as on Home: scrolling just far enough left Shows cut off.
+                    // Rows above it draw nothing: the pane didn't clip them, and they sat over the title's words.
+                    (scroller.parent as? View)?.let { group ->
+                        resultsScroll.smoothScrollTo(0, group.top)
+                        for (i in 0 until results.childCount) results.getChildAt(i).let { it.alpha = if (it.top < group.top) 0f else 1f }
+                    }
                     caption.text = meta.name + (meta.year?.let { "  ·  " + it.take(4) } ?: "")
                     caption.visibility = View.VISIBLE
+                    // The focused card goes to the row's start; near the end the row stops with the last card at the margin.
+                    // Cards that slid past the start hide, so no sliver shows at the pane's edge.
+                    val row = parent as ViewGroup
+                    val target = (left - row.paddingStart).coerceIn(0, (row.width - scroller.width).coerceAtLeast(0))
+                    scroller.smoothScrollTo(target, 0)
+                    for (i in 0 until row.childCount) row.getChildAt(i).let { it.animate().alpha(if (it.left < target + row.paddingStart - 1) 0f else 1f).setDuration(150).start() }
                     caption.post {
-                        caption.translationX = (left - scroller.scrollX).toFloat()
-                            .coerceIn(0f, (scroller.width - caption.width).coerceAtLeast(0).toFloat())
+                        caption.translationX = (left - target).toFloat()
+                            .coerceIn(0f, (scroller.width - dp(48) - caption.width).coerceAtLeast(0).toFloat())
                     }
                     show(meta)
                 } else caption.visibility = View.INVISIBLE
