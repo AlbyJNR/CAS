@@ -208,11 +208,24 @@ abstract class Screen : Activity() {
             cornerRadius = dp(radiusDp).toFloat()
             setStroke(dp(1), if (focused) TUNGSTEN else GLASS_EDGE)
         }
-        return LayerDrawable(arrayOf(face, rounded(GLASS_HIGHLIGHT, 1))).apply {
-            setLayerInset(1, dp(radiusDp), dp(1), dp(radiusDp), 0)
-            setLayerHeight(1, dp(1))
-            setLayerGravity(1, Gravity.TOP or Gravity.FILL_HORIZONTAL)
-        }
+        return LayerDrawable(arrayOf(face, Highlight(dp(radiusDp).toFloat())))
+    }
+
+    /** The glass's top highlight, like CSS `inset 0 1px 0`: a 1 dp sliver that follows the corners and thins out down
+     *  their curve, rather than a flat bar that stops short of them and reads as a stray line. */
+    private inner class Highlight(private val radius: Float) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_HIGHLIGHT }
+        override fun draw(canvas: Canvas) = canvas.drawPath(highlight(RectF(bounds), radius), paint)
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    private fun highlight(box: RectF, radius: Float): Path {
+        val r = minOf(radius, box.height() / 2, box.width() / 2) // as GradientDrawable clamps a pill's radius
+        val shape = Path().apply { addRoundRect(box, r, r, Path.Direction.CW) }
+        val lower = Path().apply { addRoundRect(RectF(box).apply { offset(0f, dp(1).toFloat()) }, r, r, Path.Direction.CW) }
+        return shape.apply { op(lower, Path.Op.DIFFERENCE) }
     }
 
     /** The warm-white primary action; focus adds the tungsten rim. */
@@ -379,7 +392,7 @@ abstract class Screen : Activity() {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS }
         private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_EDGE; style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat() }
-        private val highlight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_HIGHLIGHT; strokeWidth = dp(1).toFloat() }
+        private val shine = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_HIGHLIGHT }
         private val path = Path()
         private val at = IntArray(2)
         private val art = IntArray(2)
@@ -402,7 +415,7 @@ abstract class Screen : Activity() {
             }
             canvas.drawPath(path, tint)
             canvas.drawPath(path, edge)
-            canvas.drawLine(bounds.left + radius, bounds.top + dp(1).toFloat(), bounds.right - radius, bounds.top + dp(1).toFloat(), highlight)
+            canvas.drawPath(highlight(RectF(bounds), radius), shine)
         }
 
         override fun setAlpha(alpha: Int) {}
