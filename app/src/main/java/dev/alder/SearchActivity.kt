@@ -25,13 +25,26 @@ import android.widget.ScrollView
 import android.widget.TextClock
 import android.widget.TextView
 import java.util.Locale
-import java.util.concurrent.CompletableFuture
+import java.text.Normalizer
+import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.TimeUnit
 
-/** Search keeps each add-on's order, moving only exact title matches ahead of partial matches. */
-internal fun <T> exactSearchFirst(items: List<T>, query: String, title: (T) -> String): List<T> {
-    val exact = items.filter { title(it).trim().equals(query.trim(), ignoreCase = true) }
-    return exact + items.filterNot { title(it).trim().equals(query.trim(), ignoreCase = true) }
+/** More complete title matches lead; ties retain the installed add-ons' order. */
+internal fun <T> rankSearchTitles(items: List<T>, query: String, title: (T) -> String): List<T> {
+    fun words(s: String) = Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "").split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
+    val wanted = words(query)
+    if (wanted.isEmpty()) return items
+    return items.sortedBy { item ->
+        val actual = words(title(item))
+        when {
+            actual == wanted -> 0
+            actual.take(wanted.size) == wanted -> 1
+            wanted.all { it in actual } -> 2
+            actual.joinToString(" ").contains(wanted.joinToString(" ")) -> 3
+            else -> 4
+        }
+    }
 }
 
 /** House Lights search: remote keyboard on the left, focused title and poster rows on the right. */
@@ -39,6 +52,7 @@ class SearchActivity : Screen() {
     private lateinit var art: ImageView
     private lateinit var artBack: ImageView
     private lateinit var input: EditText
+    private lateinit var clearSearch: View
     private lateinit var resultCount: TextView
     private lateinit var recentBox: LinearLayout
     private lateinit var results: LinearLayout
@@ -77,12 +91,16 @@ class SearchActivity : Screen() {
         root.addView(art, FrameLayout.LayoutParams(-1, -1))
         root.addView(View(this).apply {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(0xF20E0C0A.toInt(), 0xD90E0C0A.toInt(), 0x590E0C0A, 0x1A0E0C0A))
+                intArrayOf(0xF20E0C0A.toInt(), 0xD90E0C0A.toInt(), 0xA00E0C0A.toInt(), 0x1A0E0C0A))
         }, FrameLayout.LayoutParams(-1, -1))
         root.addView(View(this).apply {
             background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                 intArrayOf(0xF70E0C0A.toInt(), 0xBF0E0C0A.toInt(), 0x000E0C0A))
         }, FrameLayout.LayoutParams(-1, dp(260), Gravity.BOTTOM))
+        root.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x8C0E0C0A.toInt(), 0x000E0C0A))
+        }, FrameLayout.LayoutParams(-1, dp(80), Gravity.TOP))
         root.addView(header(), FrameLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(24) })
 
         val field = LinearLayout(this).apply {
@@ -114,6 +132,22 @@ class SearchActivity : Screen() {
         field.addView(inputBox, LinearLayout.LayoutParams(0, dp(34), 1f))
         resultCount = text("", SMALL, color = TEXT_3)
         field.addView(resultCount)
+        val clear = ImageView(this).apply {
+            setImageResource(R.drawable.ic_close)
+            imageTintList = ColorStateList.valueOf(TEXT_2)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            contentDescription = "Clear search"
+            visibility = View.GONE
+            rowFocus(11)
+            setOnClickListener {
+                input.setText("")
+                main.removeCallbacks(typed)
+                search(false)
+                firstKey?.requestFocus()
+            }
+        }
+        field.addView(clear, LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(4) })
+        clearSearch = clear
         val fieldRest = glassOver(field, 17, shade = LEFT_SHADE)
         field.background = fieldRest
         input.setOnFocusChangeListener { _, has ->
@@ -153,7 +187,7 @@ class SearchActivity : Screen() {
                 addView(heroTag, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
                 addView(heroScore, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(5) })
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-            addView(heroAbout, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+            addView(heroAbout, LinearLayout.LayoutParams(dp(420), -2).apply { topMargin = dp(5) })
             visibility = View.INVISIBLE
         }
         root.addView(hero, FrameLayout.LayoutParams(dp((width - 368).toInt()), dp(122)).apply {
@@ -162,8 +196,6 @@ class SearchActivity : Screen() {
         results = column(Gravity.START)
         resultsScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            clipChildren = false
-            clipToPadding = false
             addView(results)
         }
         root.addView(resultsScroll, FrameLayout.LayoutParams(dp((width - 368).toInt()), dp((height - 220).toInt())).apply {
@@ -177,6 +209,7 @@ class SearchActivity : Screen() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 placeCursor()
+                clear.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                 ++request
                 main.removeCallbacks(typed)
                 main.postDelayed(typed, TYPING_PAUSE)
@@ -364,6 +397,8 @@ class SearchActivity : Screen() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             val focus = currentFocus
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && focus === input && clearSearch.visibility == View.VISIBLE && clearSearch.requestFocus()) return true
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && focus === clearSearch && input.requestFocus()) return true
             if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && focus === input) {
                 if (firstKey?.requestFocus() == true) return true
             }
@@ -422,16 +457,29 @@ class SearchActivity : Screen() {
                     maxWidth = dp(110)
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
+                    contentDescription = "$query. Hold OK to remove from recent searches"
                     setOnClickListener {
                         input.setText(query)
                         input.setSelection(query.length)
                         main.removeCallbacks(typed)
                         search(true)
                     }
+                    setOnLongClickListener {
+                        choose("Remove recent search?", listOf("Remove $query", "Cancel")) { picked ->
+                            if (picked == 0) {
+                                getSharedPreferences("search", MODE_PRIVATE).edit()
+                                    .putString("recent", recent().filterNot { it == query }.joinToString("\n")).apply()
+                                showRecent()
+                            }
+                        }
+                        true
+                    }
                 }, LinearLayout.LayoutParams(-2, dp(24)).apply { if (line.childCount > 0) marginStart = dp(5) })
             }
             recentBox.addView(line, LinearLayout.LayoutParams(-1, dp(27)))
         }
+        recentBox.addView(text("Hold OK to remove", SMALL, color = TEXT_3),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
     }
 
     private fun search(moveFocus: Boolean) {
@@ -468,17 +516,24 @@ class SearchActivity : Screen() {
         }
         background({
             var failed = false
+            val completion = ExecutorCompletionService<Pair<Int, Result<List<Meta>>>>(searchPool)
+            val key = authKey.orEmpty()
+            val addons = Stremio.savedAddons(key) ?: Stremio.addons(key)
             val deadline = System.currentTimeMillis() + SEARCH_WAIT
-            val found = Stremio.addons(authKey.orEmpty())
-                .map { addon -> CompletableFuture.supplyAsync({ runCatching { addon.search(query) } }, searchPool) }
-                .flatMap { future ->
-                    runCatching { future.get((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS) }
-                        .getOrElse { Result.failure(it) }.onFailure { failed = true }.getOrDefault(emptyList())
-                }
+            val pending = addons.mapIndexed { index, addon -> completion.submit { index to runCatching { addon.search(query) } } }
+            val answers = mutableListOf<Pair<Int, List<Meta>>>()
+            repeat(addons.size) {
+                val completed = completion.poll((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+                    ?: return@repeat
+                val (index, result) = completed.get()
+                result.onFailure { failed = true }.getOrNull()?.let { answers += index to it }
+            }
+            pending.forEach { it.cancel(true) }
+            val found = answers.sortedBy { it.first }.flatMap { it.second }
                 .filter { it.type == "movie" || it.type == "series" }
                 .filterNot { isAddonMessage(it.name) }
                 .distinctBy { it.type to it.id }
-            val ranked = exactSearchFirst(found, query) { it.name }
+            val ranked = rankSearchTitles(found, query) { it.name }
             linkedMapOf("Movies" to ranked.filter { it.type == "movie" }.take(PER_TYPE),
                 "Shows" to ranked.filter { it.type == "series" }.take(PER_TYPE)).filterValues { it.isNotEmpty() } to failed
         }) { answer ->
@@ -508,22 +563,27 @@ class SearchActivity : Screen() {
                 addView(text(list.size.toString(), SMALL, color = TEXT_3).onArt(),
                     LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(9) })
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-            val caption = caption("").apply { visibility = View.INVISIBLE }
+            val caption = caption("").apply {
+                visibility = View.INVISIBLE
+                maxWidth = dp(280)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.MIDDLE
+            }
             val row = LinearLayout(this).apply {
                 clipChildren = false
                 clipToPadding = false
+                setPadding(dp(6), 0, dp(6), 0)
+            }
+            val scroller = HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(row)
             }
             list.forEachIndexed { index, meta ->
-                row.addView(card(meta, caption, index == 0), LinearLayout.LayoutParams(dp(88), dp(132)).apply {
+                row.addView(card(meta, caption, scroller, index == 0), LinearLayout.LayoutParams(dp(88), dp(132)).apply {
                     if (index > 0) marginStart = dp(14)
                 })
             }
-            group.addView(HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled = false
-                clipChildren = false
-                clipToPadding = false
-                addView(row)
-            }, LinearLayout.LayoutParams(-1, dp(140)))
+            group.addView(scroller, LinearLayout.LayoutParams(-1, dp(140)))
             group.addView(caption, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) })
             results.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(28) })
         }
@@ -531,7 +591,7 @@ class SearchActivity : Screen() {
         if (moveFocus) firstResult?.requestFocus()
     }
 
-    private fun card(meta: Meta, caption: TextView, firstInRow: Boolean): View {
+    private fun card(meta: Meta, caption: TextView, scroller: HorizontalScrollView, firstInRow: Boolean): View {
         val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(BASE) }
         val shade = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0.5f }
         val card = FrameLayout(this).apply {
@@ -543,12 +603,21 @@ class SearchActivity : Screen() {
             addView(image, FrameLayout.LayoutParams(-1, -1))
             addView(shade, FrameLayout.LayoutParams(-1, -1))
             cardFocus(6) { has ->
+                // grow() unclamps ancestors; Search must keep each row inside its result pane.
+                scroller.clipChildren = true
+                scroller.clipToPadding = true
+                resultsScroll.clipChildren = true
+                resultsScroll.clipToPadding = true
                 shade.animate().alpha(if (has) 0f else 0.5f).setDuration(150).start()
                 if (has) {
                     caption.text = meta.name + (meta.year?.let { "  ·  " + it.take(4) } ?: "")
                     caption.visibility = View.VISIBLE
+                    caption.post {
+                        caption.translationX = (left - scroller.scrollX).toFloat()
+                            .coerceIn(0f, (scroller.width - caption.width).coerceAtLeast(0).toFloat())
+                    }
                     show(meta)
-                }
+                } else caption.visibility = View.INVISIBLE
             }
             setOnClickListener {
                 val query = input.text.toString().trim()
@@ -604,8 +673,17 @@ class SearchActivity : Screen() {
         heroTag.visibility = if (meta.rating == null) View.GONE else View.VISIBLE
         heroScore.visibility = heroTag.visibility
         heroScore.text = meta.rating.orEmpty()
-        heroAbout.text = meta.description.orEmpty()
+        val description = meta.description.orEmpty()
+        heroAbout.text = description
         heroAbout.visibility = if (meta.description.isNullOrBlank()) View.GONE else View.VISIBLE
+        heroAbout.post {
+            if (focused !== meta || heroAbout.text.toString() != description) return@post
+            val layout = heroAbout.layout ?: return@post
+            if (layout.lineCount >= 2 && layout.getEllipsisCount(1) > 0) {
+                val end = layout.getLineStart(1) + layout.getEllipsisStart(1)
+                heroAbout.text = synopsisAtSentence(description, end)
+            }
+        }
     }
 
     private companion object {
@@ -615,6 +693,6 @@ class SearchActivity : Screen() {
         const val TYPING_PAUSE = 500L
         const val SEARCH_WAIT = 6000L
         const val SPEECH = 31
-        val searchPool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        val searchPool = Images.newestFirst(8)
     }
 }

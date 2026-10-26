@@ -6,6 +6,8 @@ import org.json.JSONObject
 import androidx.media3.common.MimeTypes
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.TimeUnit
 
 /**
  * One installed addon, spoken to with the Stremio addon protocol: plain GETs for catalogs, metadata and streams.
@@ -20,6 +22,11 @@ class Addon(val descriptor: JSONObject) {
     val official = descriptor.optJSONObject("flags")?.optBoolean("official") == true
     /** Stremio's own that can't be removed (Cinemeta, Local Files); they can still be moved. */
     val locked = descriptor.optJSONObject("flags")?.optBoolean("protected") == true
+    val providesStreams: Boolean = manifest.optJSONArray("resources").items().any {
+        (it as? String ?: (it as? JSONObject)?.optString("name")) == "stream"
+    }
+    /** Reads one person's history or lists (MyTrakt also declares `stream`): never shared or copied by default. */
+    val personal = listOf("watchly", "trakt", "simkl", "syncribullet", "aiolists").any { name.contains(it, ignoreCase = true) }
     private val base = transportUrl.removeSuffix("/manifest.json")
 
     /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
@@ -60,29 +67,38 @@ class Addon(val descriptor: JSONObject) {
 
     private fun catalogPath(c: Catalog, genre: String?) = listOfNotNull("catalog", c.type, c.id, genre?.let { "genre=$it" }).toTypedArray()
 
-    /** The addon's first advertised search catalog for each title type. */
+    /** Every search catalog the addon advertises, as Stremio's catalog protocol specifies. */
     fun search(query: String): List<Meta> {
         require(query.isNotBlank())
         val catalogs = manifest.optJSONArray("catalogs").objects()
             .filter { c ->
                 c.optString("type") in listOf("movie", "series") &&
                     "search" in (c.optJSONArray("extraRequired").strings() + c.optJSONArray("extraSupported").strings() +
-                        c.optJSONArray("extra").objects().map { it.optString("name") })
+                        c.optJSONArray("extra").objects().map { it.optString("name") }) &&
+                    c.optJSONArray("extraRequired").strings().all { it == "search" } &&
+                    c.optJSONArray("extra").objects().none { it.optBoolean("isRequired") && it.optString("name") != "search" }
             }
-            .distinctBy { it.optString("type") }
+            .distinctBy { it.optString("type") to it.optString("id") }
         fun fetch(c: JSONObject): List<Meta> {
             val path = url(arrayOf("catalog", c.getString("type"), c.getString("id"))).removeSuffix(".json")
             val searchUrl = "$path/search=${Uri.encode(query)}.json"
-            val cached = Http.savedAnswer(searchUrl)?.let { runCatching { JSONObject(it).optJSONArray("metas")?.objects()?.map(::Meta) }.getOrNull() }
-            if (cached != null) return cached
-            val answer = JSONObject(Http.get(searchUrl, true))
+            val answer = JSONObject(Http.get(searchUrl, timeoutMs = 5_000))
             return (answer.optJSONArray("metas") ?: throw IOException("Search catalog failed")).objects().map(::Meta)
         }
-        val answers = catalogs.map { c ->
-                runCatching { fetch(c) }
-            }
-        if (answers.isNotEmpty() && answers.all { it.isFailure }) throw IOException("Search catalog unavailable")
-        return answers.flatMap { it.getOrDefault(emptyList()) }
+        val completion = ExecutorCompletionService<Pair<Int, Result<List<Meta>>>>(catalogSearchPool)
+        val pending = catalogs.mapIndexed { index, catalog -> completion.submit { index to runCatching { fetch(catalog) } } }
+        val deadline = System.currentTimeMillis() + 5_000
+        val answers = mutableListOf<Pair<Int, List<Meta>>>()
+        var succeeded = false
+        repeat(catalogs.size) {
+            val finished = completion.poll((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+                ?: return@repeat
+            val (index, result) = finished.get()
+            result.getOrNull()?.let { succeeded = true; answers += index to it }
+        }
+        pending.forEach { it.cancel(true) }
+        if (catalogs.isNotEmpty() && !succeeded) throw IOException("Search catalog unavailable")
+        return answers.sortedBy { it.first }.flatMap { it.second }
     }
 
     fun meta(type: String, id: String): Meta? = get(true, "meta", type, id).optJSONObject("meta")?.let(::Meta)
@@ -117,6 +133,8 @@ class Addon(val descriptor: JSONObject) {
     private fun get(keep: Boolean, vararg path: String) = JSONObject(Http.get(url(path), keep))
 
     private fun saved(vararg path: String) = Http.savedAnswer(url(path))?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+    private companion object { val catalogSearchPool = Images.newestFirst(8) }
 }
 
 class Meta(json: JSONObject) {

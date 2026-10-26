@@ -38,8 +38,11 @@ internal fun synopsisAtSentence(text: String, limit: Int): String {
         text[i] in ".!?" && text.getOrNull(i + 1) == ' ' && !(text[i] == '.' && text.substring(text.lastIndexOf(' ', i) + 1, i)
             .let { word -> '.' in word || word.length <= 3 && word.firstOrNull()?.isUpperCase() == true })
     }
-    // shortcut: a first sentence longer than two lines uses Android ellipsis; revisit if it appears often.
-    return if (end != null) text.substring(0, end + 1) else text
+    if (end != null) return text.substring(0, end + 1)
+    val clipped = text.take(limit).trimEnd()
+    val whole = if (text.getOrNull(limit - 1)?.isLetterOrDigit() == true && text.getOrNull(limit)?.isLetterOrDigit() == true)
+        clipped.substringBeforeLast(' ', clipped) else clipped
+    return whole.trimEnd(' ', ',', ';', ':', '-', '.', '!', '?') + "…"
 }
 
 /** "Because you watched Crayon Shin-chan: Pursuit" → "More like Crayon Shin-chan". */
@@ -215,6 +218,7 @@ class MainActivity : Screen() {
     ) {
         var filled = false
         var settled = false // its details are in (or failed): what it has now is all it will get
+        var warming = false
         val onFill = mutableListOf<() -> Unit>()
     }
 
@@ -334,6 +338,8 @@ class MainActivity : Screen() {
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
             rows.filter { it.active && (now == null || !isInside(now, it.view)) }.forEach { it.light(false) }
             if (mode == Mode.CINEMA) chrome() // the top bar shows only while the remote is on it
+            // Rows settle after a focus move (the next heading can peek in): name it once, whichever shows.
+            main.removeCallbacks(nextRowCheck); main.postDelayed(nextRowCheck, 300)
         }
         showPage(Page.entries.firstOrNull { it.label == intent.getStringExtra("page") } ?: Page.HOME)
         main.postDelayed(::warmPages, WARM_AFTER)
@@ -615,6 +621,8 @@ class MainActivity : Screen() {
 
     /** Gets [item]'s full-screen art ready ahead (fetching its details first if need be), so moving to it is instant. */
     private fun warm(item: Item) {
+        if (item.warming) return
+        item.warming = true
         item.logo?.let { Images.prefetch(it, dp(LOGO_W)) }
         if (item.art != null) return Images.prefetch(item.art, artW, look = shaded)
         item.onFill += { Images.prefetch(item.art, artW, look = shaded); item.logo?.let { Images.prefetch(it, dp(LOGO_W)) } }
@@ -1281,11 +1289,14 @@ class MainActivity : Screen() {
         main.post(::updateNextRow)
     }
 
+    private val nextRowCheck = Runnable { updateNextRow() }
+
     private fun updateNextRow() {
         if (page != Page.HOME && !page.isCatalog) return
         val visible = rows.filter { it.view.isAttachedToWindow }.sortedBy { offsetIn(it.view) }
         val active = visible.indexOfFirst { it.active }.takeIf { it >= 0 } ?: 0
-        nextRowHint.text = visible.getOrNull(active + 1)?.let { "▾  ${it.title.uppercase()}" } ?: ""
+        // No hint when that row's own heading already peeks in at the bottom: it would name it twice.
+        nextRowHint.text = visible.getOrNull(active + 1)?.takeUnless { it.headingOnScreen() }?.let { "▾  ${it.title.uppercase()}" } ?: ""
         nextRowHint.visibility = if (nextRowHint.text.isEmpty()) View.GONE else View.VISIBLE
     }
 
@@ -1325,7 +1336,6 @@ class MainActivity : Screen() {
         var selected = 0
         var active = false
         var loaded = false
-        var allLoaded = false
         private var anim: ValueAnimator? = null
         private var held = false // the remote's key is held down: the row glides instead of stepping
         val strip = LinearLayout(this@MainActivity).apply {
@@ -1370,8 +1380,14 @@ class MainActivity : Screen() {
 
         init { if (grid) cards.forEach { it.dim(true) } }
 
+        fun headingOnScreen(): Boolean {
+            val seen = android.graphics.Rect()
+            return heading.isShown && heading.alpha > 0f && heading.getGlobalVisibleRect(seen) && seen.height() > heading.height / 2
+        }
+
         /** In or out of this row: its title brightens or quiets, its cards come forward or settle back. */
         fun light(on: Boolean) {
+            if (active == on) return
             active = on
             heading.animate().alpha(if (on) 1f else QUIET).setDuration(200).start()
             cards.forEachIndexed { i, c -> c.dim(if (grid) !on || i != selected else on && i != selected) }
@@ -1386,18 +1402,22 @@ class MainActivity : Screen() {
          * card runs off the screen on purpose, to say there's more.
          */
         fun focus(index: Int) {
+            val previous = selected
             selected = index
-            light(true)
+            if (active) {
+                if (previous != index) { cards[previous].dim(true); cards[index].dim(false) }
+            } else light(true)
             if (page == Page.HOME || page.isCatalog) updateNextRow()
             if (page.isCatalog) markChip(title)
             if (grid) listCount.text = "Row ${rows.indexOf(this) + 1} of $listRows  ·  $listTotal titles"
             fill(items[index])
+            cards[index].load()
             if (index >= items.size - AHEAD) fetchMore()
             // Racing past, the cards beside aren't where the remote will stop: fetching their art would only queue
             // full-screen downloads and decodes that compete with the row's own pictures.
             if (!held) listOf(index - 1, index + 1).mapNotNull { items.getOrNull(it) }.forEach(::warm)
             if (grid) {
-                cards.forEach { it.show(true) }
+                cards[index].show(true)
                 moreHint.alpha = 0f
                 return
             }
@@ -1699,7 +1719,6 @@ class MainActivity : Screen() {
                 r.cards.take(FIRST).asReversed().forEach { it.load() }
             } else if (far && r.loaded) {
                 r.loaded = false
-                r.allLoaded = false
                 r.cards.forEach { it.unload() }
             }
         }
@@ -1707,10 +1726,11 @@ class MainActivity : Screen() {
 
     /** A row scrolled sideways: its cards past the first screenful load too. */
     private fun loadRest(r: Row) {
-        if (r.loaded && !r.allLoaded) {
-            r.allLoaded = true
-            r.cards.drop(FIRST).forEach { it.load() }
-        }
+        if (!r.loaded) return
+        val step = dp(r.cardW + CARD_GAP)
+        val first = (r.scroller.scrollX / step - 1).coerceAtLeast(0)
+        val last = ((r.scroller.scrollX + r.scroller.width) / step + 2).coerceAtMost(r.cards.size)
+        for (i in first until last) r.cards[i].load()
     }
 
     private fun offsetIn(v: View): Int {

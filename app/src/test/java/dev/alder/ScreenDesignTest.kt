@@ -16,11 +16,12 @@ class ScreenDesignTest {
 
     @Test fun homeSynopsisEndsAtACompleteSentenceWhenClipped() {
         assertEquals("First sentence.", synopsisAtSentence("First sentence. The second is longer.", 23))
-        assertEquals("No punctuation here", synopsisAtSentence("No punctuation here", 7))
+        assertEquals("No…", synopsisAtSentence("No punctuation here", 7))
         val city = "Sgt. Wayne Jenkins leads a unit. It goes wrong."
-        assertEquals(city, synopsisAtSentence(city, 20)) // only "Sgt." fits: no sentence, Android's ellipsis instead
+        assertEquals("Sgt. Wayne Jenkins…", synopsisAtSentence(city, 20))
         assertEquals("Sgt. Wayne Jenkins leads a unit.", synopsisAtSentence(city, 40))
         assertEquals("Agents in the U.S. hunt a spy.", synopsisAtSentence("Agents in the U.S. hunt a spy. Then more.", 35))
+        assertEquals("Find the remaining Horcruxes…", synopsisAtSentence("Find the remaining Horcruxes, and return.", 30))
     }
 
     @Test fun homeRecommendationRowHasTheShortLabel() {
@@ -75,10 +76,12 @@ class ScreenDesignTest {
         assertEquals(3, nextSettingIndex(0, 4, -1))
     }
 
-    @Test fun searchMovesExactTitlesFirstWithoutReorderingTheRest() {
+    @Test fun searchRanksTitleMatchesAndKeepsTiesInAddonOrder() {
         val titles = listOf("Dune Part Two", "Arrival", " DUNE ", "Dune Messiah", "dune")
-        assertEquals(listOf(" DUNE ", "dune", "Dune Part Two", "Arrival", "Dune Messiah"),
-            exactSearchFirst(titles, "Dune") { it })
+        assertEquals(listOf(" DUNE ", "dune", "Dune Part Two", "Dune Messiah", "Arrival"),
+            rankSearchTitles(titles, "Dune") { it })
+        assertEquals(listOf("Amelie", "Amélie Returns", "Arrival"),
+            rankSearchTitles(listOf("Arrival", "Amélie Returns", "Amelie"), "Amélie") { it })
     }
 
     @Test fun episodeDateUsesOnlyValidAvailableDates() {
@@ -91,6 +94,11 @@ class ScreenDesignTest {
         assertEquals(1080, lowerSourceHeight(2160))
         assertEquals(720, lowerSourceHeight(1080))
         assertEquals(null, lowerSourceHeight(480))
+    }
+
+    @Test fun upNextNeverInterruptsMoreThanTheFinalMinute() {
+        assertEquals(30_000L, upNextWindow(10 * 60_000L))
+        assertEquals(60_000L, upNextWindow(60 * 60_000L))
     }
 
     @Test fun sourceRowsUseFileFactsWithoutShowingAddonDescriptions() {

@@ -626,7 +626,7 @@ class ProfilesActivity : Screen() {
         backTo = { openHome(profile) }
         val list = column(Gravity.START).apply { setPadding(dp(22), dp(22), dp(22), dp(22)); background = glass(14) }
         list.addView(text("Copy ${from.name}'s add-ons?", SERIF_TITLE, serif = true))
-        list.addView(text("Personal ones (recommendations, Trakt, lists) are unticked: they're tied to ${from.name}'s history.",
+        list.addView(text("Personal and configured stream add-ons are unticked. Sharing a streaming source in Settings keeps its configuration with ${from.name}.",
             BODY, color = TEXT_3).marginTop(12))
         val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(list) }
         setWindowed(onboardingFrame("step 3 of 4", scroll,
@@ -683,9 +683,8 @@ class ProfilesActivity : Screen() {
         }
     }
 
-    // Addons that read one person's history or lists; copying them would give the new profile someone else's.
-    private fun isPersonal(addon: Addon) =
-        listOf("watchly", "trakt", "simkl", "syncribullet", "aiolists").any { addon.name.contains(it, ignoreCase = true) }
+    // Personal addons and stream credentials stay with their owner unless explicitly selected for copying.
+    private fun isPersonal(addon: Addon) = addon.providesStreams || addon.personal
 
     // ---------- recommendations ----------
 

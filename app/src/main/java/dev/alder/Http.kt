@@ -19,14 +19,14 @@ object Http {
             trim()
         }
 
-    fun get(url: String, keep: Boolean = false): String = text(url, null, keep)
+    fun get(url: String, keep: Boolean = false, timeoutMs: Int = 20_000): String = text(url, null, keep, timeoutMs)
 
     fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
 
     fun bytes(url: String): ByteArray = request(url, null, cache = true).second
 
-    private fun text(url: String, json: String?, keep: Boolean): String {
-        val (code, body) = request(url, json, cache = false)
+    private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000): String {
+        val (code, body) = request(url, json, cache = false, timeoutMs)
         return String(body, Charsets.UTF_8).also { if (keep && code < 400) keep(url, json, it) }
     }
 
@@ -70,11 +70,11 @@ object Http {
     // host. Disconnecting threw it away, so every picture paid a fresh TCP and TLS handshake first.
     // [cache]: pictures only. The response cache kept an addon's 404 and, revalidated with a 304, served it forever
     // (AIOMetadata's movie search); answers have their own copy in [saved].
-    private fun request(url: String, json: String?, cache: Boolean): Pair<Int, ByteArray> {
+    private fun request(url: String, json: String?, cache: Boolean, timeoutMs: Int = 20_000): Pair<Int, ByteArray> {
         val c = URL(url).openConnection() as HttpURLConnection
         c.useCaches = cache
-        c.connectTimeout = 10_000
-        c.readTimeout = 20_000
+        c.connectTimeout = minOf(10_000, timeoutMs)
+        c.readTimeout = timeoutMs
         if (json != null) {
             c.requestMethod = "POST"
             c.doOutput = true

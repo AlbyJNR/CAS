@@ -126,7 +126,17 @@ class StreamsActivity : Screen() {
         })
         val tv = Device.of(this)
 
-        background({ Stremio.addons(key).filter { it.serves("stream", type, videoId) } }) { result ->
+        val shared = Profiles.sharedStream(this)
+        background({
+            val own = Stremio.addons(key).filter { it.serves("stream", type, videoId) }
+            val household = shared?.let { (source, addonId) ->
+                runCatching {
+                    (Stremio.savedAddons(source.authKey) ?: Stremio.addons(source.authKey))
+                        .firstOrNull { it.id == addonId && it.serves("stream", type, videoId) }
+                }.getOrNull()
+            }
+            listOfNotNull(household) + own.filterNot { it.id == household?.id }
+        }) { result ->
             val addons = result.getOrElse { status.text = "Couldn't load sources. Check your connection and try again."; return@background }
             if (addons.isEmpty()) { status.text = "No stream add-ons are connected. Add one in Stremio to find sources."; return@background }
             val answers = arrayOfNulls<List<Stream>>(addons.size)

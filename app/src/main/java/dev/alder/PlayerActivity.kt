@@ -49,6 +49,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal fun lowerSourceHeight(height: Int): Int? = listOf(1080, 720, 480).firstOrNull { it < height }
+internal fun upNextWindow(durationMs: Long) = minOf(60_000L, maxOf(30_000L, durationMs / 25))
 
 // ExoPlayer with our own controls (buildControls) and audio/subtitle panel (openOptions). Resumes where Stremio says you stopped and
 // writes progress back to the account, so Continue Watching matches on every device.
@@ -84,8 +85,6 @@ class PlayerActivity : Screen() {
     private lateinit var loadingLeft: TextView
     private lateinit var stallPanel: FrameLayout
     private lateinit var screen: FrameLayout
-    private lateinit var nextArt: ImageView
-    private lateinit var nextShade: View
     private lateinit var pausedShade: View
     // Subtitles from addons (OpenSubtitles): offered in Playback options after the file's own. Picking one reloads the
     // source from the same second with that file attached, then selects it once its track shows up.
@@ -100,19 +99,13 @@ class PlayerActivity : Screen() {
     // A series' episodes (for the next one and Stremio's watched ticks), from the meta addon's saved answer when there is one.
     private var meta: Meta? = null
     private var tickedWatched = false
-    // "Up next": over the end credits, the next episode counts down and starts on its own; OK starts it now, Back stays.
+    // "Up next": offered during credits; the current episode keeps playing until the viewer chooses the next one.
     private lateinit var upNextPanel: FrameLayout
-    private lateinit var upNextTimer: TextView
-    private lateinit var upNextMessage: TextView
-    private lateinit var countdownFace: FrameLayout
-    private lateinit var countdownValue: TextView
-    private var countdown = 0
     private var upNextDismissed = false
     // The pill's other use: a source that keeps stalling (three times in a minute) is offered a lower quality once.
     private var offeringLower = false
     private val stalls = ArrayDeque<Long>()
     private var seekedAt = 0L
-    private val countdownTask = Runnable { if (--countdown == 0) playNext() else countDown() }
     private val loadingTask = object : Runnable {
         override fun run() {
             if (loading.visibility != View.VISIBLE || player.playbackState != Player.STATE_BUFFERING) return
@@ -164,12 +157,6 @@ class PlayerActivity : Screen() {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         }
-        nextArt = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
-        nextShade = View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(0xDD0E0C0A.toInt(), 0x880E0C0A.toInt(), 0x440E0C0A))
-            visibility = View.GONE
-        }
         pausedShade = View(this).apply { setBackgroundColor(0x4D000000); visibility = View.GONE }
         upNextPanel = FrameLayout(this).apply { visibility = View.GONE }
         controls = buildControls()
@@ -183,8 +170,6 @@ class PlayerActivity : Screen() {
         fetchSegments()
         options = FrameLayout(this).apply { visibility = View.GONE }
         screen = FrameLayout(this).apply {
-            addView(nextArt, FrameLayout.LayoutParams(-1, -1))
-            addView(nextShade, FrameLayout.LayoutParams(-1, -1))
             addView(view, FrameLayout.LayoutParams(-1, -1))
             addView(pausedShade, FrameLayout.LayoutParams(-1, -1))
             addView(controls, FrameLayout.LayoutParams(-1, -1))
@@ -259,6 +244,7 @@ class PlayerActivity : Screen() {
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                // At the real end the next episode starts, unless the viewer chose to watch the credits.
                 if (state == Player.STATE_ENDED) if (nextVideo() != null && !upNextDismissed) playNext() else finish()
                 if (state == Player.STATE_BUFFERING) showLoading(if (started) "Loading" else startMessage ?: "Starting · ${sources[at].label}")
                 if (state == Player.STATE_READY && started) hideLoading()
@@ -470,7 +456,6 @@ class PlayerActivity : Screen() {
             lastPosition = player.currentPosition
             main.postDelayed(tickTask, TICK)
             main.post(skipTask)
-            if (upNextPanel.visibility == View.VISIBLE && countdown > 0) main.postDelayed(countdownTask, 1_000)
             if (loading.visibility == View.VISIBLE && player.playbackState == Player.STATE_BUFFERING)
                 main.post(loadingTask)
         }
@@ -491,8 +476,8 @@ class PlayerActivity : Screen() {
             tickedWatched = true
             Library.markWatched(item, videos, videoId)
         }
-        // Into the end credits (the last 4%, at least 30 s): offer the next episode.
-        if (!upNextDismissed && countdown == 0 && duration - position < maxOf(UP_NEXT_MIN, duration / 25)) showUpNext()
+        // Keep the current episode full screen; offer the next one only near its actual end.
+        if (!upNextDismissed && upNextPanel.visibility != View.VISIBLE && duration - position < upNextWindow(duration)) showUpNext()
     }
 
     /** The episode after this one, or null for a film, the last episode, or before the episode list is in. */
@@ -507,7 +492,7 @@ class PlayerActivity : Screen() {
         stalls.addLast(now)
         while (stalls.first() < now - 60_000) stalls.removeFirst()
         val height = sources[at].height
-        if (stalls.size != 3 || offeringLower || countdown > 0 || lowerSourceHeight(height) == null) return
+        if (stalls.size != 3 || offeringLower || upNextPanel.visibility == View.VISIBLE || lowerSourceHeight(height) == null) return
         showStall(height)
     }
 
@@ -578,83 +563,37 @@ class PlayerActivity : Screen() {
         if (shown) hideControls(force = true)
         options.visibility = View.GONE
         hideLoading()
-        countdown = UP_NEXT_SECONDS
-        Images.load(next.thumbnail ?: meta?.background, nextArt, resources.displayMetrics.widthPixels,
-            orElse = intent.getStringExtra("background"))
-        nextArt.visibility = View.VISIBLE
-        nextShade.visibility = View.VISIBLE
-        view.layoutParams = FrameLayout.LayoutParams(dp(280), dp(158), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(48); rightMargin = dp(PAD)
-        }
-        view.background = rounded(BASE, 8)
-        view.clipToOutline = true
         upNextPanel.removeAllViews()
-        val windowLabel = text("${meta?.videos?.firstOrNull { it.id == videoId }?.title ?: intent.getStringExtra("name").orEmpty()} · credits",
-            SMALL, color = TEXT).onArt()
-        upNextPanel.addView(windowLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
-            rightMargin = dp(PAD + 8); topMargin = dp(188)
-        })
-        countdownFace = FrameLayout(this).apply {
-            countdownValue = text("", SMALL, bold = true).apply { gravity = Gravity.CENTER }
-            addView(countdownValue, FrameLayout.LayoutParams(-1, -1))
-        }
-        upNextTimer = caps("Up next", TUNGSTEN).onArt()
-        val header = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(countdownFace, LinearLayout.LayoutParams(dp(32), dp(32)))
-            addView(upNextTimer, wrap().apply { marginStart = dp(9) })
-        }
-        val minutes = meta?.runtime?.substringBefore(" min")?.toIntOrNull()
-        val end = minutes?.let {
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(System.currentTimeMillis() + it * 60_000L))
-        }
-        upNextMessage = text(listOfNotNull("S${next.season} E${next.episode}", meta?.runtime,
-            end?.let { "Ends $it" }).joinToString(DOT), SMALL, color = TEXT_2).onArt()
         val actions = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val playNow = pill("Play now", R.drawable.ic_play).apply { setOnClickListener { playNext() } }
         actions.addView(playNow, wrap())
         actions.addView(chip("Watch the credits").apply { setOnClickListener { dismissUpNext() } },
             wrap().apply { marginStart = dp(8) })
         val content = column(Gravity.START).apply {
-            addView(header)
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            // Video can't be frosted: a dark base under the glass keeps it readable over white end cards.
+            background = android.graphics.drawable.LayerDrawable(arrayOf(rounded(BASE and 0xD9FFFFFF.toInt(), 14), glass(14)))
+            addView(caps("Up next", TUNGSTEN).onArt())
             addView(text(next.title.ifBlank { "Episode ${next.episode}" }, SERIF_HERO, serif = true).onArt(),
                 wrap().apply { topMargin = dp(6) })
-            addView(upNextMessage, wrap().apply { topMargin = dp(5) })
+            addView(text("S${next.season} E${next.episode}", SMALL, color = TEXT_2).onArt(), wrap().apply { topMargin = dp(5) })
             addView(actions, wrap().apply { topMargin = dp(16) })
         }
-        upNextPanel.addView(content, FrameLayout.LayoutParams(dp(500), -2, Gravity.BOTTOM or Gravity.START).apply {
-            leftMargin = dp(PAD); bottomMargin = dp(68)
+        upNextPanel.addView(content, FrameLayout.LayoutParams(dp(500), -2, Gravity.BOTTOM or Gravity.END).apply {
+            rightMargin = dp(PAD); bottomMargin = dp(68)
         })
         upNextPanel.visibility = View.VISIBLE
         playNow.requestFocus()
-        countDown()
-    }
-
-    private fun countDown() {
-        if (countdown <= 0 || upNextDismissed) return
-        countdownFace.removeAllViews()
-        countdownFace.addView(ring(countdown.toFloat() / UP_NEXT_SECONDS),
-            FrameLayout.LayoutParams(-1, -1))
-        countdownValue.text = countdown.toString()
-        countdownFace.addView(countdownValue, FrameLayout.LayoutParams(-1, -1))
-        main.postDelayed(countdownTask, 1_000)
     }
 
     private fun dismissUpNext() {
         upNextDismissed = true
-        countdown = 0
-        main.removeCallbacks(countdownTask)
         upNextPanel.visibility = View.GONE
-        nextArt.visibility = View.GONE
-        nextShade.visibility = View.GONE
-        view.layoutParams = FrameLayout.LayoutParams(-1, -1)
-        view.clipToOutline = false
     }
 
     /** Hands the next episode to the sources page, which starts it (preferring this release's group) and finishes here. */
     private fun playNext() {
         val next = nextVideo() ?: return finish()
-        main.removeCallbacks(countdownTask)
         val videos = meta!!.videos
         val after = videos.getOrNull(videos.indexOf(next) + 1)?.takeIf { it.season != 0 }
         val name = intent.getStringExtra("name") ?: ""
@@ -789,7 +728,8 @@ class PlayerActivity : Screen() {
             skip.visibility = View.VISIBLE
         }
         if (now != null && skip.tag === now && System.currentTimeMillis() - skipShownAt > SKIP_SHOWN) { skipped += now; skip.visibility = View.GONE }
-        if (outroAt > 0 && position >= outroAt && !upNextDismissed && countdown == 0 && player.duration > 0) showUpNext()
+        if (outroAt > 0 && position >= outroAt && player.duration - position < 60_000 &&
+            !upNextDismissed && upNextPanel.visibility != View.VISIBLE && player.duration > 0) showUpNext()
         main.postDelayed(skipTask, 500)
     }
 
@@ -1240,7 +1180,6 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(tickTask)
         main.removeCallbacks(progressTask)
         main.removeCallbacks(skipTask)
-        main.removeCallbacks(countdownTask)
         main.removeCallbacks(loadingTask)
         player.pause()
         if (!watched || player.isCurrentMediaItemLive) return // nothing played, or live: the account keeps what it had
@@ -1253,7 +1192,6 @@ class PlayerActivity : Screen() {
 
     override fun onDestroy() {
         main.removeCallbacks(startTimeout)
-        main.removeCallbacks(countdownTask)
         main.removeCallbacks(loadingTask)
         if (::status.isInitialized) player.release()
         super.onDestroy()
@@ -1269,8 +1207,6 @@ class PlayerActivity : Screen() {
         const val ADDON_SUB = "addon-subtitle" // the id an addon subtitle file is attached under
         const val RETRIES = 2
         const val RETRY_WAIT = 1_500L
-        const val UP_NEXT_MIN = 30_000L // ms: the credits window is the last 4% of the episode, or this, whichever is longer
-        const val UP_NEXT_SECONDS = 10
     }
 }
 
