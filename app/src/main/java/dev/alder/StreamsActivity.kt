@@ -37,8 +37,10 @@ class StreamsActivity : Screen() {
         Images.load(intent.getStringExtra("logo"), logo, dp(300), failed = { title.visibility = View.VISIBLE }) { title.visibility = View.INVISIBLE }
         // "S1 E3 · OUTKAST" for an episode; the label minus the title's name otherwise.
         val episode = intent.getStringExtra("episode") ?: intent.getStringExtra("label")?.removePrefix(name)?.trim(' ', '·')
-        if (!episode.isNullOrBlank()) header.addView(text(episode, SMALL, color = SUBTLE).onArt().marginTop(8))
-        header.addView(text("Choose a stream", SERIF_TITLE, bold = true, serif = true).onArt().marginTop(4))
+        // "S5 E2" over the episode's name in the serif; no "Choose a stream" heading.
+        val where = episode?.split("·")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        if (where.isNotEmpty()) header.addView(text(where.first(), SMALL, color = SUBTLE).onArt().marginTop(8))
+        if (where.size > 1) header.addView(text(where.drop(1).joinToString(" · "), SERIF_TITLE, serif = true).onArt().marginTop(4))
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_2).onArt().marginTop(10)
         header.addView(status)
 

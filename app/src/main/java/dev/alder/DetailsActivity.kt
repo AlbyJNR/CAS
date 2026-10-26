@@ -172,9 +172,10 @@ class DetailsActivity : Screen() {
     private fun addWatch(m: Meta, stack: LinearLayout) {
         val target = playTarget(m)
         val episode = target?.second
-        val resumeAt = item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L
+        // Under a minute in is not started: a title opened and closed at 0:00 offers Play, not Resume.
+        val resumeAt = (item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L).takeIf { it >= STARTED } ?: 0L
         val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
-        val remaining = if (resumeAt > 0 && duration > resumeAt) "${(duration - resumeAt) / 60_000} min left" else null
+        val remaining = if (resumeAt > 0 && duration > resumeAt) runtime("${(duration - resumeAt) / 60_000} min") + " left" else null
         val where = listOfNotNull(episode?.let { "S${it.season} E${it.episode}" }, episode?.title?.takeIf { it.isNotBlank() }, remaining).joinToString(DOT)
         if (where.isNotEmpty() && resumeAt > 0) stack.addView(text(where, SMALL, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
@@ -634,5 +635,6 @@ class DetailsActivity : Screen() {
     private companion object {
         const val PANE_SHADE = 0.55f // the episode panel's frost, darkened to the mock's smoked glass
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
+        const val STARTED = 60_000L // ms watched before a title counts as started
     }
 }

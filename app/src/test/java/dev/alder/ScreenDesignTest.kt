@@ -86,4 +86,10 @@ class ScreenDesignTest {
         assertEquals(null, episodeDate("2013-02-30"))
         assertEquals(null, episodeDate(null))
     }
+
+    @Test fun repeatedBufferingOffersOneRealQualityStep() {
+        assertEquals(1080, lowerSourceHeight(2160))
+        assertEquals(720, lowerSourceHeight(1080))
+        assertEquals(null, lowerSourceHeight(480))
+    }
 }
