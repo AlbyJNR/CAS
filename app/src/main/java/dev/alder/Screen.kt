@@ -410,6 +410,9 @@ abstract class Screen : Activity() {
                 behind.getLocationOnScreen(art)
                 canvas.translate((art[0] - at[0]).toFloat(), (art[1] - at[1]).toFloat())
                 canvas.concat(behind.imageMatrix)
+                // As bright as the sharp art around it: a dimmed backdrop (Settings') dims its frosted copy too.
+                if (behind.alpha < 1f) canvas.drawColor(BASE)
+                paint.alpha = (behind.alpha * 255).toInt()
                 canvas.drawBitmap(f, null, Rect(0, 0, d?.intrinsicWidth ?: f.width, d?.intrinsicHeight ?: f.height), paint)
                 canvas.restore()
             }

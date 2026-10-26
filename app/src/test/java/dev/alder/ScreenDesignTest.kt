@@ -66,4 +66,11 @@ class ScreenDesignTest {
         assertEquals(2, listRowCount(7, 6))
         assertEquals(4, listRowCount(24, 6))
     }
+
+    @Test fun settingsChoicesWrapAndCustomStartsAtTheEndForLeft() {
+        assertEquals(0, nextSettingIndex(-1, 4, 1))
+        assertEquals(3, nextSettingIndex(-1, 4, -1))
+        assertEquals(0, nextSettingIndex(3, 4, 1))
+        assertEquals(3, nextSettingIndex(0, 4, -1))
+    }
 }
