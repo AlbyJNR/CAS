@@ -266,10 +266,14 @@ class DetailsActivity : Screen() {
         })
 
         seasonStrip = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        // Room around the chips for the focused one to grow into: flush with the strip, its left edge was cut flat.
+        val room = dp(8)
         guide.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
+            setPadding(room, room, room, room)
+            clipToPadding = false
             addView(seasonStrip)
-        }, FrameLayout.LayoutParams(width, dp(32)).apply { leftMargin = x; topMargin = dp(88) })
+        }, FrameLayout.LayoutParams(width + 2 * room, dp(32) + 2 * room).apply { leftMargin = x - room; topMargin = dp(88) - room })
 
         val pane = glassPane()
         guideRows = column(Gravity.START)
@@ -412,6 +416,7 @@ class DetailsActivity : Screen() {
         guide.animate().alpha(1f).translationY(0f).setDuration(260).start()
         // The film steps back behind the guide, so the chips and panel read over a bright backdrop.
         heroArt.animate().alpha(GUIDE_ART).setDuration(260).withEndAction { refrost() }.start()
+        leftShade(false) // the episode list sits on glass: the art can run to the left edge as it does on the right
         val currentId = playTarget(meta)?.first
         (episodeRows.firstOrNull { it.tag == currentId } ?: episodeRows.firstOrNull())?.requestFocus()
     }
@@ -419,6 +424,7 @@ class DetailsActivity : Screen() {
     private fun hideGuide() {
         guideOpen = false
         heroArt.animate().alpha(1f).setDuration(220).withEndAction { refrost() }.start()
+        leftShade(true)
         guide.animate().alpha(0f).translationY(dp(24).toFloat()).setDuration(220).withEndAction {
             guide.visibility = View.GONE
             hero.visibility = View.VISIBLE

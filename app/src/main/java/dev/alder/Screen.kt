@@ -159,6 +159,11 @@ abstract class Screen : Activity() {
     private var windowArt: ImageView? = null
     private var shadeSource: Bitmap? = null
 
+    /** The left shade is for text over bare art; a screen that puts its text on glass can lift it off the art. */
+    protected fun leftShade(on: Boolean) {
+        windowShade?.animate()?.alpha(if (on) 1f else 0f)?.setDuration(260)?.start()
+    }
+
     private fun updateWindowShade() {
         val art = (windowArt?.drawable as? BitmapDrawable)?.bitmap ?: return
         if (art === shadeSource) return
