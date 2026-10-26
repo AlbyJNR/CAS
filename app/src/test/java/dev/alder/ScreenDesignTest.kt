@@ -101,4 +101,10 @@ class ScreenDesignTest {
         assertEquals("405 MB", sourceSize(stream.size))
         assertEquals(480, Stream("480p", "", "https://example.invalid/low", emptyMap(), 175_000_000L, null, null).height)
     }
+
+    @Test fun profilePickerShowsTheLastEpisodeWithoutInventingOneForMovies() {
+        assertEquals("Modern Family · S5 E2", profileLastLabel("Modern Family", "tt1442437:5:2"))
+        assertEquals("Dune: Part Two", profileLastLabel("Dune: Part Two", "tt15239678"))
+        assertEquals("", profileLastLabel(null, null))
+    }
 }

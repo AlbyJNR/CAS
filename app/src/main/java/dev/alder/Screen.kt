@@ -260,8 +260,21 @@ abstract class Screen : Activity() {
         style(false)
         setOnFocusChangeListener { v, has ->
             style(has)
-            v.animate().scaleX(if (has) CARD_GROW else 1f).scaleY(if (has) CARD_GROW else 1f).setDuration(150).start()
+            v.grow(has)
         }
+    }
+
+    /**
+     * Focus growth for every control: scales by [by] and first lets its layout parents draw it past their bounds, so a
+     * plain container can't cut the grown edge, rim and glow flat. It stops at the first scrolling view and leaves that
+     * one alone: a scroller's clip is what hides rows and cards that have scrolled out, and unclipping it let Home's
+     * rows slide over the title. Rows give their cards room to grow with their own padding.
+     */
+    protected fun View.grow(on: Boolean, by: Float = CARD_GROW): android.view.ViewPropertyAnimator {
+        if (on) generateSequence(parent as? android.view.ViewGroup) { it.parent as? android.view.ViewGroup }
+            .takeWhile { it !is android.widget.ScrollView && it !is android.widget.HorizontalScrollView && it !is android.widget.AbsListView }
+            .forEach { it.clipChildren = false; it.clipToPadding = false }
+        return animate().scaleX(if (on) by else 1f).scaleY(if (on) by else 1f).setDuration(150)
     }
 
     /** A persistent choice: its dot remains after remote focus moves. */
@@ -288,6 +301,17 @@ abstract class Screen : Activity() {
         background = glassOver(this, 16)
     }
 
+    /** "[OK] Play / pause": the key in a small box, then what it does. */
+    protected fun keyHint(key: String, does: String) = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        addView(text(key, 9f, bold = true, color = BASE).apply {
+            background = rounded(TEXT_2, 3)
+            includeFontPadding = false
+            setPadding(dp(4), dp(1), dp(4), dp(1))
+        })
+        addView(text(does, SMALL, color = TEXT_2).onArt(), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+    }
+
     /** The IMDb tag beside a rating, as tall as the letters. */
     protected fun imdbTag() = text("IMDb", SMALL, bold = true, color = BASE).apply {
         background = rounded(TUNGSTEN, 3)
@@ -297,7 +321,9 @@ abstract class Screen : Activity() {
     }
 
     /** Null animates loading; for countdowns set progress to fraction × max as time changes. */
-    protected fun ring(fraction: Float? = null): ProgressBar = object : ProgressBar(this) {
+    protected fun ring(fraction: Float? = null): ProgressBar = object : ProgressBar(this, null,
+        // A countdown needs a style that keeps its progress; the default one is indeterminate-only and reads 0.
+        if (fraction == null) android.R.attr.progressBarStyle else android.R.attr.progressBarStyleHorizontal) {
         private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = dp(2).toFloat()
@@ -364,7 +390,7 @@ abstract class Screen : Activity() {
                 ?: samplePixels(poster, 16, 24)?.let { filmGlow(it).also { glow -> glowCache[this] = poster to glow } }
                 ?: TUNGSTEN_GLOW
         }
-        animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
+        grow(on)
             .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(150).start()
     }
 

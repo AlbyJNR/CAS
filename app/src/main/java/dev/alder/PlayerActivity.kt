@@ -939,17 +939,6 @@ class PlayerActivity : Screen() {
         }
     }
 
-    /** "[OK] Play / pause": the key in a small box, then what it does. */
-    private fun keyHint(key: String, does: String) = LinearLayout(this).apply {
-        gravity = Gravity.CENTER_VERTICAL
-        addView(text(key, 9f, bold = true, color = BASE).apply {
-            background = rounded(TEXT_2, 3)
-            includeFontPadding = false
-            setPadding(dp(4), dp(1), dp(4), dp(1))
-        })
-        addView(text(does, SMALL, color = TEXT_2).onArt(), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
-    }
-
     private fun button(label: String, res: Int, primary: Boolean = false, onClick: () -> Unit): TextView {
         val words = text(label, SMALL, color = TEXT_2).onArt().apply {
             gravity = Gravity.CENTER; visibility = View.INVISIBLE
@@ -969,8 +958,7 @@ class PlayerActivity : Screen() {
                 background = face(false)
                 setOnFocusChangeListener { view, focused ->
                     view.background = face(focused)
-                    view.animate().scaleX(if (focused) CARD_GROW else 1f)
-                        .scaleY(if (focused) CARD_GROW else 1f).setDuration(150).start()
+                    view.grow(focused).start()
                     words.visibility = if (focused) View.VISIBLE else View.INVISIBLE
                 }
             } else rowFocus(radius, rest = { glass(radius) }) { focused ->

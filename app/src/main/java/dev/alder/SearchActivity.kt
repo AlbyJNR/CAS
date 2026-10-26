@@ -211,7 +211,10 @@ class SearchActivity : Screen() {
                 choose(profile?.name ?: "Profile", listOf("Switch profile", "Settings")) { picked ->
                     startActivity(Intent(this@SearchActivity,
                         if (picked == 0) ProfilesActivity::class.java else SettingsActivity::class.java)
-                        .apply { if (picked == 0) putExtra("pick", true) })
+                        .apply { if (picked == 0) {
+                            putExtra("pick", true)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        } })
                 }
             }
         }

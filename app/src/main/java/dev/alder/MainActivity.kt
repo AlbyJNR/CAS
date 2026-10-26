@@ -462,7 +462,8 @@ class MainActivity : Screen() {
     }
 
     private fun switchProfile() {
-        startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true))
+        startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         finish()
     }
 
@@ -486,7 +487,7 @@ class MainActivity : Screen() {
             fun style(focused: Boolean) {
                 background = if (focused) glass(20, true) else rest
                 setTextColor(TUNGSTEN)
-                animate().scaleX(if (focused) CARD_GROW else 1f).scaleY(if (focused) CARD_GROW else 1f).setDuration(150).start()
+                grow(focused).start()
             }
             style(false)
             isFocusable = true
@@ -844,9 +845,11 @@ class MainActivity : Screen() {
             ?: listOfNotNull(item.name, detail).joinToString(DOT)
         cardCaption.visibility = View.VISIBLE
         // Measured with its new words, so a caption near the right end stops at the margin.
-        cardCaption.post {
-            cardCaption.translationX = minOf(captionX, cardCaption.rootView.width - 2 * dp(PAD) - cardCaption.width).coerceAtLeast(0).toFloat()
-        }
+        cardCaption.post(::placeCaption)
+    }
+
+    private fun placeCaption() {
+        cardCaption.translationX = minOf(captionX, cardCaption.rootView.width - 2 * dp(PAD) - cardCaption.width).coerceAtLeast(0).toFloat()
     }
 
     /** One quiet line for a title in progress: the episode and its name (or, for a film, its facts), then the time left. */
@@ -1404,7 +1407,10 @@ class MainActivity : Screen() {
             // A card slid into the left margin hides, so the row starts on the margin; the next poster past the right
             // edge shows, to say there's more.
             val right = scroller.width - dp(PAD) / 2
-            cards.forEach { c -> c.show(c.left - targetScroll >= dp(PAD) / 2 && c.left - targetScroll < scroller.width) }
+            // Near the row's end the slide stops short of a whole card, so the card before the focused one can sit a
+            // little into the margin while still mostly on screen: hiding it left a card-sized hole. Only cards that
+            // are mostly past the margin hide.
+            cards.forEach { c -> c.show(c.right - targetScroll > dp(PAD) && c.left - targetScroll < scroller.width) }
             // The caption sits under the focused card, also where the row stops sliding near its end.
             captionX = (cards[index].left - targetScroll - dp(PAD)).coerceAtLeast(0)
             val beyond = cards.any { it.right - targetScroll > right }
@@ -1444,6 +1450,8 @@ class MainActivity : Screen() {
                     card.dim(active)
                     if (loaded) card.load()
                 }
+                // The slide was clamped to the row's old end; with more cards in, the focused one can reach the start.
+                if (active && !grid) strip.post { if (active) { focus(selected); placeCaption() } }
             }
         }
 

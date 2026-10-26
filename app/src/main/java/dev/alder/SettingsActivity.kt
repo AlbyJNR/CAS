@@ -318,10 +318,12 @@ class SettingsActivity : Screen() {
             }
             Group.PROFILE -> {
                 actionRow("Switch profile", "", "Choose who is watching.") {
-                    startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true))
+                    startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                 }
                 actionRow("Manage profiles", "", "Rename profiles, change PINs or add another person.") {
-                    startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true))
+                    startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                 }
             }
             Group.LANGUAGE -> actionRow("App language", Locale.getDefault().displayLanguage,
