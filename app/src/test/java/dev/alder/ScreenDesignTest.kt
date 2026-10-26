@@ -59,4 +59,11 @@ class ScreenDesignTest {
         assertEquals(true, isAddonMessage("Trakt Authentication Required"))
         assertEquals(false, isAddonMessage("The Authentication"))
     }
+
+    @Test fun myListKeepsTheLastPartialRow() {
+        assertEquals(0, listRowCount(0, 6))
+        assertEquals(1, listRowCount(6, 6))
+        assertEquals(2, listRowCount(7, 6))
+        assertEquals(4, listRowCount(24, 6))
+    }
 }

@@ -259,10 +259,10 @@ abstract class Screen : Activity() {
         select(label, selected)
         isFocusable = true
         gravity = Gravity.CENTER
-        minHeight = dp(BUTTON_H)
+        minHeight = dp(CHIP_H)
         setPadding(dp(16), 0, dp(16), 0)
-        background = glass(BUTTON_H / 2)
-        setOnFocusChangeListener { v, has -> v.background = glass(BUTTON_H / 2, has) }
+        background = glass(CHIP_H / 2)
+        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has) }
     }
 
     /** A [chip]'s open state: the tungsten dot and full-strength words. */
@@ -486,6 +486,7 @@ abstract class Screen : Activity() {
         const val FROST_W = 360 // px the art is shrunk to before the blur: wider is less blur (240 read as fog, 480 as smeared)
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 34
+        const val CHIP_H = 24 // the mocks' 46–48 px chips
         const val CARD_GROW = 1.08f
         const val CARD_LIFT = 8
         // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for

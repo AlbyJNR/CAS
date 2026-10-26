@@ -93,7 +93,11 @@ object Stremio {
     fun saveLibrary(authKey: String, items: List<JSONObject>) {
         items.forEach { saving["$authKey/${it.optString("_id")}"] = it }
         val body = JSONObject().put("authKey", authKey).put("collection", "libraryItem").put("changes", JSONArray(items))
-        result(post("datastorePut", body))
+        try { result(post("datastorePut", body)) }
+        catch (error: Throwable) {
+            items.forEach { saving.remove("$authKey/${it.optString("_id")}", it) }
+            throw error
+        }
     }
 
     fun logout(authKey: String) {
