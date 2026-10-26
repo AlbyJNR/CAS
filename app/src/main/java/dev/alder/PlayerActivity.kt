@@ -305,20 +305,35 @@ class PlayerActivity : Screen() {
             android.util.Log.i("Alder", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
         }
 
-        background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
-            item = result.fold(
-                { it ?: Library.newItem(metaId, type, intent.getStringExtra("name") ?: "", intent.getStringExtra("poster")) },
-                { null },
-            )
-            // "Start Over" on the title page plays from the beginning; otherwise pick up where Stremio says you stopped.
-            // "Start Over" plays from the beginning; a switch to a lower quality carries its own second.
-            val resume = if (intent.getBooleanExtra("startOver", false)) 0L
-                else intent.getLongExtra("resumeAt", -1L).takeIf { it >= 0 } ?: item?.let { Library.resumeAt(it, videoId) } ?: 0L
+        // "Start Over" plays from the beginning; a switch to a lower quality carries its own second.
+        val known = if (intent.getBooleanExtra("startOver", false)) 0L else intent.getLongExtra("resumeAt", -1L).takeIf { it >= 0 }
+        fun begin(resume: Long) {
+            if (prepared) return
             load(resume)
             lastPosition = resume
             prepared = true
             main.postDelayed(tickTask, TICK)
             main.post(skipTask)
+        }
+        // The stream starts at once from what's known here (the intent, or the library saved on the TV) instead of
+        // waiting a round trip to Stremio for the resume point; Stremio's answer corrects it if it moved elsewhere.
+        if (known != null) begin(known)
+        else background({ Stremio.savedLibrary(key)?.firstOrNull { it.optString("_id") == metaId } }) { r ->
+            r.getOrNull()?.let { begin(Library.resumeAt(it, videoId)) }
+        }
+        background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
+            item = result.fold(
+                { it ?: Library.newItem(metaId, type, intent.getStringExtra("name") ?: "", intent.getStringExtra("poster")) },
+                { null },
+            )
+            val resume = known ?: item?.let { Library.resumeAt(it, videoId) } ?: 0L
+            if (!prepared) begin(resume)
+            // Watched further on the phone since the TV saved its copy: go there, unless you've already moved on.
+            else if (known == null && abs(resume - startAt) > RESUME_SLACK && position() < startAt + RESUME_SLACK) {
+                startAt = resume
+                player.seekTo(resume)
+                lastPosition = resume
+            }
         }
     }
 
@@ -1198,6 +1213,7 @@ class PlayerActivity : Screen() {
 
     private companion object {
         const val TICK = 10_000L
+        const val RESUME_SLACK = 10_000L // how far apart the saved and fresh resume points may be before it jumps
         const val SKIP = 10_000L // ms a Left/Right press on the bar moves
         const val SEEK_SETTLE = 600L // ms after the last skip before seeking
         const val SKIP_SHOWN = 10_000L // ms the Skip intro pill stays, as in NuvioTV

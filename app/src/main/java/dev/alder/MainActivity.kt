@@ -481,6 +481,12 @@ class MainActivity : Screen() {
                 }
             }
         }
+        // Up from Home's row goes to the top bar by hand: while the row slides after fast Right presses, the focus
+        // search measures the moving card and sometimes finds nothing above it.
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP && event.action == KeyEvent.ACTION_DOWN && page == Page.HOME &&
+            mode == Mode.BROWSE && currentFocus?.let { f -> firstRow()?.view?.let { isInside(f, it) } } == true) {
+            if (navItems[page]?.requestFocus() == true) return true
+        }
         // Down from the top bar goes to the titles, past Resume (one Up from the cards), to where the remote last was.
         if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && event.action == KeyEvent.ACTION_DOWN && header.hasFocus()) {
             val to = last?.takeIf { it.isAttachedToWindow && it.isShown } ?: firstRow()?.let { it.cards[it.selected] }
@@ -1015,7 +1021,10 @@ class MainActivity : Screen() {
                 val what = (if (p == Page.HOME) cw else list).joinToString {
                     it.optString("_id") + it.optString("_mtime") + it.optBoolean("removed") + it.optJSONObject("state")?.optLong("timeOffset")
                 }
+                // Saved copies wait once the remote is in use; Stremio's own answer always goes in (focus stays on
+                // its title below), or a stale disk copy could hide a show for the whole visit.
                 if (what == shown || (shown != null && touched && !force)) return
+                val firstShow = shown == null
                 shown = what
                 // The remote was on one of these titles: it stays on that title wherever it moved (watched: to the front).
                 val was = (currentFocus?.takeIf { isInside(it, slot) })?.tag
@@ -1034,16 +1043,19 @@ class MainActivity : Screen() {
                     showLibrary(slot)
                 }
                 if (was != null) (slot.findViewWithTag(was) ?: rows.firstOrNull { isInside(it.view, slot) }?.cards?.firstOrNull())?.requestFocus()
+                // Continue came in after a quicker row below took the first focus: the remote starts on Continue.
+                else if (p == Page.HOME && firstShow && !touched && focusedSomething && scroller.hasFocus())
+                    rows.firstOrNull { isInside(it.view, slot) }?.focusFirst()
             }
             if (quick && library.isNotEmpty()) show(library) // the library already in memory: no wait on a revisit
             if (quick) background({ Stremio.savedLibrary(key) }) { r -> if (g == generation && !fresh) r.getOrNull()?.let { show(it) } }
-            fun ask(force: Boolean) = background({ Stremio.library(key) }) { result ->
+            fun ask() = background({ Stremio.library(key) }) { result ->
                 if (g != generation) return@background
                 fresh = true
-                result.fold({ show(it, force) }) { if (shown == null) failedToLoad(it) }
+                result.fold({ show(it, force = true) }) { if (shown == null) failedToLoad(it) }
             }
-            ask(false)
-            refreshLibrary = { ask(true) }
+            ask()
+            refreshLibrary = { ask() }
         }
         if (p == Page.LIBRARY) return
 

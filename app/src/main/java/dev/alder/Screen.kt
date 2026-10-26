@@ -121,9 +121,8 @@ abstract class Screen : Activity() {
         }
     }
 
-    private val interMedium by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build() }
-    private val interSemiBold by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build() }
-    private val instrumentSerif by lazy { Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf") }
+    // Read once for the whole app, not per screen: Inter alone is 870 KB, read twice, on the main thread.
+    private val fonts get() = loadedFonts ?: Fonts(applicationContext.assets).also { loadedFonts = it }
 
     /** Shared House Lights typography. */
     protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = TEXT, serif: Boolean = false) =
@@ -131,7 +130,7 @@ abstract class Screen : Activity() {
             text = value
             textSize = sp
             setTextColor(color)
-            typeface = if (serif) instrumentSerif else if (bold) interSemiBold else interMedium
+            typeface = if (serif) fonts.serif else if (bold) fonts.semiBold else fonts.medium
             LEADING[sp]?.let { lead ->
                 val want = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, lead, resources.displayMetrics)
                 setLineSpacing(want - paint.getFontMetricsInt(null), 1f)
@@ -164,11 +163,15 @@ abstract class Screen : Activity() {
         val art = (windowArt?.drawable as? BitmapDrawable)?.bitmap ?: return
         if (art === shadeSource) return
         shadeSource = art
-        val pixels = samplePixels(art, 16, 24) ?: return
-        // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
-        windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            if (brightLeft(pixels, 16)) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
-            else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+        // Sampled off the main thread: reading a hardware bitmap back from the GPU stalls it for several ms.
+        background({ samplePixels(art, 16, 24)?.let { brightLeft(it, 16) } }) { r ->
+            val bright = r.getOrNull() ?: return@background
+            if (art !== shadeSource) return@background
+            // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
+            windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                if (bright) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
+                else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+        }
     }
 
     /** Sharp film art fills the screen; shade stays behind text and the bottom row. */
@@ -396,9 +399,13 @@ abstract class Screen : Activity() {
         } else null
         if (on && android.os.Build.VERSION.SDK_INT >= 28) {
             val poster = posterBitmap(this)
-            outlineSpotShadowColor = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
-                ?: samplePixels(poster, 16, 24)?.let { filmGlow(it).also { glow -> glowCache[this] = poster to glow } }
-                ?: TUNGSTEN_GLOW
+            val known = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
+            outlineSpotShadowColor = known ?: TUNGSTEN_GLOW
+            // Reading a poster's pixels back from the GPU took ~7 ms on the main thread per press: the glow is sampled
+            // off it and tints the shadow a moment later, while the lift is still growing.
+            if (known == null && poster != null) background({ samplePixels(poster, 16, 24)?.let(::filmGlow) }) { r ->
+                r.getOrNull()?.let { glow -> glowCache[this] = poster to glow; if (hasFocus()) outlineSpotShadowColor = glow }
+            }
         }
         grow(on)
             .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(150).start()
@@ -535,7 +542,14 @@ abstract class Screen : Activity() {
     }
 
     // House Lights' shared values. Screens keep their layout and content; the helpers above own component styling.
+    private class Fonts(assets: android.content.res.AssetManager) {
+        val medium: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build()
+        val semiBold: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build()
+        val serif: Typeface = Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf")
+    }
+
     companion object {
+        private var loadedFonts: Fonts? = null // main thread only
         const val PAD = 48
         const val TILE_RADIUS = 8
         const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges

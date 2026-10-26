@@ -109,6 +109,8 @@ class DetailsActivity : Screen() {
         hero.removeAllViews()
         val title = text(m?.name ?: name, SERIF_HERO, serif = true).onArt().apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL
+            // The box is a fixed height: at large font sizes a two-line name shrinks to fit instead of clipping.
+            setAutoSizeTextTypeUniformWithConfiguration(20, SERIF_HERO.toInt(), 1, android.util.TypedValue.COMPLEX_UNIT_SP)
         }
         val titleArea = FrameLayout(this).apply {
             addView(title, FrameLayout.LayoutParams(-1, -1))
