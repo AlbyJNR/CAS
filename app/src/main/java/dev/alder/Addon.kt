@@ -182,6 +182,8 @@ class Stream(
         Regex("2160|\\b4k\\b|\\buhd\\b").containsMatchIn(words) -> 2160
         "1080" in words -> 1080
         "720" in words -> 720
+        "576" in words -> 576
+        "480" in words -> 480
         else -> 0
     }
     val isHdr get() = hdr || dolbyVision

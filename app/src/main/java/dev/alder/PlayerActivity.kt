@@ -663,7 +663,7 @@ class PlayerActivity : Screen() {
             .putExtra("poster", intent.getStringExtra("poster")).putExtra("background", intent.getStringExtra("background"))
             .putExtra("videoId", next.id).putExtra("nextVideoId", after?.id)
             .putExtra("label", "$name  ·  S${next.season} E${next.episode}")
-            .putExtra("logo", meta?.logo).putExtra("still", next.thumbnail)
+            .putExtra("logo", meta?.logo).putExtra("still", next.thumbnail).putExtra("runtime", meta?.runtime)
             .putExtra("episode", "S${next.season} E${next.episode}  ·  ${next.title}"))
         finish()
     }

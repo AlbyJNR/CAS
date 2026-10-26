@@ -92,4 +92,13 @@ class ScreenDesignTest {
         assertEquals(720, lowerSourceHeight(1080))
         assertEquals(null, lowerSourceHeight(480))
     }
+
+    @Test fun sourceRowsUseFileFactsWithoutShowingAddonDescriptions() {
+        val stream = Stream("Torrentio (1080p)", "extra text", "https://example.invalid/video", emptyMap(),
+            405_000_000L, "First.Days.1080p.BluRay.HEVC.5.1.mkv", null)
+        assertEquals(1080, stream.height)
+        assertEquals("BluRay · HEVC · 5.1", sourceSummary(stream))
+        assertEquals("405 MB", sourceSize(stream.size))
+        assertEquals(480, Stream("480p", "", "https://example.invalid/low", emptyMap(), 175_000_000L, null, null).height)
+    }
 }

@@ -1639,6 +1639,11 @@ class MainActivity : Screen() {
         startActivity(Intent(this, StreamsActivity::class.java)
             .putExtra("type", item.type).putExtra("id", item.id).putExtra("name", item.name).putExtra("poster", item.poster)
             .putExtra("videoId", videoId).putExtra("nextVideoId", next?.id).putExtra("pick", pick)
+            .putExtra("background", metas[item.id]?.background ?: item.art)
+            .putExtra("logo", metas[item.id]?.logo ?: item.logo)
+            .putExtra("still", videos.firstOrNull { it.id == videoId }?.thumbnail)
+            .putExtra("runtime", metas[item.id]?.runtime)
+            .putExtra("episode", videos.firstOrNull { it.id == videoId }?.let { "S${it.season} E${it.episode}  ·  ${it.title}" })
             .putExtra("label", listOfNotNull(item.name, episode).joinToString("  ·  ")))
     }
 
