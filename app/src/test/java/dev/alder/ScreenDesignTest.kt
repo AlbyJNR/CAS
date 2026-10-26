@@ -107,4 +107,19 @@ class ScreenDesignTest {
         assertEquals("Dune: Part Two", profileLastLabel("Dune: Part Two", "tt15239678"))
         assertEquals("", profileLastLabel(null, null))
     }
+
+    @Test fun addonRowsUseShortNamesAndActualResources() {
+        assertEquals("Watchly", addonShortName("Watchly | ElfHosted"))
+        assertEquals("OpenSubtitles", addonShortName("OpenSubtitles v3"))
+        assertEquals("Local Files", addonShortName("Local Files (without catalog support)"))
+        assertEquals("Syncribullet", addonShortName("syncribullet"))
+        assertEquals("Files on this network", addonRole("Local Files", "org.stremio.local", setOf("stream", "meta")))
+        assertEquals("third", ordinal(3))
+        assertEquals("11th", ordinal(11))
+        assertEquals("22nd", ordinal(22))
+        assertEquals("Recommendations · Top Picks on Home", addonRole("Watchly", "com.watchly", setOf("catalog")))
+        assertEquals("Subtitles", addonRole("OpenSubtitles", "org.opensubtitles", setOf("subtitles")))
+        assertEquals("Streams · Catalogs", addonRole("Example", "org.example", setOf("stream", "catalog")))
+        assertEquals("Titles and details", addonRole("Cinemeta", "com.cinemeta", setOf("catalog", "meta")))
+    }
 }

@@ -312,6 +312,18 @@ abstract class Screen : Activity() {
         addView(text(does, SMALL, color = TEXT_2).onArt(), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
     }
 
+    /** A quiet outlined tag beside a row's name ("Built-in", "ElfHosted", "THIS PROFILE"). */
+    protected fun tag(label: String, color: Int = TEXT_3) = text(label, SMALL, color = color).apply {
+        includeFontPadding = false
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setPadding(dp(5), dp(2), dp(5), dp(2))
+        background = GradientDrawable().apply { cornerRadius = dp(4).toFloat(); setStroke(dp(1), GLASS_EDGE) }
+    }
+
+    /** A hairline under a list row. */
+    protected fun divider() = View(this).apply { setBackgroundColor(GLASS_EDGE) }
+
     /** The IMDb tag beside a rating, as tall as the letters. */
     protected fun imdbTag() = text("IMDb", SMALL, bold = true, color = BASE).apply {
         background = rounded(TUNGSTEN, 3)
@@ -542,6 +554,9 @@ abstract class Screen : Activity() {
         const val POSTER_H = 132
         const val HEADING_GAP = 24
         const val SECTION_GAP = 32
+        const val ROW_H = 42 // one-line list row (Settings)
+        const val ROW_H2 = 48 // two-line list row (name over what it does)
+        const val PANEL_W = 0.573f // share of the screen a list panel takes, beside its side note
         const val DOT = "  ·  "
 
         const val SERIF_HERO = 38f
