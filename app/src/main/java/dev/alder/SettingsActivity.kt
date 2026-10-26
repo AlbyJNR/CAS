@@ -92,7 +92,7 @@ class SettingsActivity : Screen() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         list = column(Gravity.START).apply { setPadding(0, dp(15), 0, dp(30)) }
-        list.addView(text("Settings", DISPLAY, bold = true))
+        list.addView(text("Settings", SERIF_TITLE, bold = true, serif = true))
 
         heading("General")
         action("Language", Locale.getDefault().displayLanguage, "The TV's own language setting; the app follows it.") {
@@ -128,7 +128,7 @@ class SettingsActivity : Screen() {
             }
         }
 
-        hint = text("", BODY, color = TEXT_MID).apply { setPadding(0, dp(10), 0, dp(18)) }
+        hint = text("", BODY, color = TEXT_2).apply { setPadding(0, dp(10), 0, dp(18)) }
         val scroll = ScrollView(this).apply {
             isFocusable = false
             isVerticalScrollBarEnabled = false
@@ -164,11 +164,11 @@ class SettingsActivity : Screen() {
     /** One row: the shared white focus, the label left, [value] right; its hint shows below the list. */
     private fun row(label: String, value: View, hintText: String, click: () -> Unit) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
-        addView(text(label, BODY, color = TEXT_HI), LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(label, BODY, color = TEXT), LinearLayout.LayoutParams(0, -2, 1f))
         addView(value, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
         setPadding(dp(13), dp(4), dp(8), dp(4))
         rowFocus(6) { has ->
-            (value as? Switch)?.thumbTintList = ColorStateList.valueOf(if (has) INK else Color.WHITE)
+            (value as? Switch)?.thumbTintList = ColorStateList.valueOf(if (has) TUNGSTEN else TEXT)
             if (has) hint.text = hintText
         }
         setOnClickListener { click() }
@@ -177,7 +177,7 @@ class SettingsActivity : Screen() {
 
     /** A row that opens something: its value (if any) and a ›. Returns the value text, to update. */
     private fun action(label: String, value: String, hintText: String, click: () -> Unit): TextView {
-        val v = text(if (value.isEmpty()) "›" else "$value  ›", BODY, color = TEXT_HI)
+        val v = text(if (value.isEmpty()) "›" else "$value  ›", BODY, color = TEXT)
         row(label, v, hintText, click)
         return v
     }
@@ -199,7 +199,7 @@ class SettingsActivity : Screen() {
 
     /** "Streams": a starting point that sets the rows it names; any other mix of them shows as Custom. */
     private fun presetRow(): View {
-        val value = text("", BODY, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        val value = text("", BODY, color = TEXT).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         fun current() = PRESETS.indexOfFirst { (_, rows) -> rows.all { (k, v) -> stored(choice(k)) == v } }
         refresh += { value.text = PRESETS.getOrNull(current())?.first ?: "Custom" }
         refresh.last()()
@@ -223,7 +223,7 @@ class SettingsActivity : Screen() {
                 showText = false
                 thumbTintList = ColorStateList.valueOf(Color.WHITE)
                 trackTintList = ColorStateList.valueOf(0xFF65717D.toInt())
-            } else text(c.values[current()].second, BODY, color = TEXT_HI).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+            } else text(c.values[current()].second, BODY, color = TEXT).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
             refresh += { if (value is Switch) value.isChecked = c.values[current()].first as Boolean else (value as TextView).text = c.values[current()].second }
             row(c.label, value, c.hint) {
                 store(c, c.values[(current() + 1) % c.values.size].first)

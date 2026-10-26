@@ -10,7 +10,6 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.TextUtils
@@ -26,7 +25,54 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.TextClock
 import org.json.JSONObject
+
+internal fun synopsisAtSentence(text: String, limit: Int): String {
+    if (limit >= text.length) return text
+    // A sentence ends at . ! or ? before a space, but not after "Sgt.", "Dr.", "U.S." and the like.
+    val end = (limit - 1 downTo 0).firstOrNull { i ->
+        text[i] in ".!?" && text.getOrNull(i + 1) == ' ' && !(text[i] == '.' && text.substring(text.lastIndexOf(' ', i) + 1, i)
+            .let { word -> '.' in word || word.length <= 3 && word.firstOrNull()?.isUpperCase() == true })
+    }
+    // shortcut: a first sentence longer than two lines uses Android ellipsis; revisit if it appears often.
+    return if (end != null) text.substring(0, end + 1) else text
+}
+
+/** "Because you watched Crayon Shin-chan: Pursuit" → "More like Crayon Shin-chan". */
+internal fun homeRowName(name: String): String {
+    val prefix = "Because you watched "
+    if (!name.startsWith(prefix, ignoreCase = true)) return name.trim().take(36).trimEnd()
+    val title = name.substring(prefix.length).substringBefore(":").substringBefore(" (").substringBefore(" - ").trim()
+    return "More like ${title.take(26).trimEnd()}"
+}
+
+internal fun seasons(count: Int) = if (count == 1) "1 season" else "$count seasons"
+
+internal fun catalogGenres(names: List<String>): List<String> {
+    val preferred = listOf("Drama", "Comedy", "Crime", "Sci-Fi", "Anime", "Documentary")
+    return names.filterNot { it.equals("All", true) }.distinctBy { it.lowercase() }
+        .sortedWith(compareBy<String> { name ->
+            preferred.indexOfFirst { it.equals(name, true) }.let { if (it < 0) preferred.size else it }
+        }.thenBy { it })
+}
+
+/**
+ * A row's short name: personal picks are "For you", charts "Popular", and a long themed name ("Short & Sweet
+ * Adventure") keeps only the [genres] it names, so it can merge with that genre's row.
+ */
+internal fun shortRowName(name: String, genres: Collection<String> = emptyList()): String {
+    val n = name.replace("Science Fiction", "Sci-Fi", ignoreCase = true).trim()
+    return when {
+        n.contains(" in India", true) && n.contains("recommend", true) -> n // a region's picks, not the viewer's
+        n.contains("pick", true) || n.contains("recommend", true) -> "For you"
+        n.contains("popular", true) || n.contains("trending", true) -> "Popular"
+        n.length <= 18 -> n
+        else -> genres.filter { n.contains(it, true) }.take(2).joinToString(" & ").ifEmpty { n.take(28).trimEnd() }
+    }
+}
+
+internal fun isAddonMessage(name: String) = name.contains("Authentication Required", ignoreCase = true)
 
 // Home for the profile in use, built to feel like a cinema rather than a catalogue. The whole screen is one title's
 // art: sharp where nothing sits on it, with light shading behind text and cards.
@@ -36,7 +82,7 @@ import org.json.JSONObject
 //    where you are and Resume, moving on to the next every ADVANCE. OK resumes; any other key returns to where you were.
 //    The TV's own screensaver takes over later (10 min on the test TV), so nothing stays still for hours.
 class MainActivity : Screen() {
-    private enum class Page(val label: String) { HOME("Home"), SHOWS("Shows"), MOVIES("Movies"), LIVE("Live"), LIBRARY("Library") }
+    private enum class Page(val label: String) { HOME("Home"), SHOWS("Shows"), MOVIES("Movies"), LIVE("Live"), LIBRARY("My List") }
     private enum class Mode { CINEMA, BROWSE }
 
     private lateinit var profile: Profile
@@ -44,8 +90,11 @@ class MainActivity : Screen() {
     private lateinit var scroller: ScrollView
     private lateinit var content: LinearLayout
     private lateinit var header: FrameLayout
+    private lateinit var genreStrip: HorizontalScrollView
+    private val genreChips = mutableMapOf<String?, TextView>()
     private val navItems = mutableMapOf<Page, TextView>()
     private var page = Page.HOME
+    private val Page.isCatalog get() = this == Page.SHOWS || this == Page.MOVIES
     private var mode = Mode.BROWSE
     private var library: List<JSONObject> = emptyList()
     // Movies and Shows can show one genre (null: everything); Library sorts by last change or by name.
@@ -67,6 +116,9 @@ class MainActivity : Screen() {
     private lateinit var thumb: View
     // A chevron in the right margin while the row the remote is in has more cards past the screen's edge.
     private lateinit var moreHint: ImageView
+    private lateinit var nextRowHint: TextView
+    private lateinit var cardCaption: TextView
+    private var captionX = 0 // px from the left margin to the focused card, where its caption goes
     private var indicatedRow: View? = null
     private val hideTrack = Runnable { track.animate().alpha(0f).setDuration(250).start() }
     private var artTask = Runnable {}
@@ -86,15 +138,24 @@ class MainActivity : Screen() {
         val dw = src.width * scale
         val dh = src.height * scale
         canvas.drawBitmap(src, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
-        // Dark enough under the words (which end near 45% across) that a white car or a sky can't wash them out, then
-        // gone by three quarters across so the picture keeps its right side.
-        canvas.drawRect(0f, 0f, w * 0.75f, h.toFloat(), Paint().apply {
-            shader = LinearGradient(0f, 0f, w * 0.75f, 0f, intArrayOf(0xE0000000.toInt(), 0xCC000000.toInt(), 0x99000000.toInt(), 0),
-                floatArrayOf(0f, 0.45f, 0.6f, 1f), Shader.TileMode.CLAMP)
-        })
-        // A long, gentle darkening from the middle of the screen down: the art never stops, it just gets darker.
-        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0, 0x73000000, 0xD9000000.toInt(), 0xF2000000.toInt()))
-            .apply { setBounds(0, h - h * 55 / 100, w, h); draw(canvas) }
+        val sample = Bitmap.createScaledBitmap(src, 16, 24, true)
+        val pixels = IntArray(16 * 24)
+        sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
+        if (sample !== src) sample.recycle()
+        val shade = Paint().apply {
+            shader = LinearGradient(0f, 0f, w * 0.55f, 0f,
+                if (brightLeft(pixels, 16)) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+        }
+        canvas.drawRect(0f, 0f, w * 0.55f, h.toFloat(), shade)
+        shade.shader = LinearGradient(0f, h.toFloat(), 0f, h * 0.55f, 0xF70E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, h * 0.55f, w.toFloat(), h.toFloat(), shade)
+        shade.shader = LinearGradient(0f, 0f, 0f, h * 0.14f, 0x8C0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, w.toFloat(), h * 0.14f, shade)
+        for (edge in listOf(GradientDrawable.Orientation.LEFT_RIGHT, GradientDrawable.Orientation.RIGHT_LEFT,
+            GradientDrawable.Orientation.TOP_BOTTOM, GradientDrawable.Orientation.BOTTOM_TOP)) {
+            GradientDrawable(edge, intArrayOf(0x73000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000))
+                .apply { setBounds(0, 0, w, h); draw(canvas) }
+        }
         src.recycle()
         out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
     }
@@ -103,7 +164,10 @@ class MainActivity : Screen() {
     private var heroItem: Item? = null
     private lateinit var browseInfo: LinearLayout
     private lateinit var heroName: TextView
+    private lateinit var heroLogo: ImageView
     private lateinit var heroFacts: TextView
+    private lateinit var heroRating: TextView
+    private lateinit var heroScore: TextView
     private var heroBottom = 0 // px from the screen's foot to the hero block, for a poster row
     private var wideRow = false // the row the remote is in has wide cards (Continue Watching): the hero sits lower
     private lateinit var heroAbout: TextView
@@ -117,6 +181,7 @@ class MainActivity : Screen() {
     private lateinit var cinemaInfo: LinearLayout
     private lateinit var cinemaName: TextView
     private lateinit var cinemaLogo: ImageView
+    private lateinit var cinemaClock: TextClock // the cinema's own large clock; the top bar has the browsing one
     private lateinit var cinemaLine: TextView
     private lateinit var cinemaPlay: TextView
     private lateinit var dots: LinearLayout
@@ -128,6 +193,7 @@ class MainActivity : Screen() {
         val videoId: String?, val progress: Float,
         val resume: Boolean, // has watch progress (Continue Watching, Library): its facts come from the meta addon
         val left: String?, // Continue Watching: "S1 E3 · 31 min left"
+        val stoppedAt: Long? = null,
     ) {
         var filled = false
         var settled = false // its details are in (or failed): what it has now is all it will get
@@ -141,7 +207,11 @@ class MainActivity : Screen() {
     private var cinemaReady = false // the cinema's title has its art and logo (or gave up waiting) and may show
     private var cinemaToken = Any()
     private var beforeCinema: View? = null // where the remote was when the cinema took over
+    private var cinemaAwake = false
+    private var cinemaWakeKey = -1
     private val idle = Runnable { enterCinema() }
+    private val idleDim = Runnable { dimHome(true) }
+    private var homeDimmed = false
     private val advance = Runnable { if (mode == Mode.CINEMA && cinema.size > 1) showCinema((cinemaAt + 1) % cinema.size) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -155,7 +225,7 @@ class MainActivity : Screen() {
 
         val screenH = resources.displayMetrics.heightPixels
         // A row heading's real height: the TV's font size setting can make it taller than any fixed guess.
-        val headingH = text("", BODY, bold = true).lineHeight
+        val headingH = caps("").lineHeight
         val rowH = headingH + dp(ROW_TOP_ROOM + CARD_H + ROW_BOTTOM_ROOM)
         val rowTop = screenH - rowH - dp(SAFE_BOTTOM) // one row on screen; the track in the left margin says where you are
         content = column(Gravity.START)
@@ -189,7 +259,7 @@ class MainActivity : Screen() {
         topShade = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC000000.toInt(), 0x66000000, 0x1A000000, 0)); alpha = 0f }
 
         // Black from the window alone: a black layout too would be one more full screen painted under the art.
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.BLACK))
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(BASE))
         setContentView(FrameLayout(this).apply {
             addView(artBack, FrameLayout.LayoutParams(-1, -1))
             addView(art, FrameLayout.LayoutParams(-1, -1))
@@ -203,6 +273,14 @@ class MainActivity : Screen() {
             addView(moreHint, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END).apply {
                 rightMargin = (dp(PAD) - dp(32)) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM + CARD_H / 2 - 16)
             })
+            cardCaption = caption("").apply { visibility = View.GONE }
+            addView(cardCaption, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(PAD); bottomMargin = dp(27)
+            })
+            nextRowHint = caps("").apply { visibility = View.GONE }
+            addView(nextRowHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+                rightMargin = dp(PAD); bottomMargin = dp(32)
+            })
             // Sits on the row band, so a larger font size grows it upwards into the art, never down into the rows.
             addView(browseInfo(), FrameLayout.LayoutParams(dp(HERO_W + 2 * FOCUS_ROOM), -2, Gravity.BOTTOM).apply {
                 heroBottom = screenH - rowTop + dp(HERO_GAP)
@@ -210,6 +288,13 @@ class MainActivity : Screen() {
                 leftMargin = dp(PAD - FOCUS_ROOM); bottomMargin = heroBottom
             })
             addView(stage(), FrameLayout.LayoutParams(-1, -1))
+            genreStrip = HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false
+                visibility = View.GONE
+            }
+            addView(genreStrip, FrameLayout.LayoutParams(-1, dp(44), Gravity.TOP).apply {
+                topMargin = dp(HEADER_H + 6)
+            })
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-1, dp(HEADER_H))) // fades in if the page wants it
         })
 
@@ -247,25 +332,60 @@ class MainActivity : Screen() {
         super.onResume()
         main.removeCallbacks(idle)
         main.postDelayed(idle, IDLE)
+        main.removeCallbacks(idleDim)
+        main.postDelayed(idleDim, DIM_AFTER)
     }
 
     override fun onPause() {
         super.onPause()
         main.removeCallbacks(idle)
+        main.removeCallbacks(idleDim)
         main.removeCallbacks(advance)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             touched = true
+            dimHome(false)
+            main.removeCallbacks(idleDim)
+            main.postDelayed(idleDim, DIM_AFTER)
             main.removeCallbacks(idle)
             main.postDelayed(idle, IDLE)
         }
-        // In the cinema only OK does anything (resume); any other key wakes back to the rows, and is used up doing so.
         val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER
-        if (mode == Mode.CINEMA && !ok) {
-            if (event.action == KeyEvent.ACTION_DOWN) enterBrowse()
-            return true
+        if (mode == Mode.CINEMA) {
+            if (event.keyCode == cinemaWakeKey) {
+                if (event.action == KeyEvent.ACTION_UP) cinemaWakeKey = -1
+                return true
+            }
+            if (!cinemaAwake) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    cinemaAwake = true
+                    cinemaWakeKey = event.keyCode
+                    cinemaPlay.isFocusable = true
+                    cinemaPlay.requestFocus()
+                }
+                return true
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP) enterBrowse()
+                return true
+            }
+            if (!ok) return true
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && page.isCatalog && mode == Mode.BROWSE) {
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && header.hasFocus()) {
+                genreChips[genre]?.requestFocus()?.let { if (it) return true }
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && genreStrip.hasFocus()) {
+                (last?.takeIf { it.isAttachedToWindow && it.isShown } ?: firstRow()?.cards?.firstOrNull())
+                    ?.requestFocus()?.let { if (it) return true }
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP && currentFocus?.let { focused ->
+                    firstRow()?.view?.let { isInside(focused, it) }
+                } == true) {
+                genreChips[genre]?.requestFocus()?.let { if (it) return true }
+            }
         }
         // Down from the top bar goes to the titles, past Resume (one Up from the cards), to where the remote last was.
         if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && event.action == KeyEvent.ACTION_DOWN && header.hasFocus()) {
@@ -273,6 +393,18 @@ class MainActivity : Screen() {
             if (to != null) { to.requestFocus(); return true }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun dimHome(on: Boolean) {
+        if ((page != Page.HOME && !page.isCatalog) || mode != Mode.BROWSE || homeDimmed == on) return
+        homeDimmed = on
+        val alpha = if (on) 0.3f else 1f
+        header.animate().alpha(alpha).setDuration(400).start()
+        scroller.animate().alpha(alpha).setDuration(400).start()
+        browseInfo.animate().alpha(if (heroItem == null) 0f else alpha).setDuration(400).start()
+        cardCaption.animate().alpha(alpha).setDuration(400).start()
+        nextRowHint.animate().alpha(alpha).setDuration(400).start()
+        genreStrip.animate().alpha(alpha).setDuration(400).start()
     }
 
     private fun switchProfile() {
@@ -293,16 +425,18 @@ class MainActivity : Screen() {
         }.apply { setPadding(dp(PAD), dp(18), dp(PAD), dp(6)) }
 
         // The profile: a small round avatar on the margin. OK opens a small menu (switch profile, settings).
-        val avatar = text(profile.name.take(1).uppercase(), SMALL, bold = true).apply {
+        val avatar = text(profile.name.take(1).uppercase(), SMALL, bold = true, color = TUNGSTEN).apply {
             gravity = Gravity.CENTER
             contentDescription = "Profile"
-            // Focused it turns white with a dark letter, like every small control; its colour alone was too faint at 3 m.
+            val rest = glassOver(this, 20)
             fun style(focused: Boolean) {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (focused) Color.WHITE else profile.color) }
-                setTextColor(if (focused) INK else Color.WHITE)
+                background = if (focused) glass(20, true) else rest
+                setTextColor(TUNGSTEN)
+                animate().scaleX(if (focused) CARD_GROW else 1f).scaleY(if (focused) CARD_GROW else 1f).setDuration(150).start()
             }
             style(false)
-            cardFocus(::style)
+            isFocusable = true
+            setOnFocusChangeListener { _, has -> style(has) }
             setOnClickListener { profileMenu() }
         }
         // Every destination in one dark capsule, Search first as an icon (Left from Home), like Google TV's top bar.
@@ -323,11 +457,12 @@ class MainActivity : Screen() {
             setOnFocusChangeListener { _, _ -> styleNav() }
             setOnClickListener { startActivity(Intent(this@MainActivity, SearchActivity::class.java)) }
         }.inNav(width = dp(44), height = -1)
-        // A page opens as soon as the remote rests on its name: no OK. OK on the open page's name opens its filter
-        // (genre, or Library's order), so the filter is never across other pages' names.
-        Page.entries.forEach { p ->
+        // A page opens as soon as the remote rests on its name. OK on Shows or Movies goes to its genres.
+        Page.entries.filter { it != Page.LIVE }.forEach { p ->
             navItems[p] = text(p.label, BODY).apply {
-                setPadding(dp(16), dp(7), dp(16), dp(7))
+                gravity = Gravity.CENTER
+                compoundDrawablePadding = dp(2)
+                setPadding(dp(12), dp(4), dp(12), dp(2))
                 setOnFocusChangeListener { _, has ->
                     styleNav()
                     main.removeCallbacks(switchPage)
@@ -337,15 +472,23 @@ class MainActivity : Screen() {
                     main.removeCallbacks(switchPage)
                     when {
                         p != page -> { jump = true; showPage(p) }
-                        p in FILTERED -> pickFilter()
+                        p.isCatalog -> genreChips[genre]?.requestFocus()
+                        p == Page.LIBRARY -> pickFilter()
                         else -> firstRow()?.focusFirst()
                     }
                 }
             }.inNav()
         }
-        nav.background = rounded(GLASS, NAV_R + 4) // a plain dark capsule: words only, nothing to frost for
-        header.addView(avatar, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.START or Gravity.CENTER_VERTICAL))
+        nav.background = glassOver(nav, NAV_R + 4)
+        header.addView(avatar, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        header.addView(TextClock(this).apply {
+            format12Hour = "h:mm a"
+            format24Hour = "HH:mm"
+            typeface = text("", SMALL).typeface
+            textSize = SMALL
+            setTextColor(TEXT_2)
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
     }
@@ -361,41 +504,32 @@ class MainActivity : Screen() {
     }
 
     /**
-     * Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item. A page with a
-     * filter in use shows on its name ("Movies · Comedy"); OK on the open page picks it.
+     * Inside the capsule a lighter pill marks the page; white appears only when the remote is on an item.
      */
     private fun styleNav() {
         navItems.forEach { (p, item) ->
             val focused = item.isFocused
-            item.background = when {
-                focused -> rounded(Color.WHITE, NAV_R)
-                p == page -> rounded(GLASS_HIGH, NAV_R)
-                else -> null
-            }
-            item.setTextColor(if (focused) INK else if (p == page) Color.WHITE else TEXT_MID)
-            val choice = if (p != page) null else if (p == Page.LIBRARY) "A–Z".takeIf { libraryByName } else genre
+            item.background = if (focused) glass(NAV_R, true) else null
+            item.setTextColor(if (p == page || focused) TEXT else TEXT_2)
+            val choice = if (p == Page.LIBRARY && p == page) "A–Z".takeIf { libraryByName } else null
             item.text = p.label + (choice?.let { DOT + it } ?: "")
+            // The open page's dot hangs under its name; the others keep an empty one, so every name sits on one line.
+            item.setCompoundDrawablesRelative(null, null, null, GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (p == page) TUNGSTEN else Color.TRANSPARENT)
+                setBounds(0, 0, dp(4), dp(4))
+            })
         }
         search?.let {
-            it.background = if (it.isFocused) rounded(Color.WHITE, NAV_R) else null
-            it.setColorFilter(if (it.isFocused) INK else TEXT_MID)
+            it.background = if (it.isFocused) glass(NAV_R, true) else null
+            it.setColorFilter(if (it.isFocused) TEXT else TEXT_2)
         }
     }
 
-    /** Library flips between Recent and A–Z; Movies and Shows offer every genre their catalogs can filter by. */
+    /** Library flips between Recent and A–Z. Shows and Movies use the chips under the top bar. */
     private fun pickFilter() {
-        if (page == Page.LIBRARY) { libraryByName = !libraryByName; return showPage(page) }
-        val type = if (page == Page.MOVIES) "movie" else "series"
-        val genres = (Stremio.savedAddons(profile.authKey) ?: emptyList()).flatMap { it.catalogs }
-            .filter { it.type == type }.flatMap { it.genres }.filterNot { it.equals("All", true) }.distinct().sorted() // "All" is one addon's no-filter
-        val choices = listOf("All genres") + genres
-        // Opens on the genre in use; picking one goes down into its rows.
-        choose("Genre", choices, checked = choices.indexOf(genre).coerceAtLeast(0)) { i ->
-            if ((if (i == 0) null else choices[i]) == genre) return@choose
-            genre = if (i == 0) null else choices[i]
-            jump = true
-            showPage(page)
-        }
+        libraryByName = !libraryByName
+        showPage(page)
     }
 
     // ---------- the art, and what shows over it ----------
@@ -413,10 +547,17 @@ class MainActivity : Screen() {
         artTask = Runnable {
             art.animate().cancel()
             artBack.setImageDrawable(art.drawable)
+            artBack.scaleX = art.scaleX
+            artBack.scaleY = art.scaleY
+            art.scaleX = 1f
+            art.scaleY = 1f
             art.alpha = 0f
             Images.load(url, art, artW, urgent = true, look = shaded, failed = ready) {
                 // Once the new art covers it, the old one lets go: otherwise the GPU paints a hidden full screen every frame.
-                art.animate().alpha(1f).setDuration(250).withEndAction { artBack.setImageDrawable(null) }.start()
+                art.animate().alpha(1f).setDuration(if (artBack.drawable == null) 800 else 600).withEndAction {
+                    artBack.setImageDrawable(null)
+                    art.animate().scaleX(1.03f).scaleY(1.03f).setDuration(20_000).start()
+                }.start()
                 refrost()
                 ready?.invoke()
             }
@@ -440,6 +581,9 @@ class MainActivity : Screen() {
         topShade.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         // Lighter in the cinema (only its few words sit low on the left), full while browsing under the cards.
         browseInfo.animate().alpha(if (cinemaOn || heroItem == null) 0f else 1f).setDuration(250).start()
+        cardCaption.alpha = if (cinemaOn || page == Page.LIBRARY || page == Page.LIVE) 0f else 1f
+        nextRowHint.alpha = if (cinemaOn || page == Page.LIBRARY || page == Page.LIVE) 0f else 1f
+        genreStrip.alpha = if (cinemaOn) 0f else 1f
         if (cinemaOn) {
             main.removeCallbacks(hideTrack)
             indicatedRow = null
@@ -447,24 +591,19 @@ class MainActivity : Screen() {
             moreHint.animate().alpha(0f).setDuration(250).start()
         }
         cinemaInfo.animate().alpha(if (cinemaOn && cinemaReady) 1f else 0f).setDuration(250).start()
+        cinemaClock.animate().alpha(if (cinemaOn && !headerOn) 1f else 0f).setDuration(250).start()
         dots.animate().alpha(if (cinemaOn && cinemaReady && cinema.size > 1) 1f else 0f).setDuration(250).start()
     }
 
     // ---------- cinema ----------
 
     private fun stage(): View {
-        cinemaName = text("", DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(520) }
+        cinemaName = text("", SERIF_HERO, serif = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(520) }
         cinemaLogo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(LOGO_H); maxWidth = dp(LOGO_W) }
-        cinemaLine = text("", SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(INFO_W) }
-        // Resume, focused as tvOS draws it: a compact, near-white rounded button with dark text. The time left is in
-        // the line above, so the button carries no bar of its own.
-        cinemaPlay = text("", BODY, bold = true, color = INK).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            compoundDrawablePadding = dp(8)
-            setPadding(dp(16), dp(8), dp(22), dp(8))
-            background = rounded(0xF2FFFFFF.toInt(), 8)
-            elevation = dp(6).toFloat()
-            setCompoundDrawablesRelativeWithIntrinsicBounds(getDrawable(R.drawable.ic_play)?.mutate()?.apply { setTint(INK) }, null, null, null)
+        cinemaLine = text("", SMALL, color = TEXT).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(INFO_W) }
+        cinemaPlay = pill("Resume", R.drawable.ic_play).apply {
+            isFocusable = false
+            setOnClickListener { cinema.getOrNull(cinemaAt)?.let(::play) }
         }
         cinemaInfo = column(Gravity.START,
             FrameLayout(this).apply { addView(cinemaName); addView(cinemaLogo) },
@@ -476,12 +615,15 @@ class MainActivity : Screen() {
         stage = FrameLayout(this).apply {
             addView(cinemaInfo, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { leftMargin = dp(PAD); bottomMargin = dp(64) })
             addView(dots, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(30) })
-            isFocusable = false
-            setOnKeyListener { _, code, event ->
-                if (event.action != KeyEvent.ACTION_DOWN || mode != Mode.CINEMA) return@setOnKeyListener false
-                cinema.getOrNull(cinemaAt)?.let(::play) // only OK gets here (dispatchKeyEvent)
-                true
+            cinemaClock = TextClock(context).apply {
+                alpha = 0f
+                format12Hour = "h:mm a"; format24Hour = "HH:mm"
+                typeface = text("", SERIF_TITLE, serif = true).typeface
+                textSize = SERIF_TITLE
+                setTextColor(TEXT)
             }
+            addView(cinemaClock, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = dp(27); rightMargin = dp(PAD) })
+            isFocusable = false
         }
         return stage
     }
@@ -513,7 +655,7 @@ class MainActivity : Screen() {
         cinemaPlay.text = if (item.progress > 0) "Resume" else "Play"
         dots.removeAllViews()
         cinema.indices.forEach { i ->
-            dots.addView(View(this).apply { background = rounded(if (i == index) Color.WHITE else 0x66FFFFFF, 3) },
+            dots.addView(View(this).apply { background = rounded(if (i == index) TUNGSTEN else TEXT_3, 3) },
                 LinearLayout.LayoutParams(dp(if (i == index) 18 else 6), dp(6)).apply { marginStart = dp(if (i > 0) 8 else 0) })
         }
         if (item.art != null || item.settled) showArt(item) { part() } // else its details call this again
@@ -526,6 +668,9 @@ class MainActivity : Screen() {
         if (cinema.isEmpty() || mode == Mode.CINEMA) return
         beforeCinema = currentFocus
         cinemaAt = 0
+        cinemaAwake = false
+        cinemaWakeKey = -1
+        cinemaPlay.isFocusable = false
         mode = Mode.CINEMA
         stage.isFocusable = true
         stage.requestFocus()
@@ -539,6 +684,7 @@ class MainActivity : Screen() {
     /** Wakes from the cinema to where the remote was; the card taking focus brings its own art back. */
     private fun enterBrowse() {
         mode = Mode.BROWSE
+        dimHome(false)
         main.removeCallbacks(advance)
         scroller.visibility = View.VISIBLE
         scroller.animate().translationY(0f).alpha(1f).setDuration(300).setInterpolator(DecelerateInterpolator()).start()
@@ -552,9 +698,20 @@ class MainActivity : Screen() {
     // ---------- browse: the focused title, top left ----------
 
     private fun browseInfo(): View {
-        heroName = text("", DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-                heroFacts = text("", SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        heroAbout = text("", BODY, color = TEXT_HI).onArt().apply { setLines(2); ellipsize = TextUtils.TruncateAt.END }
+        heroName = text("", SERIF_HERO, serif = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        // adjustViewBounds resets the scale type to FIT_CENTER, so FIT_START comes after it (logo on the margin).
+        heroLogo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(55) }
+        heroFacts = text("", SMALL, color = TEXT_2).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        // A small tag, as tall as the letters: SMALL's leading and font padding made it a block twice the mock's.
+        heroRating = text("IMDb", SMALL, bold = true, color = BASE).apply {
+            background = rounded(TUNGSTEN, 3)
+            includeFontPadding = false
+            setLineSpacing(0f, 1f)
+            setPadding(dp(4), dp(1), dp(4), dp(1))
+            visibility = View.GONE
+        }
+        heroScore = text("", SMALL, color = TEXT_2).onArt().apply { visibility = View.GONE }
+        heroAbout = text("", BODY, color = TEXT).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         heroResume = pill("Resume", R.drawable.ic_play).apply {
             setOnClickListener { heroItem?.let(::play) }
             setOnLongClickListener { heroItem?.let { play(it, pick = true) }; true }
@@ -564,8 +721,16 @@ class MainActivity : Screen() {
         heroActions = LinearLayout(this).apply { clipChildren = false; addView(heroResume) }
         // No progress line here: the focused card already shows it, right below.
         browseInfo = column(Gravity.START,
-            heroName,
-            heroFacts.marginTop(6),
+            FrameLayout(this).apply {
+                addView(heroName, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL))
+                addView(heroLogo, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL))
+            },
+            LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(heroFacts)
+                addView(heroRating, wrap().apply { marginStart = dp(10) })
+                addView(heroScore, wrap().apply { marginStart = dp(6) })
+            }.marginTop(8),
             heroAbout.marginTop(8),
             heroActions.marginTop(16),
         ).apply {
@@ -575,6 +740,7 @@ class MainActivity : Screen() {
             // until the block clears the top bar's words (they end well above its 76 dp). showHero gives them back for
             // the next title.
             addOnLayoutChangeListener { _, _, top, _, _, _, _, _, _ ->
+                if (page == Page.HOME) return@addOnLayoutChangeListener
                 val lines = heroAbout.maxLines
                 if (top < dp(HEADER_H - 12) && lines > 0) heroAbout.post { heroAbout.setLines(lines - 1) }
             }
@@ -586,15 +752,53 @@ class MainActivity : Screen() {
     private fun showHero(item: Item) {
         heroItem = item
         heroName.text = item.name
-        // Calm, like Apple TV: the logo, one quiet line of what it is ("Series · 2022 · Crime"), and two lines of story
-        // (the episode's, for something you're watching). Time left and progress live on the card.
-        heroFacts.text = facts(item)
-        heroAbout.setLines(2)
-        heroAbout.text = episode(item)?.overview?.takeIf { it.isNotBlank() } ?: item.about
-        // Kept in the layout when hidden, so the title block sits at the same height on every row and every page.
-        heroActions.visibility = if (item.resume) View.VISIBLE else View.INVISIBLE
-        if (mode == Mode.BROWSE) browseInfo.animate().alpha(1f).setDuration(150).start()
+        heroName.visibility = View.VISIBLE
+        heroLogo.visibility = View.GONE
+        heroLogo.setImageDrawable(null)
+        Images.load(item.logo, heroLogo, dp(LOGO_W), failed = { if (heroItem === item) heroName.visibility = View.VISIBLE }) {
+            if (heroItem === item) { heroLogo.visibility = View.VISIBLE; heroName.visibility = View.INVISIBLE }
+        }
+        val meta = metas[item.id]
+        val year = meta?.year ?: item.facts.firstOrNull { it.firstOrNull()?.isDigit() == true }
+        val genre = meta?.genres?.firstOrNull() ?: item.facts.firstOrNull { it.firstOrNull()?.isDigit() == false && !it.startsWith("IMDb") }?.substringBefore(",")
+        val length = if (item.type == "series") meta?.videos?.map { it.season }?.filter { it > 0 }?.distinct()?.size?.takeIf { it > 0 }?.let(::seasons)
+            else meta?.runtime
+        heroFacts.text = listOfNotNull(year, genre, length).joinToString(DOT)
+        val rating = meta?.rating ?: item.facts.firstOrNull { it.startsWith("IMDb") }?.removePrefix("IMDb ")
+        heroRating.visibility = if (rating.isNullOrBlank()) View.GONE else View.VISIBLE
+        heroScore.visibility = heroRating.visibility
+        heroScore.text = rating
+        heroAbout.maxLines = 2
+        val description = episode(item)?.overview?.takeIf { it.isNotBlank() } ?: item.about
+        heroAbout.text = description
+        heroAbout.post {
+            if (heroItem !== item || heroAbout.text.toString() != description) return@post
+            val layout = heroAbout.layout ?: return@post
+            if (layout.lineCount >= 2 && layout.getEllipsisCount(1) > 0) {
+                val end = layout.getLineStart(1) + layout.getEllipsisStart(1)
+                heroAbout.text = synopsisAtSentence(description, end)
+            }
+        }
+        heroActions.visibility = if (page != Page.HOME && item.resume) View.VISIBLE else View.GONE
+        if (page == Page.HOME || page.isCatalog) showCaption(item)
+        if (mode == Mode.BROWSE) browseInfo.animate().alpha(if (homeDimmed && (page == Page.HOME || page.isCatalog)) 0.3f else 1f).setDuration(150).start()
         showArt(item)
+    }
+
+    private fun showCaption(item: Item) {
+        val remaining = item.left?.split(DOT)?.lastOrNull { it.endsWith("left") }
+        val stop = item.stoppedAt?.takeIf { it > 0 }?.let { "Stopped at ${android.text.format.DateUtils.formatElapsedTime(it / 1000)}" }
+        val meta = metas[item.id]
+        val detail = if (page == Page.HOME) meta?.year ?: item.facts.firstOrNull { it.firstOrNull()?.isDigit() == true }
+            else if (item.type == "series") meta?.videos?.map { it.season }?.filter { it > 0 }?.distinct()?.size?.takeIf { it > 0 }?.let(::seasons)
+            else meta?.runtime
+        cardCaption.text = listOfNotNull(remaining, stop).takeIf { it.isNotEmpty() }?.joinToString(DOT)
+            ?: listOfNotNull(item.name, detail).joinToString(DOT)
+        cardCaption.visibility = View.VISIBLE
+        // Measured with its new words, so a caption near the right end stops at the margin.
+        cardCaption.post {
+            cardCaption.translationX = minOf(captionX, cardCaption.rootView.width - 2 * dp(PAD) - cardCaption.width).coerceAtLeast(0).toFloat()
+        }
     }
 
     /** One quiet line for a title in progress: the episode and its name (or, for a film, its facts), then the time left. */
@@ -623,7 +827,12 @@ class MainActivity : Screen() {
      * only if it changed and the remote hasn't been touched yet.
      */
     private fun showPage(p: Page, quick: Boolean = true) {
-        if (p != page) genre = null // a genre belongs to the page it was picked on
+        dimHome(false)
+        if (p != page) {
+            genre = null // a genre belongs to the page it was picked on
+            genreStrip.removeAllViews()
+            genreChips.clear()
+        }
         page = p
         val g = ++generation
         refreshLibrary = null
@@ -632,6 +841,10 @@ class MainActivity : Screen() {
         content.removeAllViews()
         rows.forEach { r -> r.cards.forEach { it.unload() } }
         rows.clear()
+        genreStrip.visibility = if (p.isCatalog) View.VISIBLE else View.GONE
+        if (!p.isCatalog) { genreStrip.removeAllViews(); genreChips.clear() }
+        cardCaption.visibility = View.GONE
+        nextRowHint.visibility = View.GONE
         main.removeCallbacks(hideTrack)
         indicatedRow = null
         track.animate().alpha(0f).setDuration(200).start()
@@ -657,9 +870,9 @@ class MainActivity : Screen() {
             forgetIfSessionGone(error)
             if (failedShown || isFinishing || page != p) return
             failedShown = true
-            val view = failed("Couldn't reach Stremio. Check the TV's connection.") { showPage(page) }.apply { setPadding(dp(PAD), 0, 0, 0) }
-            content.addView(view, 0)
-            view.post { if (!focusedSomething && !header.hasFocus()) view.getChildAt(1).requestFocus() }
+            val view = failed("Couldn't reach Stremio. Check the TV's connection.") { showPage(page) }
+            content.addView(view, 0, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(PAD) })
+            view.post { if (!focusedSomething && !header.hasFocus()) view.getChildAt(2).requestFocus() }
         }
 
         if (p == Page.HOME || p == Page.LIBRARY) {
@@ -680,7 +893,7 @@ class MainActivity : Screen() {
                 if (p == Page.HOME) {
                     val items = cw.map(::libraryItem)
                     if (items.isNotEmpty()) {
-                        slot.addView(row("Continue Watching", items.take(START), later(items)).view)
+                        slot.addView(row("Continue", items.take(START), later(items)).view)
                         startCinema(items.take(CINEMA_MAX))
                     }
                 } else {
@@ -704,42 +917,79 @@ class MainActivity : Screen() {
             if (built || g != generation) return
             built = true
             // Each catalog on its page under a plain name, personal rows first; the sort keeps the addons' order within a rank.
-            val picked = genre
             val shelves = addons.flatMap { it.catalogs }.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it } }
-                .filter { picked == null || picked in it.first.genres }
                 .sortedBy { it.second.rank }
             val catalogs = shelves.map { it.first }
-            if (catalogs.isEmpty() && picked != null) {
-                content.addView(text("None of your catalogs can show $picked.", BODY, color = MUTED).apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
-            } else if (catalogs.isEmpty() && p != Page.HOME) {
+            if (catalogs.isEmpty() && p != Page.HOME) {
                 val what = when (p) { Page.MOVIES -> "movie"; Page.LIVE -> "live"; else -> "show" }
-                content.addView(text("None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = MUTED)
+                content.addView(text("None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = TEXT_3)
                     .apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
             }
+            // Catalogs with the same purpose share a row. Shows and Movies end with a row per main genre (the first
+            // catalog that filters by it), unless a row of that name is already there; the chips jump to these rows.
+            val genres = catalogGenres(catalogs.flatMap { it.genres })
+            val sections = if (!p.isCatalog) shelves.map { Triple(it.second.title, listOf(it), null as String?) } else {
+                val merged = shelves.groupBy { shortRowName(it.second.title, genres) }.map { (name, list) -> Triple(name, list, null as String?) }
+                merged + genres.take(GENRE_ROWS).filter { g -> merged.none { it.first.equals(g, true) } }
+                    .mapNotNull { g -> shelves.firstOrNull { g in it.first.genres }?.let { Triple(g, listOf(it), g as String?) } }
+            }.take(20)
+            if (p.isCatalog) showGenreChips(sections.map { it.first }.filter { name -> genres.any { it.equals(name, true) } })
             // Rows are made up front so they keep their order, however the answers arrive.
-            for ((i, pair) in shelves.take(20).withIndex()) {
-                val (catalog, shelf) = pair
-                val title = shelf.title
+            for ((i, section) in sections.withIndex()) {
+                val (title, sources, picked) = section
+                val rowCatalogs = sources.map { it.first }
                 val slot = slot()
                 background({
-                    (if (quick) catalog.addon.savedCatalog(catalog, picked) else null)?.let { it to true } ?: (catalog.addon.catalog(catalog, picked) to false)
+                    rowCatalogs.map { catalog ->
+                        runCatching {
+                            (if (quick) catalog.addon.savedCatalog(catalog, picked) else null)?.let { it to true }
+                                ?: (catalog.addon.catalog(catalog, picked) to false)
+                        }.getOrElse { emptyList<Meta>() to false }
+                    }
                 }) { answer ->
                     if (g != generation) return@background
-                    val (metas, wasSaved) = answer.getOrNull() ?: (emptyList<Meta>() to false)
+                    val results = answer.getOrNull() ?: emptyList()
                     // Fresh for next time, with the top rows' first posters fetched too: recommendations change on
                     // every refresh, and the next visit drew blank tiles while they downloaded.
-                    if (wasSaved) background({ catalog.addon.catalog(catalog, picked) }) { fresh ->
-                        if (i < 3) fresh.getOrNull()?.take(FIRST)?.forEach { Images.prefetch(it.poster ?: it.background, (dp(CARD_W) * CARD_GROW).toInt()) }
+                    rowCatalogs.zip(results).filter { it.second.second }.forEach { (catalog, _) ->
+                        background({ catalog.addon.catalog(catalog, picked) }) { fresh ->
+                            if (i < 3) fresh.getOrNull()?.take(FIRST)?.forEach { Images.prefetch(it.poster ?: it.background, (dp(CARD_W) * CARD_GROW).toInt()) }
+                        }
                     }
-                    val items = metas.map(::metaItem)
+                    val items = results.flatMap { it.first }.filterNot { isAddonMessage(it.name) }.distinctBy { it.id }.map(::metaItem)
                     // The rest of the first page first, then the addon's next pages when it takes `skip`.
-                    // ponytail: a genre row stops at its first page; add genre&skip paging if those rows feel short
-                    val more: ((Int) -> List<Item>)? = if (catalog.pages && picked == null) { from ->
-                        if (from < items.size) items.drop(from).take(PAGE) else catalog.addon.catalog(catalog, from).map(::metaItem)
-                    } else later(items)
+                    // shortcut: genre rows use each source's first page; add genre-aware paging if those rows feel short.
+                    val more: ((Int) -> List<Item>)? = if (rowCatalogs.size == 1) {
+                        val catalog = rowCatalogs[0]
+                        if (catalog.pages && picked == null) { from ->
+                            if (from < items.size) items.drop(from).take(PAGE)
+                            else catalog.addon.catalog(catalog, from).filterNot { isAddonMessage(it.name) }.map(::metaItem)
+                        } else later(items)
+                    } else {
+                        val all = items.toMutableList()
+                        val counts = results.map { it.first.size }.toMutableList()
+                        val exhausted = BooleanArray(rowCatalogs.size)
+                        val nextPage: (Int) -> List<Item> = { from ->
+                            if (from >= all.size && picked == null) for (j in rowCatalogs.indices) {
+                                val catalog = rowCatalogs[j]
+                                if (!catalog.pages || exhausted[j]) continue
+                                val next = catalog.addon.catalog(catalog, counts[j])
+                                counts[j] += next.size
+                                exhausted[j] = next.isEmpty()
+                                val known = all.map { it.id }.toSet()
+                                all += next.filter { it.id !in known && !isAddonMessage(it.name) }.distinctBy { it.id }.map(::metaItem)
+                                if (all.size > from) break
+                            }
+                            all.drop(from).take(PAGE)
+                        }
+                        nextPage
+                    }
                     // The two rows the remote can reach at once are made now; the rest, out of sight below, one at a time
                     // after the switch has drawn, so making their cards doesn't stall the page coming in.
-                    fun add() { if (g == generation && items.isNotEmpty()) slot.addView(row(title, items.take(START), more).view) }
+                    fun add() { if (g == generation && items.isNotEmpty()) {
+                        slot.addView(row(title, items.take(START), more).view)
+                        updateNextRow()
+                    } }
                     if (i < 2) add() else main.postDelayed(::add, ROW_LATER + i * ROW_STAGGER)
                     // Nothing to continue: the cinema shows the first catalog's top titles instead.
                     if (p == Page.HOME && i == 0 && items.isNotEmpty()) main.postDelayed({ if (cinema.isEmpty() && page == p) startCinema(items.take(CINEMA_MAX)) }, 1500)
@@ -752,6 +1002,33 @@ class MainActivity : Screen() {
     }
 
     private class Shelf(val page: Page, val title: String, val rank: Int)
+
+    /** All, then one chip per genre row on the page; a chip jumps to its row, and the dot follows the row in use. */
+    private fun showGenreChips(names: List<String>) {
+        val hadFocus = genreStrip.hasFocus()
+        genreStrip.removeAllViews()
+        genreChips.clear()
+        val line = LinearLayout(this).apply {
+            clipChildren = false
+            setPadding(dp(PAD), dp(2), dp(PAD), dp(2))
+        }
+        (listOf<String?>(null) + names).forEach { value ->
+            val control = chip(value ?: "All", value == null).apply {
+                setOnClickListener {
+                    (if (value == null) firstRow() else rows.firstOrNull { it.title == value && it.view.isAttachedToWindow })?.focusFirst()
+                }
+            }
+            genreChips[value] = control
+            line.addView(control, LinearLayout.LayoutParams(-2, dp(BUTTON_H)).apply { if (line.childCount > 0) marginStart = dp(6) })
+        }
+        genreStrip.addView(line)
+        if (hadFocus) genreChips[null]?.requestFocus()
+    }
+
+    private fun markChip(rowTitle: String) {
+        val open = rowTitle.takeIf { it in genreChips }
+        genreChips.forEach { (value, chip) -> chip.select(value ?: "All", value == open) }
+    }
 
     /**
      * Where a catalog's row goes and what it's called, like Netflix: Home is what you're watching and what it led to
@@ -770,7 +1047,7 @@ class MainActivity : Screen() {
             "recmov" to "Recommended in India", "atpmub" to "Recommended in India",
         )
         return when {
-            c.addon.id.contains("watchly") && c.id.startsWith("watchly.item") -> Shelf(Page.HOME, c.name, 0)
+            c.addon.id.contains("watchly") && c.id.startsWith("watchly.item") -> Shelf(Page.HOME, homeRowName(c.name), 0)
             c.addon.id.contains("watchly") && c.id == "watchly.rec" -> Shelf(typePage, "Top Picks for You", 0)
             c.addon.id.startsWith("trakt.addon") && c.id.startsWith("recommendations") -> Shelf(typePage, "Recommended for You", 1)
             c.addon.id.startsWith("trakt.addon") && c.id.startsWith("trending") -> Shelf(typePage, "Trending Now", 2)
@@ -800,7 +1077,7 @@ class MainActivity : Screen() {
             .let { all -> if (libraryByName) all.sortedBy { it.optString("name").lowercase() } else all.sortedByDescending { it.text("_mtime") } }
             .map(::libraryItem)
         if (items.isEmpty()) {
-            slot.addView(text("Titles you add to your Stremio library show up here.", BODY, color = MUTED).apply { setPadding(dp(PAD), 0, 0, 0) })
+            slot.addView(text("Titles you add to your Stremio library show up here.", BODY, color = TEXT_3).apply { setPadding(dp(PAD), 0, 0, 0) })
             return
         }
         val column = column(Gravity.START)
@@ -826,6 +1103,15 @@ class MainActivity : Screen() {
         // A page opened by resting on its name: the remote stays in the top bar and the top row's first title shows
         // above as soon as the top rows are in (they answer within a few tens of ms of each other).
         if (header.hasFocus()) { main.removeCallbacks(heroTop); main.postDelayed(heroTop, 150) }
+        main.post(::updateNextRow)
+    }
+
+    private fun updateNextRow() {
+        if (page != Page.HOME && !page.isCatalog) return
+        val visible = rows.filter { it.view.isAttachedToWindow }.sortedBy { offsetIn(it.view) }
+        val active = visible.indexOfFirst { it.active }.takeIf { it >= 0 } ?: 0
+        nextRowHint.text = visible.getOrNull(active + 1)?.let { "▾  ${it.title.uppercase()}" } ?: ""
+        nextRowHint.visibility = if (nextRowHint.text.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private val focusTop = Runnable {
@@ -855,7 +1141,7 @@ class MainActivity : Screen() {
      * (Continue Watching) shows 16:9 art with the name, time left and progress on the card, two poster columns wide, and
      * ends on the same foot line as the poster rows.
      */
-    private inner class Row(title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?, val wide: Boolean = false) {
+    private inner class Row(val title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?, val wide: Boolean = false) {
         val cardW = if (wide) WIDE_W else CARD_W
         val cardH = if (wide) WIDE_H else CARD_H
         val items = first.toMutableList()
@@ -898,7 +1184,7 @@ class MainActivity : Screen() {
         }
         // The row the remote is in has a bright title; the next one, peeking in below, is a quiet hint.
         // One line, always: the row band is measured for one, and a second would push the cards off the screen.
-        private val heading = text(title, BODY, bold = true).onArt().apply {
+        private val heading = caps(title).onArt().apply {
             setPadding(dp(PAD), 0, dp(PAD), 0)
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             maxWidth = dp(PAD + HERO_W) // a long "Because you watched…" stops at the hero's width
@@ -924,6 +1210,8 @@ class MainActivity : Screen() {
         fun focus(index: Int) {
             selected = index
             light(true)
+            if (page == Page.HOME || page.isCatalog) updateNextRow()
+            if (page.isCatalog) markChip(title)
             fill(items[index])
             if (index >= items.size - AHEAD) fetchMore()
             // Racing past, the cards beside aren't where the remote will stop: fetching their art would only queue
@@ -932,11 +1220,14 @@ class MainActivity : Screen() {
             anim?.cancel()
             val startScroll = scroller.scrollX
             val targetScroll = minOf(index * (dp(cardW) + dp(CARD_GAP)), (strip.width - scroller.width).coerceAtLeast(0))
-            // Only whole cards show: one slid into either margin hides, so the row starts and ends on the margins.
+            // A card slid into the left margin hides, so the row starts on the margin; the next poster past the right
+            // edge shows, to say there's more.
             val right = scroller.width - dp(PAD) / 2
-            cards.forEach { c -> c.show(!(c.left - targetScroll < dp(PAD) / 2 || c.right - targetScroll > right)) }
+            cards.forEach { c -> c.show(c.left - targetScroll >= dp(PAD) / 2 && c.left - targetScroll < scroller.width) }
+            // The caption sits under the focused card, also where the row stops sliding near its end.
+            captionX = (cards[index].left - targetScroll - dp(PAD)).coerceAtLeast(0)
             val beyond = cards.any { it.right - targetScroll > right }
-            moreHint.animate().alpha(if (beyond && mode == Mode.BROWSE) 0.9f else 0f).setDuration(200).start()
+            moreHint.animate().alpha(if (beyond && mode == Mode.BROWSE && page != Page.HOME && !page.isCatalog) 0.9f else 0f).setDuration(200).start()
             moreHint.translationY = if (wide) dp(CARD_H - WIDE_H + WIDE_H / 2 - CARD_H / 2).toFloat() else 0f
             if (wideRow != wide) {
                 wideRow = wide
@@ -997,6 +1288,9 @@ class MainActivity : Screen() {
             // Darkens the cards beside the focused one. A shade, not transparency: a see-through card would let the
             // art behind it show through and look like it was floating on the poster.
             private val shade = View(context).apply { setBackgroundColor(Color.BLACK); alpha = 0f }
+            private val progress = item.progress.takeIf { it > 0 }?.let { progressBar(it).apply {
+                visibility = if (page == Page.HOME) View.INVISIBLE else View.VISIBLE
+            } }
 
             init {
                 outlineProvider = object : android.view.ViewOutlineProvider() {
@@ -1004,7 +1298,7 @@ class MainActivity : Screen() {
                         outline.setRoundRect(0, 0, view.width, view.height, dp(RADIUS).toFloat())
                 }
                 clipToOutline = true
-                setBackgroundColor(SURFACE)
+                setBackgroundColor(BASE)
                 face.addView(image, LayoutParams(-1, -1))
                 // A dark foot under the words or the progress bar; a plain poster needs none.
                 if (wide || item.progress > 0) face.addView(View(context).apply {
@@ -1019,7 +1313,7 @@ class MainActivity : Screen() {
                 }, LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(10), dp(10), 0) })
                 addView(face, LayoutParams(-1, -1))
                 // A white bar inset and rounded inside the card's dark foot, so it reads as a bar and not a cropped edge.
-                if (item.progress > 0) addView(progressBar(item.progress, Color.WHITE).apply { background = rounded(0x4DFFFFFF, 2); clipToOutline = true },
+                if (progress != null) addView(progress.apply { clipToOutline = true },
                     LayoutParams(-1, dp(3), Gravity.BOTTOM).apply { setMargins(dp(inset), 0, dp(inset), dp(11)) })
                 addView(shade, LayoutParams(-1, -1))
                 isFocusable = true
@@ -1029,6 +1323,7 @@ class MainActivity : Screen() {
                     // Focus grows into the gaps without moving its neighbours, and wears a white edge that reads from the
                     // couch on any poster (the clip to the card's outline keeps it inside the rounded corners).
                     lift(has)
+                    progress?.visibility = if (has || page != Page.HOME) View.VISIBLE else View.INVISIBLE
                     if (has) {
                         focus(index)
                         showHero(item)
@@ -1064,6 +1359,7 @@ class MainActivity : Screen() {
                 Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
                     if (nameMade.isInitialized()) name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
+                    if (isFocused) lift(true)
                 }
                 now = false
             }
@@ -1143,7 +1439,7 @@ class MainActivity : Screen() {
         return Item(
             item.getString("_id"), item.optString("type"), item.optString("name"), item.text("poster"),
             null, Images.logoFor(item.getString("_id")), "", emptyList(), videoId, progress,
-            resume = progress > 0, left = listOfNotNull(episode, left).joinToString(DOT).ifEmpty { null },
+            resume = progress > 0, left = listOfNotNull(episode, left).joinToString(DOT).ifEmpty { null }, stoppedAt = offset,
         )
     }
 
@@ -1180,7 +1476,7 @@ class MainActivity : Screen() {
         if (rowView !== indicatedRow) {
             indicatedRow = rowView
             main.removeCallbacks(hideTrack)
-            track.animate().alpha(if (n > 1 && mode == Mode.BROWSE) 1f else 0f).setDuration(200).start()
+            track.animate().alpha(if (n > 1 && mode == Mode.BROWSE && page != Page.HOME && !page.isCatalog) 1f else 0f).setDuration(200).start()
             main.postDelayed(hideTrack, 1200)
         }
     }
@@ -1249,14 +1545,13 @@ class MainActivity : Screen() {
         const val NAV_GAP = 4 // dp between them
         const val WARM_AFTER = 3000L // ms after launch before other pages' posters are fetched ahead
         const val SWITCH_WAIT = 300L // ms the remote rests on a page's name before it opens: passing over names opens nothing
-        val FILTERED = setOf(Page.SHOWS, Page.MOVIES, Page.LIBRARY) // pages with a filter (genre, or Library's order)
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
-        const val RADIUS = 12
+        const val RADIUS = 6
         const val ROW_TOP_ROOM = HEADING_GAP + 9 // dp between the row title and its cards, plus the focused card's growth (5% of 180 dp a side)
-        const val ROW_BOTTOM_ROOM = 14 // dp below the cards, for the focused one's growth and shadow
-        const val SAFE_BOTTOM = 22 // dp below the row band: a focused card (grown 9 dp) still ends 27 dp (5%) from the edge, inside what TVs crop
-        const val DIM = 0.45f // how dark the other cards in the row the remote is in get: enough that the focused one stands out at 3 m
+        const val ROW_BOTTOM_ROOM = 38 // room for the focused caption below the poster
+        const val SAFE_BOTTOM = 27
+        const val DIM = 0.5f
         const val QUIET = 0.65f // the next row remains visible without competing with the active one
         const val HERO_GAP = SECTION_GAP // dp between the focused title's block and the row heading below it
         const val RISE = 200 // dp the rows travel when they come up from the cinema
@@ -1269,9 +1564,11 @@ class MainActivity : Screen() {
         const val ROW_STAGGER = 60L // ms between them
         const val PAGE = 12
         const val AHEAD = 8 // cards from a row's end when the next page is asked for: early enough that a row of 9 grows before it would stop short of the margin
-        const val FIRST = 8 // cards per row loaded before it's scrolled sideways (a screenful and two)
+        const val FIRST = 10 // cards per row loaded before it's scrolled sideways (a screenful, the one past the edge, one more)
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)
+        const val DIM_AFTER = 10_000L
+        const val GENRE_ROWS = 6 // genre rows (and chips) at most on Shows and Movies
         const val ADVANCE = 20_000L // ms each cinema title shows
         const val REVEAL_WAIT = 1200L // ms the cinema waits for a title's art and logo before showing its words anyway
     }

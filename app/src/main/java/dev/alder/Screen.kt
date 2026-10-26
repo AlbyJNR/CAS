@@ -19,6 +19,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -26,6 +27,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import java.util.concurrent.Executors
 
@@ -59,6 +61,26 @@ class FadedArt(context: Context, private val bottomFrom: Float = 0.45f, private 
 /** Keeps text readable straight on art: a soft dark shadow instead of a panel over the picture. */
 fun TextView.onArt() = apply { setShadowLayer(resources.displayMetrics.density * 8, 0f, resources.displayMetrics.density, 0xCC000000.toInt()) }
 
+internal fun filmGlow(pixels: IntArray): Int {
+    require(pixels.isNotEmpty())
+    val red = pixels.sumOf { it ushr 16 and 255 } / pixels.size
+    val green = pixels.sumOf { it ushr 8 and 255 } / pixels.size
+    val blue = pixels.sumOf { it and 255 } / pixels.size
+    val lightness = (maxOf(red, green, blue) + minOf(red, green, blue)) / 2f
+    val scale = if (lightness > 178.5f) 178.5f / lightness else 1f
+    return (0x8C shl 24) or ((red * scale).toInt() shl 16) or ((green * scale).toInt() shl 8) or (blue * scale).toInt()
+}
+
+internal fun brightLeft(pixels: IntArray, width: Int): Boolean {
+    require(width > 0 && pixels.isNotEmpty() && pixels.size % width == 0)
+    val left = maxOf(1, width / 2)
+    val luminance = pixels.indices.filter { it % width < left }.sumOf {
+        val color = pixels[it]
+        (color ushr 16 and 255) * 0.2126 + (color ushr 8 and 255) * 0.7152 + (color and 255) * 0.0722
+    }
+    return luminance / (left * (pixels.size / width) * 255) > 0.5
+}
+
 /** What every screen shares: the signed-in account, background work, and the few view helpers the plain UI uses. */
 abstract class Screen : Activity() {
     protected val main = Handler(Looper.getMainLooper())
@@ -88,21 +110,26 @@ abstract class Screen : Activity() {
         }
     }
 
-    /**
-     * Text in Alder's type: Apple TV's styles. Like tvOS, everything is Medium (crisper from the couch than Regular) and
-     * [bold] is its emphasized weight; each style's own leading comes with its size (see [LEADING]).
-     */
-    protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = Color.WHITE) =
+    private val interMedium by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build() }
+    private val interSemiBold by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build() }
+    private val instrumentSerif by lazy { Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf") }
+
+    /** Shared House Lights typography. */
+    protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = TEXT, serif: Boolean = false) =
         TextView(this).apply {
             text = value
             textSize = sp
             setTextColor(color)
-            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            typeface = if (serif) instrumentSerif else if (bold) interSemiBold else interMedium
             LEADING[sp]?.let { lead ->
                 val want = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, lead, resources.displayMetrics)
                 setLineSpacing(want - paint.getFontMetricsInt(null), 1f)
             }
         }
+
+    protected fun caps(value: String, color: Int = TEXT_2) = text(value.uppercase(), CAPS, bold = true, color = color).apply {
+        letterSpacing = 0.12f
+    }
 
     protected fun column(gravity: Int, vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -118,28 +145,49 @@ abstract class Screen : Activity() {
 
     protected fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    /** Remote-friendly focus: the focused view grows a little. */
-    protected fun <V : View> V.focusable(grow: Float = 1.06f) = apply {
-        isFocusable = true
-        setOnFocusChangeListener { v, has ->
-            v.animate().scaleX(if (has) grow else 1f).scaleY(if (has) grow else 1f).setDuration(120).start()
-        }
+    private var windowShade: View? = null
+    private var windowArt: ImageView? = null
+    private var shadeSource: Bitmap? = null
+
+    private fun updateWindowShade() {
+        val art = (windowArt?.drawable as? BitmapDrawable)?.bitmap ?: return
+        if (art === shadeSource) return
+        shadeSource = art
+        val sample = Bitmap.createScaledBitmap(art, 16, 24, true)
+        val pixels = IntArray(16 * 24)
+        sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
+        if (sample !== art) sample.recycle()
+        windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(if (brightLeft(pixels, 16)) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
     }
 
-    /**
-     * The app's look: the whole TV screen is one sheet of frosted glass over a blurred scene ([backdrop]: the current
-     * title's art, or a soft wash of colour). The frost is a tint that's lighter towards the top left, like light on
-     * glass. Everything sits directly on it; nothing on screen is glass of its own.
-     */
+    /** Sharp film art fills the screen; shade stays behind text and the bottom row. */
     protected fun setWindowed(content: View, backdrop: View = View(this).apply { background = mood() }) {
+        windowArt = backdrop as? ImageView
+        shadeSource = null
         window.setBackgroundDrawable(null) // the scene paints the whole screen
         setContentView(FrameLayout(this).apply {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+            windowShade = View(context).apply {
+                background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+            }.also { addView(it, FrameLayout.LayoutParams(-1, -1)) }
             addView(View(context).apply {
-                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0x80303530.toInt(), 0xB3171916.toInt(), 0xCC111311.toInt()))
+                background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF70E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
             }, FrameLayout.LayoutParams(-1, -1))
+            addView(View(context).apply {
+                background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(0x8C0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A))
+            }, FrameLayout.LayoutParams(-1, -1))
+            for (edge in listOf(GradientDrawable.Orientation.LEFT_RIGHT, GradientDrawable.Orientation.RIGHT_LEFT,
+                GradientDrawable.Orientation.TOP_BOTTOM, GradientDrawable.Orientation.BOTTOM_TOP)) {
+                addView(View(context).apply {
+                    background = GradientDrawable(edge,
+                        intArrayOf(0x73000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000))
+                }, FrameLayout.LayoutParams(-1, -1))
+            }
             addView(content, FrameLayout.LayoutParams(-1, -1))
         })
+        updateWindowShade()
     }
 
     /** A quiet tinted row on the pane (episodes, sources): no edge, no glass of its own. */
@@ -148,22 +196,26 @@ abstract class Screen : Activity() {
         cornerRadius = dp(radiusDp).toFloat()
     }
 
-    /** For screens with no title to show behind the pane (the profile screens): a soft, dark wash of colour. */
-    private fun mood() = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2A3A55.toInt(), 0xFF16191E.toInt(), 0xFF3D2230.toInt()))
+    /** Solid fallback until a title's art is available. */
+    private fun mood() = rounded(BASE, 0)
 
     protected fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
 
-    /** Borderless dark glass; focus is shown by a lighter fill and each control's scale or text treatment. */
-    protected fun glass(radiusDp: Int, focused: Boolean = false) =
-        GradientDrawable().apply {
+    /** House Lights' single glass recipe; focused controls add their own tungsten rim. */
+    protected fun glass(radiusDp: Int, focused: Boolean = false): Drawable {
+        val face = GradientDrawable().apply {
             setColor(if (focused) GLASS_FOCUSED else GLASS)
             cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), if (focused) TUNGSTEN else GLASS_EDGE)
         }
+        return LayerDrawable(arrayOf(face, rounded(GLASS_HIGHLIGHT, 1))).apply {
+            setLayerInset(1, dp(radiusDp), dp(1), dp(radiusDp), 0)
+            setLayerHeight(1, dp(1))
+            setLayerGravity(1, Gravity.TOP or Gravity.FILL_HORIZONTAL)
+        }
+    }
 
-    /**
-     * The hero's buttons (Home, the title page): small pills of one height, frosted glass at rest (the same tint over
-     * any art), solid white with dark words once the remote is on one.
-     */
+    /** The warm-white primary action; focus adds the tungsten rim. */
     protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
         isFocusable = true
         gravity = Gravity.CENTER_VERTICAL
@@ -171,62 +223,124 @@ abstract class Screen : Activity() {
         setPadding(dp(if (icon != 0) 14 else 16), 0, dp(16), 0)
         compoundDrawablePadding = dp(6)
         if (icon != 0) setCompoundDrawablesRelative(getDrawable(icon)?.mutate()?.apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
-        // Light frost at rest, like a visionOS button: the dark panel glass made a small pill a murky blob on dark art.
-        val rest = glassOver(this, BUTTON_H / 2, PILL_GLASS)
         fun style(focused: Boolean) {
-            background = if (focused) rounded(Color.WHITE, BUTTON_H / 2) else rest
-            setTextColor(if (focused) INK else Color.WHITE)
-            compoundDrawablesRelative[0]?.setTint(if (focused) INK else Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(TEXT)
+                cornerRadius = dp(BUTTON_H / 2).toFloat()
+                if (focused) setStroke(dp(2), TUNGSTEN)
+            }
+            setTextColor(BASE)
+            compoundDrawablesRelative[0]?.setTint(BASE)
+            elevation = if (focused) dp(8).toFloat() else 0f
+            if (android.os.Build.VERSION.SDK_INT >= 28) outlineSpotShadowColor = TUNGSTEN_GLOW
         }
         style(false)
         setOnFocusChangeListener { v, has ->
             style(has)
-            v.animate().scaleX(if (has) FOCUS_GROW else 1f).scaleY(if (has) FOCUS_GROW else 1f).setDuration(150).start()
+            v.animate().scaleX(if (has) CARD_GROW else 1f).scaleY(if (has) CARD_GROW else 1f).setDuration(150).start()
         }
     }
 
-    /**
-     * The focused row, on every list (settings, addons, episodes, sources) and small control: a white fill with dark
-     * words and icons, the same as a focused pill. [rest] is the fill when not focused; [also] runs on every change.
-     */
+    /** A persistent choice: its dot remains after remote focus moves. */
+    protected fun chip(label: String, selected: Boolean = false) = text(label, SMALL).apply {
+        select(label, selected)
+        isFocusable = true
+        gravity = Gravity.CENTER
+        minHeight = dp(BUTTON_H)
+        setPadding(dp(16), 0, dp(16), 0)
+        background = glass(BUTTON_H / 2)
+        setOnFocusChangeListener { v, has -> v.background = glass(BUTTON_H / 2, has) }
+    }
+
+    /** A [chip]'s open state: the tungsten dot and full-strength words. */
+    protected fun TextView.select(label: String, selected: Boolean) {
+        setTextColor(if (selected) TEXT else TEXT_2)
+        text = if (!selected) label else android.text.SpannableString("•  $label").apply {
+            setSpan(android.text.style.ForegroundColorSpan(TUNGSTEN), 0, 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    protected fun caption(value: String) = text(value, SMALL).apply {
+        setPadding(dp(12), dp(6), dp(12), dp(6))
+        background = glassOver(this, 16)
+    }
+
+    /** Null animates loading; for countdowns set progress to fraction × max as time changes. */
+    protected fun ring(fraction: Float? = null): ProgressBar = object : ProgressBar(this) {
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = dp(2).toFloat()
+            strokeCap = Paint.Cap.ROUND
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (fraction == null) return super.onDraw(canvas)
+            val inset = stroke.strokeWidth / 2
+            val bounds = RectF(inset, inset, width - inset, height - inset)
+            stroke.color = PROGRESS_TRACK
+            canvas.drawArc(bounds, 0f, 360f, false, stroke)
+            stroke.color = TUNGSTEN
+            canvas.drawArc(bounds, -90f, progress.toFloat() / max * 360f, false, stroke)
+        }
+    }.apply {
+        require(fraction == null || (fraction.isFinite() && fraction in 0f..1f))
+        isIndeterminate = fraction == null
+        indeterminateTintList = android.content.res.ColorStateList.valueOf(TUNGSTEN)
+        max = 1000
+        if (fraction != null) progress = (fraction * max).toInt()
+    }
+
+    /** One list-row focus treatment across settings, episodes, sources and menus. */
     protected fun View.rowFocus(radiusDp: Int = 8, rest: () -> android.graphics.drawable.Drawable? = { null }, also: (Boolean) -> Unit = {}) {
         isFocusable = true
         background = rest()
         setOnFocusChangeListener { v, has ->
-            v.background = if (has) rounded(Color.WHITE, radiusDp) else rest()
-            ink(v, has)
+            v.background = if (has) GradientDrawable().apply {
+                setColor(ROW_FOCUSED)
+                cornerRadius = dp(radiusDp).toFloat()
+                setStroke(dp(2), TUNGSTEN)
+            } else rest()
             also(has)
         }
     }
 
-    /** Dark words on the white fill, and back to each one's own colour (and shadow, for text on art) after. */
-    private fun ink(v: View, on: Boolean) {
-        when (v) {
-            is TextView -> {
-                val (color, shadow) = v.tag as? Pair<*, *> ?: (v.currentTextColor to v.shadowRadius).also { v.tag = it }
-                v.setTextColor(if (on) INK else color as Int)
-                if (on) v.setShadowLayer(0f, 0f, 0f, 0) else if ((shadow as Float) > 0f) v.onArt()
-                v.compoundDrawablesRelative.forEach { it?.setTint(if (on) INK else Color.WHITE) }
-            }
-            is ImageView -> if (on) v.setColorFilter(INK) else v.clearColorFilter()
-            is android.view.ViewGroup -> for (i in 0 until v.childCount) ink(v.getChildAt(i), on)
-        }
-    }
-
-    /**
-     * The focused picture (posters, search results, avatars): it grows by [CARD_GROW] and lifts on a shadow. Never a ring,
-     * outline or border: the picture itself comes forward.
-     */
-    protected fun View.cardFocus(also: (Boolean) -> Unit = {}) {
+    /** One poster/portrait focus treatment; the poster itself supplies its glow colour. */
+    protected fun View.cardFocus(radiusDp: Int = 6, also: (Boolean) -> Unit = {}) {
         isFocusable = true
         setOnFocusChangeListener { v, has ->
-            v.lift(has)
+            v.lift(has, radiusDp)
             also(has)
         }
     }
 
-    protected fun View.lift(on: Boolean) = animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
-        .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(180).start()
+    private val glowCache = java.util.WeakHashMap<View, Pair<Bitmap, Int>>()
+
+    private fun posterBitmap(view: View): Bitmap? = when (view) {
+        is ImageView -> (view.drawable as? BitmapDrawable)?.bitmap
+        is android.view.ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { posterBitmap(view.getChildAt(it)) }
+        else -> null
+    }
+
+    protected fun View.lift(on: Boolean, radiusDp: Int = 6) {
+        foreground = if (on) GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(2), TUNGSTEN)
+        } else null
+        if (on && android.os.Build.VERSION.SDK_INT >= 28) {
+            val poster = posterBitmap(this)
+            outlineSpotShadowColor = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
+                ?: runCatching {
+                    val sample = Bitmap.createScaledBitmap(poster, 16, 24, true)
+                    val pixels = IntArray(16 * 24)
+                    sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
+                    if (sample !== poster) sample.recycle()
+                    filmGlow(pixels).also { glowCache[this] = poster to it }
+                }.getOrDefault(TUNGSTEN_GLOW)
+        }
+        animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
+            .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(150).start()
+    }
 
     /** The screen's art, behind its glass: what [glassOver] frosts. Screens with art behind them name it. */
     protected open val backdrop: ImageView? get() = null
@@ -239,14 +353,17 @@ abstract class Screen : Activity() {
      * Frosted glass, as the episode list draws it: the art behind, blurred, seen through a rounded pane under the
      * glass tint. A background for [host] (pills, the top bar, panels); without a [backdrop] it's the plain tint.
      */
-    protected fun glassOver(host: View, radiusDp: Int, tint: Int = GLASS): Drawable {
-        val behind = backdrop ?: return rounded(tint, radiusDp)
+    protected fun glassOver(host: View, radiusDp: Int): Drawable {
+        val behind = backdrop ?: return glass(radiusDp)
         frostHosts += host
-        return Frost(host, behind, dp(radiusDp).toFloat(), tint)
+        return Frost(host, behind, dp(radiusDp).toFloat())
     }
 
     /** The art behind changed: glass redraws with the new picture once it's blurred. */
-    protected fun refrost() = frostHosts.forEach { it.invalidate() }
+    protected fun refrost() {
+        frostHosts.forEach { it.invalidate() }
+        updateWindowShade()
+    }
 
     /** The art blurred once per picture ([Images.frost]); the last one stays up while the next is made. */
     private fun frosted(d: Drawable?): Bitmap? {
@@ -258,9 +375,11 @@ abstract class Screen : Activity() {
         return frostBitmap
     }
 
-    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float, tintColor: Int) : Drawable() {
+    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float) : Drawable() {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tintColor }
+        private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS }
+        private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_EDGE; style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat() }
+        private val highlight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_HIGHLIGHT; strokeWidth = dp(1).toFloat() }
         private val path = Path()
         private val at = IntArray(2)
         private val art = IntArray(2)
@@ -282,6 +401,8 @@ abstract class Screen : Activity() {
                 canvas.restore()
             }
             canvas.drawPath(path, tint)
+            canvas.drawPath(path, edge)
+            canvas.drawLine(bounds.left + radius, bounds.top + dp(1).toFloat(), bounds.right - radius, bounds.top + dp(1).toFloat(), highlight)
         }
 
         override fun setAlpha(alpha: Int) {}
@@ -289,10 +410,10 @@ abstract class Screen : Activity() {
         @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
-    /** A thin watched-so-far bar: white (as on every card) over a faint track. */
-    protected fun progressBar(progress: Float, color: Int = Color.WHITE) = LinearLayout(this).apply {
-        val p = progress.coerceIn(0.02f, 1f)
-        setBackgroundColor(GLASS_HIGH)
+    /** A thin watched-so-far bar over a dark track. */
+    protected fun progressBar(progress: Float, color: Int = TUNGSTEN) = LinearLayout(this).apply {
+        val p = progress.coerceIn(0f, 1f)
+        setBackgroundColor(PROGRESS_TRACK)
         addView(View(context).apply { setBackgroundColor(color) }, LinearLayout.LayoutParams(0, -1, p))
         addView(View(context), LinearLayout.LayoutParams(0, -1, 1f - p))
     }
@@ -300,7 +421,7 @@ abstract class Screen : Activity() {
     protected fun isInside(v: View, parent: View): Boolean = generateSequence(v) { it.parent as? View }.any { it === parent }
 
     /**
-     * A short list to pick from (a menu, a genre, a yes or no), on a dark glass panel with the app's white focus, in
+     * A short list to pick from (a menu, a genre, a yes or no), on glass with tungsten focus, in
      * place of Android's grey dialog. [checked] gets a tick (the choice in use); the remote starts on [focus].
      */
     protected fun choose(title: String, items: List<String>, message: String? = null, checked: Int = -1,
@@ -308,7 +429,7 @@ abstract class Screen : Activity() {
         val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
         val list = column(Gravity.START).apply { setPadding(dp(12), dp(16), dp(12), dp(12)) }
         val words = column(Gravity.START, text(title, BODY, bold = true)).apply { setPadding(dp(16), 0, dp(16), dp(10)) }
-        message?.let { words.addView(text(it, SMALL, color = TEXT_MID).marginTop(6)) }
+        message?.let { words.addView(text(it, SMALL, color = TEXT_2).marginTop(6)) }
         list.addView(words, LinearLayout.LayoutParams(-1, -2))
         val rows = items.mapIndexed { i, label ->
             text(label, BODY).apply {
@@ -334,64 +455,56 @@ abstract class Screen : Activity() {
         rows.getOrNull(focus)?.requestFocus()
     }
 
-    /** Something didn't load: what went wrong in a line, and a button to try again. */
+    /** One glass error card with a plain message and a next action. */
     protected fun failed(message: String, retry: () -> Unit) = column(Gravity.START,
-        text(message, BODY, color = TEXT_MID),
+        text("!", SERIF_NAME, color = TUNGSTEN, serif = true),
+        text(message, BODY, color = TEXT).marginTop(10),
         pill("Try again").apply { setOnClickListener { retry() } }.marginTop(16),
-    )
+    ).apply {
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        background = glassOver(this, 14)
+    }
 
-    // The design's values, in one place: every screen takes its colours and type sizes from here.
+    // House Lights' shared values. Screens keep their layout and content; the helpers above own component styling.
     companion object {
-        const val PAD = 56 // dp: the side margin, clear of the TV's edges
-        const val TILE_RADIUS = 12
+        const val PAD = 48
+        const val TILE_RADIUS = 8
         const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges
         const val FROST_W = 360 // px the art is shrunk to before the blur: wider is less blur (240 read as fog, 480 as smeared)
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
-        const val BUTTON_H = 32 // dp: the hero's pills
-        const val FOCUS_GROW = 1.06f // how much a focused pill grows, everywhere
-        // A focused picture grows by this and rises CARD_LIFT dp on its shadow: the only sign of focus on pictures (no
-        // rings or outlines). 10% of a 120 dp poster is 6 dp a side, inside its 16 dp gaps.
-        const val CARD_GROW = 1.10f
-        const val CARD_LIFT = 12
+        const val BUTTON_H = 34
+        const val CARD_GROW = 1.08f
+        const val CARD_LIFT = 8
         // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
         // the focused card to grow), and above a heading, so each heading belongs to the row under it.
-        const val CARD_GAP = 16
-        const val POSTER_W = 120 // dp: a 2:3 poster in a row
-        const val POSTER_H = 180
-        const val HEADING_GAP = 12
+        const val CARD_GAP = 14
+        const val POSTER_W = 88
+        const val POSTER_H = 132
+        const val HEADING_GAP = 24
         const val SECTION_GAP = 32
         const val DOT = "  ·  "
 
-        // Three sizes, on every screen (sp, from Apple TV's text styles: tvOS points on a 1920 × 1080 screen, halved for
-        // a 1080p Android TV's 2 px per dp). One thing per screen is DISPLAY, about twice BODY, so the eye knows where
-        // to land; headings are BODY in bold, not a size of their own. Sizes are sp, so the TV's font size setting
-        // scales them; layouts must measure text, not assume its height. One-off glyphs (the sign-in code, PIN digits,
-        // avatar letters) keep their own sizes.
-        const val DISPLAY = 28.5f // Title 2 (57 pt): the screen's one title (a title's name, "Settings", "Who's watching?")
-        const val BODY = 14.5f // Body (29 pt): descriptions, headings (bold), navigation, list items
-        const val SMALL = 12.5f // Caption 1 (25 pt): facts, buttons, secondary lines, labels
+        const val SERIF_HERO = 38f
+        const val SERIF_TITLE = 28.5f
+        const val SERIF_NAME = 19f
+        const val BODY = 14.5f
+        const val SMALL = 12.5f
+        const val CAPS = SMALL
+        const val CODE = 36f
+        val LEADING = mapOf(SERIF_HERO to 40f, SERIF_TITLE to 30f, SERIF_NAME to 21f, BODY to 20f, SMALL to 17f, CODE to 40f)
 
-        // Each size's leading (sp), tvOS's line height halved like its size.
-        val LEADING = mapOf(DISPLAY to 33f, BODY to 18f, SMALL to 16f)
-
-        // Text on the glass, brightest first.
-        const val TEXT_HI = 0xFFE2E4E7.toInt() // a title's facts line
-        const val TEXT_MID = 0xFFC4C7CC.toInt() // descriptions, items not selected
-        const val MUTED = 0xFFA0A4AB.toInt() // hints and status lines
-
-        // Fills on the glass.
-        const val SURFACE = 0xFF24272D.toInt() // placeholder while a picture loads
-        const val GLASS_LOW = 0x24FFFFFF // the "Add profile" tile
-        const val GLASS_HIGH = 0x40FFFFFF // progress track
-        // Flat translucent fills keep the glass quiet while focus remains visible.
-        const val GLASS = 0xB3080808.toInt()
-        const val GLASS_FOCUSED = 0xD0252525.toInt()
-        const val PILL_GLASS = 0x40FFFFFF // a resting pill: frosted art, lifted with a white veil
-
-        const val INK = 0xFF111111.toInt() // dark words on a white button
-        const val ACCENT = 0xFFE5484D.toInt()
-        const val GREEN = 0xFF46D369.toInt() // ratings
-
+        const val BASE = 0xFF0E0C0A.toInt()
+        const val TEXT = 0xFFF3EEE6.toInt()
+        const val TEXT_2 = 0xB8F3EEE6.toInt()
+        const val TEXT_3 = 0x73F3EEE6
+        const val TUNGSTEN = 0xFFF3D9B1.toInt()
+        const val TUNGSTEN_GLOW = 0x59F3D9B1
+        const val GLASS = 0x4D28221C
+        const val GLASS_FOCUSED = 0x6628221C
+        const val GLASS_EDGE = 0x24FFF0DC
+        const val GLASS_HIGHLIGHT = 0x4DFFF5E6
+        const val ROW_FOCUSED = 0x29F3EEE6
+        const val PROGRESS_TRACK = 0x99000000.toInt()
         private val pool = Executors.newFixedThreadPool(6)
     }
 }

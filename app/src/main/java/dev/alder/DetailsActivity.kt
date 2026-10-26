@@ -101,7 +101,7 @@ class DetailsActivity : Screen() {
         hero.removeAllViews()
         // Home's hierarchy: the name is the one big thing, then one small facts line, the story across half the screen,
         // where you are, and small pills. Low on the left, where Home's title sits above its row.
-        val stack = column(Gravity.START, text(m?.name ?: name, DISPLAY, bold = true).onArt().apply {
+        val stack = column(Gravity.START, text(m?.name ?: name, SERIF_TITLE, bold = true, serif = true).onArt().apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END
         })
         if (m == null) {
@@ -116,15 +116,15 @@ class DetailsActivity : Screen() {
                 m.runtime?.takeIf { type != "series" },
                 m.rating?.let { "IMDb $it" },
             ).joinToString(DOT)
-            stack.addView(text(facts, SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6))
-            m.description?.let { stack.addView(text(it, BODY, color = TEXT_HI).onArt().apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }.marginTop(8)) }
+            stack.addView(text(facts, SMALL, color = TEXT).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6))
+            m.description?.let { stack.addView(text(it, BODY, color = TEXT).onArt().apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }.marginTop(8)) }
             addWatch(m, stack)
         }
         hero.addView(stack, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = dp(PAD); bottomMargin = dp(96)
         })
         if (type == "series" && m?.videos?.isNotEmpty() == true) {
-            hero.addView(text("↓  Episodes", SMALL, color = TEXT_HI).onArt(), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+            hero.addView(text("↓  Episodes", SMALL, color = TEXT).onArt(), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
                 leftMargin = dp(PAD); bottomMargin = dp(44)
             })
         }
@@ -199,7 +199,7 @@ class DetailsActivity : Screen() {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(0xC000080A.toInt(), 0x9900080A.toInt(), 0x0000080A))
         }, FrameLayout.LayoutParams(dp(450), dp(130)))
-        guide.addView(text(meta?.name ?: name, DISPLAY, bold = true).onArt().apply {
+        guide.addView(text(meta?.name ?: name, SERIF_TITLE, bold = true, serif = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL
         }, FrameLayout.LayoutParams(dp(340), dp(60)).apply {
             leftMargin = dp(PAD); topMargin = dp(50)
@@ -207,7 +207,7 @@ class DetailsActivity : Screen() {
         val pane = glassPane()
         pane.addView(text("Episodes", BODY, bold = true),
             FrameLayout.LayoutParams(-2, -2).apply { leftMargin = dp(26); topMargin = dp(if (largeText) 12 else 17) })
-        seasonButton = text("", BODY, color = TEXT_HI).apply {
+        seasonButton = text("", BODY, color = TEXT).apply {
             id = View.generateViewId()
             setPadding(dp(10), dp(3), dp(10), dp(3))
             rowFocus(rest = { if (isFocusable) tile(8) else null })
@@ -227,14 +227,14 @@ class DetailsActivity : Screen() {
         val previewWidth = width - previewX - dp(28)
         previewImage = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(SURFACE)
+            setBackgroundColor(BASE)
             clipToOutline = true
-            background = rounded(SURFACE, 8)
+            background = rounded(BASE, 8)
         }
         pane.addView(previewImage, FrameLayout.LayoutParams(previewWidth, dp(180)).apply { leftMargin = previewX; topMargin = dp(28) })
         previewTitle = text("", BODY, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         pane.addView(previewTitle, FrameLayout.LayoutParams(previewWidth, -2).apply { leftMargin = previewX; topMargin = dp(220) })
-        previewAbout = text("", BODY, color = TEXT_HI).apply {
+        previewAbout = text("", BODY, color = TEXT).apply {
             maxLines = if (largeText) 2 else 3
             ellipsize = TextUtils.TruncateAt.END
         }
@@ -264,7 +264,7 @@ class DetailsActivity : Screen() {
         val currentId = playTarget(meta)?.first
         episodeRows = seasonVideos.map { v ->
             val row = FrameLayout(this).apply { tag = v.id; isFocusable = true }
-            val number = text("%02d".format(v.episode), BODY, color = TEXT_MID)
+            val number = text("%02d".format(v.episode), BODY, color = TEXT_2)
             row.addView(number, FrameLayout.LayoutParams(dp(45), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(12) })
             val resumeAt = item?.let { Library.resumeAt(it, v.id) } ?: 0L
             val duration = item?.optJSONObject("state")?.takeIf { it.text("video_id") == v.id }?.optLong("duration") ?: 0L
@@ -279,7 +279,7 @@ class DetailsActivity : Screen() {
             row.addView(label, FrameLayout.LayoutParams(dp(if (status.isEmpty()) 290 else 180), -2, Gravity.CENTER_VERTICAL).apply {
                 leftMargin = dp(63)
             })
-            if (status.isNotEmpty()) row.addView(text(status, SMALL, color = TEXT_MID).apply { gravity = Gravity.END },
+            if (status.isNotEmpty()) row.addView(text(status, SMALL, color = TEXT_2).apply { gravity = Gravity.END },
                 FrameLayout.LayoutParams(dp(105), -2, Gravity.CENTER_VERTICAL or Gravity.END).apply { rightMargin = dp(8) })
             row.rowFocus { focused -> if (focused) updatePreview(v) }
             row.setOnClickListener {
@@ -363,12 +363,12 @@ class DetailsActivity : Screen() {
         val story = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             isFocusable = true // takes the remote, so Up and Down scroll a long story
-            addView(text(m.description ?: "No description available.", BODY, color = TEXT_HI).onArt())
+            addView(text(m.description ?: "No description available.", BODY, color = TEXT).onArt())
         }
         infoOverlay.addView(column(Gravity.START,
-            text(m.name, DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END },
-            text(facts, SMALL, color = TEXT_HI).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6),
-            text("The story", SMALL, bold = true, color = TEXT_HI).onArt().marginTop(SECTION_GAP),
+            text(m.name, SERIF_TITLE, bold = true, serif = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END },
+            text(facts, SMALL, color = TEXT).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }.marginTop(6),
+            text("The story", SMALL, bold = true, color = TEXT).onArt().marginTop(SECTION_GAP),
         ).apply {
             addView(story, LinearLayout.LayoutParams(-1, dp(180)).apply { topMargin = dp(8) })
         }, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
@@ -414,7 +414,7 @@ class DetailsActivity : Screen() {
         }
         titles.forEachIndexed { index, title ->
             val card = FrameLayout(this).apply {
-                setBackgroundColor(SURFACE)
+                setBackgroundColor(BASE)
                 clipToOutline = true
                 outlineProvider = object : android.view.ViewOutlineProvider() {
                     override fun getOutline(view: View, outline: android.graphics.Outline) =

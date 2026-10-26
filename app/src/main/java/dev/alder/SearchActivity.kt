@@ -44,7 +44,7 @@ class SearchActivity : Screen() {
 
         val input = EditText(this).apply {
             hint = "Movie or show title"
-            setHintTextColor(MUTED)
+            setHintTextColor(TEXT_3)
             setTextColor(Color.WHITE)
             textSize = BODY
             setSingleLine()
@@ -72,14 +72,14 @@ class SearchActivity : Screen() {
             field.background = if (has) glass(14, focused = true) else fieldRest
         }
         val heading = text("", BODY, bold = true).onArt()
-        val count = text("", SMALL, color = TEXT_MID).onArt()
+        val count = text("", SMALL, color = TEXT_2).onArt()
         val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
 
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(PAD), dp(28), 0, dp(28))
             clipToPadding = false; clipChildren = false // the focused card grows past its bounds
-            addView(text("Search", DISPLAY, bold = true).onArt())
+            addView(text("Search", SERIF_TITLE, bold = true, serif = true).onArt())
             addView(field, LinearLayout.LayoutParams(dp(GRID_W), -2).apply { topMargin = dp(18) })
             addView(LinearLayout(context).apply {
                 gravity = Gravity.BOTTOM
@@ -90,9 +90,9 @@ class SearchActivity : Screen() {
         }
 
         logo = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_START; adjustViewBounds = false }
-        name = text("", DISPLAY, bold = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
-        facts = text("", SMALL, color = TEXT_HI).onArt()
-        about = text("", BODY, color = TEXT_HI).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        name = text("", SERIF_TITLE, bold = true, serif = true).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        facts = text("", SMALL, color = TEXT).onArt()
+        about = text("", BODY, color = TEXT).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         info = column(Gravity.START, logo.apply { layoutParams = LinearLayout.LayoutParams(dp(260), dp(70)) }, name, facts.marginTop(6), about.marginTop(8))
             .apply { visibility = View.INVISIBLE }
 
@@ -155,7 +155,7 @@ class SearchActivity : Screen() {
                 count.text = if (titles.isEmpty()) "" else if (titles.size == 1) "1 title" else "${titles.size} titles"
                 var first: View? = null
                 sections.forEach { (type, list) ->
-                    if (sections.size > 1) grid.addView(text(when (type) { "movie" -> "Movies"; "series" -> "Series"; else -> type.replaceFirstChar(Char::uppercaseChar) }, SMALL, bold = true, color = TEXT_MID).onArt(),
+                    if (sections.size > 1) grid.addView(text(when (type) { "movie" -> "Movies"; "series" -> "Series"; else -> type.replaceFirstChar(Char::uppercaseChar) }, SMALL, bold = true, color = TEXT_2).onArt(),
                         wrap().apply { bottomMargin = dp(10); if (grid.childCount > 0) topMargin = dp(8) })
                     list.chunked(COLUMNS).forEach { row ->
                         grid.addView(LinearLayout(this).apply { clipChildren = false; row.forEach { addView(card(it).also { c -> if (first == null) first = c }, LinearLayout.LayoutParams(dp(CARD_W), -2).apply { marginEnd = dp(CARD_GAP) }) } },
@@ -192,7 +192,7 @@ class SearchActivity : Screen() {
     private fun card(m: Meta): View {
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(SURFACE)
+            setBackgroundColor(BASE)
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(v: View, o: Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(10).toFloat())
             }
@@ -200,7 +200,7 @@ class SearchActivity : Screen() {
         }
         val title = text(m.name, BODY, bold = true).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         val kind = when (m.type) { "movie" -> "Movie"; "series" -> "Series"; else -> m.type.replaceFirstChar(Char::uppercaseChar) }
-        val line = text(listOfNotNull(m.year?.take(4), kind).joinToString("  ·  "), SMALL, color = TEXT_MID).onArt()
+        val line = text(listOfNotNull(m.year?.take(4), kind).joinToString("  ·  "), SMALL, color = TEXT_2).onArt()
         Images.load(m.background ?: m.poster, image, dp(CARD_W))
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

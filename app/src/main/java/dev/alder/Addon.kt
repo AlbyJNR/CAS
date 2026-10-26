@@ -129,7 +129,7 @@ class Meta(json: JSONObject) {
     val logo = json.text("logo")
     val description = json.text("description")
     val year = json.text("releaseInfo")?.trimEnd('–', '-', ' ') // "2026–" (still running) reads as 2026 everywhere
-    val runtime = json.text("runtime")
+    val runtime = json.text("runtime")?.let(::runtime)
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)
     val info = listOfNotNull(year, runtime, genres.joinToString(" · ").ifEmpty { null }).joinToString("   ")
@@ -257,4 +257,10 @@ fun JSONArray?.objects(): List<JSONObject> = items().filterIsInstance<JSONObject
 fun JSONArray?.strings(): List<String> = items().filterIsInstance<String>()
 
 /** The string at [key], or null when it's missing, JSON null or blank (optString would return "null" for JSON null). */
+/** "147 min" reads "2h 27m" as on the mock; under an hour, and anything not in minutes, stays as the addon wrote it. */
+internal fun runtime(text: String): String {
+    val minutes = Regex("""^(\d+)\s*min""").find(text.trim())?.groupValues?.get(1)?.toIntOrNull() ?: return text
+    return if (minutes < 60) "$minutes min" else "${minutes / 60}h %02dm".format(minutes % 60)
+}
+
 fun JSONObject.text(key: String): String? = if (isNull(key)) null else optString(key).ifBlank { null }

@@ -38,8 +38,8 @@ class StreamsActivity : Screen() {
         // "S1 E3 · OUTKAST" for an episode; the label minus the title's name otherwise.
         val episode = intent.getStringExtra("episode") ?: intent.getStringExtra("label")?.removePrefix(name)?.trim(' ', '·')
         if (!episode.isNullOrBlank()) header.addView(text(episode, SMALL, color = SUBTLE).onArt().marginTop(8))
-        header.addView(text("Choose a stream", DISPLAY, bold = true).onArt().marginTop(4))
-        val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_MID).onArt().marginTop(10)
+        header.addView(text("Choose a stream", SERIF_TITLE, bold = true, serif = true).onArt().marginTop(4))
+        val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_2).onArt().marginTop(10)
         header.addView(status)
 
         art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
@@ -198,9 +198,9 @@ class StreamsActivity : Screen() {
      */
     private fun streamRow(s: Stream, number: Int): View {
         val name = s.label
-        val num = text("%02d".format(number), BODY, color = TEXT_MID).onArt().apply { setPadding(dp(8), 0, 0, 0) }
+        val num = text("%02d".format(number), BODY, color = TEXT_2).onArt().apply { setPadding(dp(8), 0, 0, 0) }
         val head = text(name, BODY, bold = true).onArt().apply { setPadding(dp(12), dp(4), dp(14), dp(5)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT_HI).onArt().apply { maxLines = 5; setPadding(dp(12), 0, 0, 0) }
+        val lines = text(s.description.replace(Regex(",(?=\\S)"), "  ·  "), SMALL, color = TEXT).onArt().apply { maxLines = 5; setPadding(dp(12), 0, 0, 0) }
         val info = column(Gravity.START, head)
         s.tags.takeIf { it.isNotEmpty() }?.let { info.addView(text(it.joinToString("  ·  "), SMALL, color = SUBTLE).onArt().apply { setPadding(dp(12), 0, 0, 0) }.marginTop(2)) }
         info.addView(lines.marginTop(4))

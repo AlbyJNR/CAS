@@ -441,20 +441,20 @@ class PlayerActivity : Screen() {
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val still = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = rounded(SURFACE, 8)
+            background = rounded(BASE, 8)
             clipToOutline = true
         }
         row.addView(still, LinearLayout.LayoutParams(dp(185), dp(102)))
         Images.load(next.thumbnail, still, dp(370), orElse = meta?.background ?: intent.getStringExtra("background"))
         val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        upNextTimer = text("", SMALL, bold = true, color = TEXT_HI).onArt()
+        upNextTimer = text("", SMALL, bold = true, color = TEXT).onArt()
         detail.addView(upNextTimer)
         detail.addView(text("S${next.season} E${next.episode}  ·  ${next.title}", BODY, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-        upNextMessage = text("", SMALL, color = TEXT_HI).onArt()
+        upNextMessage = text("", SMALL, color = TEXT).onArt()
         detail.addView(upNextMessage, wrap().apply { topMargin = dp(4) })
-        upNextProgress = progressBar(1f, 0xFFF7D98F.toInt())
+        upNextProgress = progressBar(1f)
         detail.addView(upNextProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(9) })
         val actions = LinearLayout(this)
         fun action(label: String, click: () -> Unit) = text(label, BODY).onArt().apply {
@@ -648,7 +648,7 @@ class PlayerActivity : Screen() {
     private fun buildControls(): FrameLayout {
         val name = intent.getStringExtra("name") ?: ""
         val title = text(name, BODY, bold = true).onArt()
-        subtitle = text(intent.getStringExtra("label")?.substringAfter("  ·  ", "") ?: "", BODY, color = MUTED).onArt()
+        subtitle = text(intent.getStringExtra("label")?.substringAfter("  ·  ", "") ?: "", BODY, color = TEXT_3).onArt()
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(title, wrap())
@@ -835,7 +835,7 @@ class PlayerActivity : Screen() {
             orientation = LinearLayout.VERTICAL
             val head = text("Change stream  →", BODY, bold = true).apply { setPadding(dp(14), dp(6), dp(14), dp(6)) }
             addView(head, wrap())
-            addView(text(sources[at].label, SMALL, color = MUTED).apply { setPadding(dp(14), 0, 0, 0) }, wrap())
+            addView(text(sources[at].label, SMALL, color = TEXT_3).apply { setPadding(dp(14), 0, 0, 0) }, wrap())
             setPadding(0, 0, 0, dp(6))
             rowFocus(10)
             setOnClickListener { changeStream() }
@@ -857,12 +857,12 @@ class PlayerActivity : Screen() {
 
     /** A heading and one row per choice; returns the chosen row, to focus. [pick] runs with the index chosen. */
     private fun section(list: LinearLayout, heading: String, labels: List<String>, chosen: Int, pick: (Int) -> Unit): View {
-        list.addView(text(heading, SMALL, bold = true, color = MUTED),
+        list.addView(text(heading, SMALL, bold = true, color = TEXT_3),
             wrap().apply { setMargins(dp(14), dp(32), 0, dp(8)) })
         val checks = mutableListOf<ImageView>()
         val names = mutableListOf<TextView>()
         val rows = labels.mapIndexed { i, label ->
-            val name = text(label, BODY, color = if (i == chosen) Color.WHITE else TEXT_MID).apply {
+            val name = text(label, BODY, color = if (i == chosen) Color.WHITE else TEXT_2).apply {
                 setPadding(dp(14), dp(6), dp(14), dp(6)); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             }
             names += name
@@ -876,14 +876,14 @@ class PlayerActivity : Screen() {
                 isFocusable = true
                 fun style(has: Boolean) {
                     background = if (has) rounded(Color.WHITE, 10) else null
-                    name.setTextColor(if (has) INK else if (check.visibility == View.VISIBLE) Color.WHITE else TEXT_MID)
-                    if (has) check.setColorFilter(INK) else check.clearColorFilter()
+                    name.setTextColor(if (has) BASE else if (check.visibility == View.VISIBLE) Color.WHITE else TEXT_2)
+                    if (has) check.setColorFilter(BASE) else check.clearColorFilter()
                 }
                 setOnFocusChangeListener { _, has -> style(has) }
                 setOnClickListener {
                     pick(i)
                     checks.forEachIndexed { j, c -> c.visibility = if (j == i) View.VISIBLE else View.INVISIBLE }
-                    names.forEachIndexed { j, n -> n.setTextColor(if (j == i) Color.WHITE else TEXT_MID) }
+                    names.forEachIndexed { j, n -> n.setTextColor(if (j == i) Color.WHITE else TEXT_2) }
                     style(true)
                 }
             }.also { list.addView(it, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) }) }
@@ -1001,7 +1001,7 @@ private class SeekBar(context: Context) : View(context) {
         }
         stretch(width - knob, 0x4DFFFFFF)
         stretch(x(buffered), 0x66FFFFFF)
-        stretch(x(position), Screen.ACCENT)
+        stretch(x(position), Screen.TUNGSTEN)
         paint.color = Color.WHITE
         if (duration > 0) canvas.drawCircle(x(position), y, knob, paint)
     }
