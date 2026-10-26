@@ -39,6 +39,15 @@ object Library {
         item.put("removed", !on).put("temp", false).put("_mtime", now())
     }
 
+    /** Marks the current title complete without discarding its watch history. */
+    fun markTitleWatched(item: JSONObject, videos: List<Video> = emptyList()) {
+        val s = item.state
+        s.text("video_id")?.let { id -> if (videos.any { it.id == id }) markWatched(item, videos, id) }
+        s.put("timesWatched", maxOf(1, s.optInt("timesWatched")))
+        s.put("flaggedWatched", 1).put("timeOffset", 0)
+        item.put("_mtime", now())
+    }
+
     /** Where to resume [videoId] in milliseconds, 0 to start from the beginning. */
     fun resumeAt(item: JSONObject, videoId: String): Long {
         val s = item.state

@@ -1,7 +1,7 @@
 <h1 align="center">Alder</h1>
 
 <p align="center">
-  A custom Stremio client for Android TV. Your account and add-ons, with a far better viewing experience.
+  The Stremio app for your TV, rebuilt. Keep Stremio on your phone and computer; watch in Alder.
 </p>
 
 <p align="center">
@@ -15,7 +15,16 @@
   <img src="docs/details.jpg" alt="Alder title page" width="49%">
 </p>
 
-Alder is built on top of Stremio. Your account, add-ons, library and watch progress stay exactly where they are, and everything you do in Alder syncs back to Stremio on your phone and computer. What's new is the app you watch in: made for a TV and a remote, and quiet enough that the film is the main thing on screen.
+Alder replaces the Stremio app on your TV, not Stremio itself. Your account, add-ons, library and watch progress stay exactly where they are, and everything you do in Alder syncs back to Stremio on your phone and computer. What's new is the app you watch in: made for a TV and a remote, and quiet enough that the film is the main thing on screen.
+
+## How it fits with Stremio
+
+You still use Stremio. Alder is the part you sit in front of.
+
+- **On your phone or computer, in Stremio:** create your account, find add-ons, configure them (AIOStreams, Torrentio and the like are set up on a web page) and install them.
+- **On your TV, in Alder:** sign in once with a code, then browse, play and pick up where you left off. Add-ons you install in Stremio show up in Alder on their own.
+
+Alder has no add-on store of its own. Setting up add-ons is typing and web forms, which is easier on a phone than with a remote.
 
 ## Highlights
 
@@ -26,7 +35,7 @@ Alder is built on top of Stremio. Your account, add-ons, library and watch progr
 - **Continue Watching on the Google TV home screen.** Jump straight back into a show without opening the app first.
 - **A cinematic interface.** Full-screen art, title logos and rows of posters, with everything else out of the way.
 - **The player you'd want.** Skip intro, Up next with autoplay, audio and subtitle choice in one panel, subtitles from add-ons like OpenSubtitles with size, background and timing controls, DTS and TrueHD audio, and frame-rate matching.
-- **Manage add-ons on the TV.** Add by URL, reorder and remove. Changes save to your Stremio account.
+- **Tidy add-ons from the sofa.** Reorder, remove, or add one by URL. Changes save to your Stremio account.
 
 ## How it compares
 
@@ -39,20 +48,22 @@ Alder is built on top of Stremio. Your account, add-ons, library and watch progr
 | Moves to the next source when one fails | **Yes, from the same second** | No |
 | Skips files the TV can't play | **Yes** | No |
 | Skip intro | **Yes** | No |
+| Finding and configuring add-ons | In Stremio on your phone or computer | On the TV |
 | Torrent streaming | No, debrid add-ons only | Yes |
 | Built for | **A TV and a remote** | Shared with desktop and web |
 
 ## Requirements
 
 - Android TV or Google TV running **Android 8.0 (Oreo) or newer**
-- A Stremio account with stream add-ons (debrid, for example through AIOStreams)
+- A Stremio account with stream add-ons (debrid, for example through AIOStreams), set up in Stremio on your phone or computer
 - A way to sideload an APK: the *Downloader* app, a USB drive with a file manager, or `adb`
 
 ## Installation
 
+1. On your phone or computer, sign in to [Stremio](https://web.stremio.com) and install your add-ons.
 1. Download the latest APK from the [Releases](https://github.com/aradhyas8/Alder/releases/latest) page.
-2. Install it on your TV with the Downloader app, a USB drive and a file manager, or `adb install Alder-<version>.apk`.
-3. Open **Alder**, name your profile and sign in to Stremio with the code on screen.
+1. Install it on your TV with the Downloader app, a USB drive and a file manager, or `adb install Alder-<version>.apk`.
+1. Open **Alder**, name your profile and sign in to Stremio with the code on screen. Your add-ons, library and Continue Watching come with it.
 
 ## Privacy
 

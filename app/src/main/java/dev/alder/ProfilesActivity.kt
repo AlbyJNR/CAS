@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -14,21 +15,26 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextClock
 import android.widget.TextView
 
-// "Who's watching?", plus adding a profile: name, Stremio sign-in, copying addons, and setting up Watchly.
+// Profile picker, Stremio sign-in, copying add-ons, and setting up Watchly.
 // The app starts here; with a single profile it goes straight on to Home.
 class ProfilesActivity : Screen() {
     // The sign-in code being waited on; anything else stops its polling loop.
     private var waitingCode: String? = null
     private var signingIn = false
     private var draftName = ""
+    private var draftColor = Profiles.COLORS[0]
+    private var pickerGeneration = 0
+    private var signInGeneration = 0
+    private var nameInput: EditText? = null
     // Where Back goes from the profile menu's screens (PIN, rename); null elsewhere.
     private var backTo: (() -> Unit)? = null
 
@@ -53,15 +59,28 @@ class ProfilesActivity : Screen() {
         if (signingIn) showName() else super.onBackPressed()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val input = nameInput
+        if (input != null && !input.hasFocus() && event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_DEL) {
+                if (input.length() > 0) input.text.delete(input.length() - 1, input.length())
+                return true
+            }
+            val character = event.unicodeChar.takeIf { it in 32..126 }?.toChar()
+            if (character != null) { input.text.append(character); return true }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     /** Opens a profile, asking for its PIN first when it has one. */
     private fun enter(p: Profile) = withPin(p) { openHome(p) }
 
     private fun openHome(profile: Profile) {
         Profiles.setActive(this, profile.id)
-        val home = Intent(this, MainActivity::class.java)
+        val home = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         // Opened from the Google TV home's Continue Watching: Home, with that title's page on top of it.
         // A fresh task, so an app already open in the background doesn't end up with two Homes.
-        if (intent.hasExtra("id")) startActivities(arrayOf(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+        if (intent.hasExtra("id")) startActivities(arrayOf(home,
             Intent(intent).setClass(this, DetailsActivity::class.java).setFlags(0)))
         else startActivity(home)
         finish()
@@ -71,58 +90,118 @@ class ProfilesActivity : Screen() {
 
     private fun showPicker() {
         backTo = null
+        nameInput = null
+        val generation = ++pickerGeneration
         val profiles = Profiles.all(this)
-        val tiles = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(14), dp(14), dp(14), dp(14)) }
+        val art = onboardingBackdrop(false).apply { alpha = 0.42f }
+        var selected = profiles.firstOrNull { it.id == Profiles.active(this)?.id } ?: profiles.first()
+        // Top-aligned, so Add (no "last watched" line) sits level with the portraits; padding above for the 10% lift.
+        val tiles = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP; clipChildren = false; clipToPadding = false
+            setPadding(0, dp(LIFT_ROOM), 0, 0)
+        }
+        fun showArt(p: Profile, item: org.json.JSONObject?) {
+            if (generation != pickerGeneration || selected.id != p.id) return
+            val url = item?.optString("_id")?.let(Images::backgroundFor) ?: return
+            Images.load(url, art, resources.displayMetrics.widthPixels, urgent = true) {
+                val bitmap = (art.drawable as? BitmapDrawable)?.bitmap ?: return@load
+                background({ Images.frost(bitmap, 160) }) { result ->
+                    if (generation == pickerGeneration && selected.id == p.id && art.tag == url)
+                        result.getOrNull()?.let { art.setImageBitmap(it); art.alpha = 0.5f }
+                }
+            }
+        }
+        val recent = mutableMapOf<String, org.json.JSONObject?>()
+        fun focus(p: Profile) {
+            selected = p
+            if (p.id !in recent) { art.tag = null; art.setImageResource(R.drawable.onboarding_scene); art.alpha = 0.42f }
+            else showArt(p, recent[p.id])
+        }
         profiles.forEach { p ->
-            tiles.addView(tile(p.name, p.color, p.name.take(1).uppercase()).apply {
+            val last = text("", SMALL, color = TEXT_3).apply {
+                gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            tiles.addView(tile(p, last) { focus(p) }.apply {
                 setOnClickListener { enter(p) }
                 setOnLongClickListener { showMenu(p); true }
-            })
+            }, LinearLayout.LayoutParams(dp(124), -2).apply { marginStart = dp(10); marginEnd = dp(10) })
+            background({
+                val items = Stremio.savedLibrary(p.authKey) ?: Stremio.library(p.authKey)
+                Library.continueWatching(items).firstOrNull()
+                    ?: items.filter { !it.optJSONObject("state")?.optString("lastWatched").isNullOrBlank() }
+                        .maxByOrNull { it.optJSONObject("state")?.optString("lastWatched").orEmpty() }
+            }) { result ->
+                if (generation != pickerGeneration) return@background
+                val item = result.getOrNull()
+                recent[p.id] = item
+                last.text = profileLastLabel(item?.text("name"), item?.optJSONObject("state")?.text("video_id"))
+                showArt(p, item)
+            }
         }
         if (profiles.size < Profiles.MAX) {
-            tiles.addView(tile("Add profile", GLASS_LOW, "+").apply { setOnClickListener { showName() } })
+            tiles.addView(tile(null, null) {}.apply { setOnClickListener { showName() } },
+                LinearLayout.LayoutParams(dp(124), -2).apply { marginStart = dp(10); marginEnd = dp(10) })
         }
-        val content = android.widget.FrameLayout(this).apply {
-            addView(text("Who’s watching?", DISPLAY, bold = true), android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-                leftMargin = dp(PAD); topMargin = dp(70)
+        val content = FrameLayout(this).apply {
+            addView(text("Alder", WORDMARK, serif = true).onArt(), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+                leftMargin = dp(PAD); topMargin = dp(35)
             })
-            addView(tiles, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            addView(text("Manage profiles", BODY, color = TEXT_HI).apply {
-                setPadding(dp(16), dp(10), dp(16), dp(10))
-                rowFocus(8)
+            addView(TextClock(this@ProfilesActivity).apply {
+                format12Hour = "h:mm a"; format24Hour = "HH:mm"; textSize = SMALL; setTextColor(TEXT_2)
+            }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+                rightMargin = dp(PAD); topMargin = dp(39)
+            })
+            addView(text("Who's here tonight?", 38f, serif = true).onArt().apply { gravity = Gravity.CENTER },
+                FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { topMargin = dp(118) })
+            addView(tiles, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { topMargin = dp(190 - LIFT_ROOM) })
+            addView(chip("Manage profiles").apply {
                 setOnClickListener {
-                    AlertDialog.Builder(this@ProfilesActivity).setTitle("Manage profiles")
-                        .setItems(profiles.map { it.name }.toTypedArray()) { _, i -> showMenu(profiles[i]) }.show()
+                    choose("Manage profiles", profiles.map { it.name }) { i -> showMenu(profiles[i]) }
                 }
-            }, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
-                leftMargin = dp(PAD - 16); bottomMargin = dp(60)
-            })
+            }, FrameLayout.LayoutParams(-2, dp(30), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(50) })
+            addView(keyHint("Hold OK", "Rename · PIN · Colour · Remove"),
+                FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(20) })
         }
-        setWindowed(content, onboardingBackdrop())
-        val active = profiles.indexOfFirst { it.id == Profiles.active(this)?.id }
-        tiles.getChildAt(maxOf(active, 0)).requestFocus()
+        setWindowed(content, art)
+        tiles.getChildAt(profiles.indexOf(selected)).requestFocus()
     }
 
-    private fun tile(label: String, color: Int, initial: String): View {
-        val circle = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
-        val avatar = text(initial, 38f, bold = true).apply {
+    private fun tile(profile: Profile?, last: TextView?, focused: () -> Unit): View {
+        val add = profile == null
+        val face = text(if (add) "+" else profile?.name?.take(1)?.uppercase().orEmpty(), if (add) 42f else 48f,
+            serif = !add, color = if (add) TEXT_2 else BASE).apply {
             gravity = Gravity.CENTER
-            background = circle
-            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+            alpha = 0.6f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL; setColor(profile?.color ?: GLASS)
+                if (add) setStroke(dp(1), GLASS_EDGE, dp(2).toFloat(), dp(3).toFloat())
+            }
         }
-        val name = text(label, BODY).apply {
-            gravity = Gravity.CENTER
-            maxWidth = dp(112); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(12), dp(4), dp(12), dp(4))
+        val circle = FrameLayout(this).apply {
+            clipChildren = false
+            addView(View(context).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(TUNGSTEN) } },
+                FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER))
+            addView(View(context).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(BASE) } },
+                FrameLayout.LayoutParams(dp(106), dp(106), Gravity.CENTER))
+            addView(face, FrameLayout.LayoutParams(dp(100), dp(100), Gravity.CENTER))
+            getChildAt(0).visibility = View.INVISIBLE
+            getChildAt(1).visibility = View.INVISIBLE
         }
-        // Focus: the avatar grows and lifts, like a focused poster.
-        return column(Gravity.CENTER_HORIZONTAL, avatar, name.marginTop(6)).apply {
+        val name = text(if (add) "Add" else profile?.name.orEmpty().replaceFirstChar { it.titlecase() } + if (profile?.pin != null) "  🔒" else "",
+            BODY, color = TEXT_2).apply { gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+        return column(Gravity.CENTER_HORIZONTAL).apply {
+            addView(circle, LinearLayout.LayoutParams(dp(112), dp(112)))
+            addView(name, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+            if (last != null) addView(last, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
             isFocusable = true
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18); marginEnd = dp(18) }
+            clipChildren = false
             setOnFocusChangeListener { _, has ->
-                avatar.lift(has)
-                name.setTextColor(if (has) Color.WHITE else TEXT_HI)
+                circle.getChildAt(0).visibility = if (has) View.VISIBLE else View.INVISIBLE
+                circle.getChildAt(1).visibility = if (has) View.VISIBLE else View.INVISIBLE
+                circle.grow(has, 1.1f).start()
+                face.alpha = if (has) 1f else 0.6f
+                name.setTextColor(if (has) TEXT else TEXT_2)
+                if (has) focused()
             }
         }
     }
@@ -133,15 +212,18 @@ class ProfilesActivity : Screen() {
         val items = listOfNotNull(
             "Rename" to { withPin(p) { rename(p) } },
             (if (p.pin == null) "Set a PIN" else "Change PIN") to { withPin(p) { setPin(p) } },
+            "Colour" to { withPin(p) {
+                choose("${p.name}'s portrait", listOf("Tungsten", "Clay", "Sage", "Lavender", "Honey"),
+                    checked = Profiles.COLORS.indexOf(p.color)) { i ->
+                    Profiles.update(this, p.id, color = Profiles.COLORS[i]); showPicker()
+                }
+            } },
             if (p.pin == null) null else "Remove PIN" to {
                 withPin(p) { Profiles.update(this, p.id, clearPin = true); showPicker() }
             },
             "Remove profile" to { withPin(p) { showPicker(); confirmRemove(p) } },
         )
-        AlertDialog.Builder(this)
-            .setTitle(p.name)
-            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
-            .show()
+        choose(p.name, items.map { it.first }) { i -> items[i].second() }
     }
 
     /** Runs [then] straight away, or once the profile's PIN is typed, so a locked profile can't be changed around it. */
@@ -195,7 +277,7 @@ class ProfilesActivity : Screen() {
             }
         }
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER; isFocusable = true; boxes.forEach { addView(it) } }
-        val error = text("", BODY, color = TEXT_HI)
+        val error = text("", BODY, color = TEXT)
         fun draw() = boxes.forEachIndexed { i, b ->
             b.text = when {
                 digits[i] < 0 -> ""
@@ -235,130 +317,242 @@ class ProfilesActivity : Screen() {
         }
         draw()
         val content = column(Gravity.CENTER_HORIZONTAL,
-            text(title, DISPLAY, bold = true),
+            text(title, SERIF_TITLE, bold = true, serif = true),
             row.marginTop(36),
             error.marginTop(12),
-            text("▲ ▼ change a digit    ◀ ▶ move    OK to confirm", SMALL, color = TEXT_MID).marginTop(28),
+            text("▲ ▼ change a digit    ◀ ▶ move    OK to confirm", SMALL, color = TEXT_2).marginTop(28),
         ).apply { gravity = Gravity.CENTER }
         setWindowed(content, onboardingBackdrop())
         row.requestFocus()
     }
 
     private fun confirmRemove(p: Profile) {
-        AlertDialog.Builder(this)
-            .setTitle("Remove ${p.name}?")
-            .setMessage("This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.")
-            .setPositiveButton("Remove") { _, _ ->
-                Profiles.remove(this, p.id)
-                background({ Http.forget() }) {}
-                background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
-                if (Profiles.all(this).isEmpty()) showName() else showPicker()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        choose("Remove ${p.name}?", listOf("Cancel", "Remove"),
+            "This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.") { i ->
+            if (i == 0) return@choose
+            Profiles.remove(this, p.id)
+            background({ Http.forget() }) {}
+            background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
+            if (Profiles.all(this).isEmpty()) showName() else showPicker()
+        }
     }
 
     // ---------- add a profile ----------
 
     private fun showName() {
-        backTo = null
+        ++pickerGeneration
+        backTo = if (Profiles.all(this).isEmpty()) null else ::showPicker
         signingIn = false
         waitingCode = null
         val first = Profiles.all(this).isEmpty()
         val name = EditText(this).apply {
-            hint = "Profile name"
+            hint = "Your name"
             textSize = BODY
-            setTextColor(Color.WHITE)
-            setHintTextColor(0xFFB7C0CA.toInt())
-            setPadding(dp(24), dp(18), dp(24), dp(18))
-            background = glass(14)
-            setOnFocusChangeListener { v, has -> v.background = glass(14, has) }
+            setTextColor(TEXT)
+            setHintTextColor(TEXT_3)
+            setPadding(dp(14), 0, dp(14), 0)
+            background = glass(8)
+            setOnFocusChangeListener { v, has -> v.background = glass(8, has) }
             setSingleLine()
+            showSoftInputOnFocus = false
             imeOptions = EditorInfo.IME_ACTION_DONE
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) }
         }
+        nameInput = name
         name.setText(draftName)
         val next = onboardingButton("Continue    →")
-        val go = { name.text.toString().trim().ifEmpty { null }?.let { draftName = it; showSignIn(it) } }
+        val error = text("", SMALL, color = TUNGSTEN)
+        val go = {
+            name.text.toString().trim().takeIf { it.isNotEmpty() }?.replaceFirstChar { it.titlecase() }
+                ?.let { draftName = it; showSignIn(it) }
+                ?: run { error.text = "Enter a name to continue." }
+        }
         name.setOnEditorActionListener { _, _, _ -> go(); true }
         next.setOnClickListener { go() }
+        val keyboard = column(Gravity.START).apply {
+            setPadding(dp(8), dp(8), dp(8), dp(8)); background = glass(10)
+        }
+        var firstKey: View? = null
+        fun key(label: String, row: LinearLayout, width: Int = 1, action: () -> Unit) {
+            val view = text(label, SMALL, color = TEXT_2).apply {
+                gravity = Gravity.CENTER
+                rowFocus(6)
+                setOnClickListener { action() }
+            }
+            row.addView(view, LinearLayout.LayoutParams(0, -1, width.toFloat()).apply {
+                if (row.childCount > 0) marginStart = dp(3)
+            })
+            if (firstKey == null) firstKey = view
+        }
+        "abcdefghijklmnopqrstuvwxyz".chunked(6).forEach { letters ->
+            keyboard.addView(LinearLayout(this).apply {
+                letters.forEach { letter -> key(letter.toString(), this) { name.text.append(letter) } }
+                // "yz" keeps the grid: empty cells fill the row instead of two keys stretched across it.
+                repeat(6 - letters.length) { addView(View(context), LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(3) }) }
+            }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { if (keyboard.childCount > 0) topMargin = dp(3) })
+        }
+        keyboard.addView(LinearLayout(this).apply {
+            key("SPACE", this, 3) { name.text.append(" ") }
+            key("⌫", this) { if (name.length() > 0) name.text.delete(name.length() - 1, name.length()) }
+            key("⌨", this) {
+                name.showSoftInputOnFocus = true
+                name.requestFocus()
+                name.post { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                    .showSoftInput(name, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+            }
+        }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { topMargin = dp(3) })
+        val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase().orEmpty(), 100, draftColor)
+        val previewName = text(draftName, BODY, bold = true).apply { gravity = Gravity.CENTER }
+        val swatches = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val marks = mutableListOf<TextView>()
+        Profiles.COLORS.forEachIndexed { index, color ->
+            val mark = text(if (draftColor == color) "✓" else "", SMALL, bold = true, color = BASE).apply {
+                gravity = Gravity.CENTER
+                isFocusable = true
+                fun face(focused: Boolean) = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL; setColor(color)
+                    if (focused) setStroke(dp(2), TUNGSTEN)
+                }
+                background = face(false)
+                setOnFocusChangeListener { view, focused -> view.background = face(focused) }
+                setOnClickListener {
+                    draftColor = color
+                    avatar.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+                    marks.forEachIndexed { i, view -> view.text = if (i == index) "✓" else "" }
+                }
+            }
+            marks += mark
+            swatches.addView(mark, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(8) })
+        }
         val copy = column(Gravity.START,
-            text(if (first) "Welcome" else "New profile", DISPLAY, bold = true),
-            text("First, name your profile.", BODY).marginTop(8),
-            text("Your own history and recommendations.", BODY, color = TEXT_MID).marginTop(10),
-            text("Profile name", SMALL, bold = true, color = TEXT_MID).marginTop(40),
-            name,
-            next.marginTop(26),
+            text(if (first) "Welcome to Alder" else "New profile", SERIF_TITLE, serif = true),
+            text("Give this profile a name and colour.", BODY, color = TEXT_2).marginTop(4),
+            name.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(16) } },
+            keyboard.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } },
+            caps("Portrait colour", TUNGSTEN).marginTop(13),
+            swatches.marginTop(7),
+            error.marginTop(5),
+            next.marginTop(7),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
-        val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase() ?: "E", 96)
         val preview = column(Gravity.CENTER,
             avatar,
-            text("${name.text.ifEmpty { "Your name" }}", BODY, bold = true).marginTop(18),
+            previewName.marginTop(16),
         ).apply { gravity = Gravity.CENTER }
         name.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                (preview.getChildAt(1) as android.widget.TextView).text = s?.toString()?.ifBlank { "Your name" } ?: "Your name"
-                avatar.text = s?.firstOrNull()?.uppercase() ?: "E"
+                previewName.text = s?.toString().orEmpty()
+                avatar.text = s?.firstOrNull()?.uppercase().orEmpty()
+                error.text = ""
             }
             override fun afterTextChanged(s: android.text.Editable?) = Unit
         })
-        val content = onboardingFrame("1 of 2", copy, preview, dp(70), 1.15f, 0.85f)
+        val content = onboardingFrame(if (first) "step 1 of 2" else "step 1 of 4", copy, preview, dp(65), 1.05f, 0.95f)
         setWindowed(content, onboardingBackdrop())
-        name.requestFocus()
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        firstKey?.requestFocus()
     }
 
     private fun showSignIn(name: String) {
+        ++pickerGeneration
+        nameInput = null
+        backTo = ::showName
         signingIn = true
-        val qr = ImageView(this)
-        val code = text("", 64f, bold = true)
-        val status = text("Getting a sign-in code…", BODY, color = MUTED)
-        val avatar = onboardingAvatar(name.take(1).uppercase(), 40)
-        val back = onboardingButton("←   Back")
+        val request = ++signInGeneration
+        val qr = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        val status = text("Getting a sign-in code…", SMALL, color = TEXT_2)
+        val countdown = ring(1f)
+        val codeTiles = (0 until 4).map {
+            text("–", 36f, bold = true).apply {
+                gravity = Gravity.CENTER
+                background = glass(10)
+            }
+        }
+        val codeRow = LinearLayout(this).apply {
+            codeTiles.forEach { tile -> addView(tile, LinearLayout.LayoutParams(dp(52), dp(62)).apply {
+                if (childCount > 0) marginStart = dp(7)
+            }) }
+        }
+        val back = chip("← Back")
         back.setOnClickListener { waitingCode = null; showName() }
         val left = column(Gravity.CENTER,
-            qr.apply { scaleType = ImageView.ScaleType.FIT_CENTER },
+            FrameLayout(this).apply {
+                setPadding(dp(18), dp(18), dp(18), dp(18))
+                background = rounded(TEXT, 12)
+                addView(qr, FrameLayout.LayoutParams(-1, -1))
+            }.apply { layoutParams = LinearLayout.LayoutParams(dp(236), dp(236)) },
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(avatar)
-                addView(text(name, BODY, bold = true).marginTop(0).apply { setPadding(dp(14), 0, 0, 0) })
-            }.marginTop(16),
-            back.marginTop(28),
-        ).apply { gravity = Gravity.CENTER }
+                addView(onboardingAvatar(name.take(1).uppercase(), 26, draftColor))
+                addView(text(name.replaceFirstChar { it.titlecase() }, BODY, bold = true).apply { setPadding(dp(8), 0, 0, 0) })
+            }.marginTop(14),
+        ).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(15), dp(20), dp(15), dp(20))
+            background = glass(14)
+        }
         val steps = column(Gravity.START,
-            text("Connect Stremio", DISPLAY, bold = true),
-            text("Scan with $name’s phone to sign in.", BODY).marginTop(8),
-            text("Or visit link.stremio.com and enter this code:", BODY, color = TEXT_MID).marginTop(18),
-            code.marginTop(4),
+            text("Connect Stremio", 40f, serif = true).onArt(),
+            text("Scan with $name's phone. Stremio opens and asks to sign in this TV.", BODY).onArt().marginTop(10),
+            text("", BODY, color = TEXT_2).onArt().apply {
+                val line = "Or go to link.stremio.com and enter"
+                val at = line.indexOf("link.stremio.com")
+                text = android.text.SpannableString(line).apply {
+                    setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), at, at + 16, 0)
+                    setSpan(android.text.style.ForegroundColorSpan(TEXT), at, at + 16, 0)
+                }
+            }.marginTop(22),
+            codeRow.marginTop(8),
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(View(this@ProfilesActivity).apply { background = rounded(0xFF0878FF.toInt(), 50) }, LinearLayout.LayoutParams(dp(12), dp(12)))
-                addView(status.apply { setPadding(dp(16), 0, 0, 0) })
-            }.marginTop(4),
-            text("New to Stremio? Create an account at stremio.com", BODY, color = TEXT_MID).marginTop(24),
+                addView(countdown, LinearLayout.LayoutParams(dp(20), dp(20)))
+                addView(status, wrap().apply { marginStart = dp(9) })
+            }.marginTop(17),
+            text("New to Stremio? Make an account and add your add-ons in the Stremio app or at web.stremio.com. Alder brings them to the TV.",
+                SMALL, color = TEXT_3).onArt().marginTop(24),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
-        val content = onboardingFrame("2 of 2", left, steps, dp(36), 0f, 1f, dp(340))
+        val first = Profiles.all(this).isEmpty()
+        val content = onboardingFrame(if (first) "step 2 of 2" else "step 2 of 4", left, steps, dp(55), 0f, 1f, dp(300))
+        content.addView(back, FrameLayout.LayoutParams(-2, dp(32), Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = dp(PAD); bottomMargin = dp(40)
+        })
         setWindowed(content, onboardingBackdrop())
+        back.requestFocus()
 
         waitingCode = null
         background({ Stremio.createLink() }) { result ->
-            if (!signingIn) return@background
+            if (!signingIn || request != signInGeneration) return@background
             result.onSuccess { link ->
-                qr.setImageBitmap(qrBitmap(link.url, dp(240)))
-                code.text = link.code
-                status.text = "Waiting for you to approve it…"
+                qr.setImageBitmap(qrBitmap(link.url, dp(200)))
+                codeTiles.forEachIndexed { i, tile -> tile.text = link.code.getOrNull(i)?.toString() ?: "" }
+                val started = SystemClock.elapsedRealtime()
+                fun tick() {
+                    if (!signingIn || request != signInGeneration || waitingCode != link.code) return
+                    val leftSeconds = ((5 * 60_000L - (SystemClock.elapsedRealtime() - started)).coerceAtLeast(0) / 1000).toInt()
+                    status.text = "Waiting for your phone · new code in ${leftSeconds / 60}:${"%02d".format(leftSeconds % 60)}"
+                    countdown.progress = leftSeconds * 1000 / 300
+                    main.postDelayed(::tick, 1_000)
+                }
                 waitingCode = link.code
-                poll(name, link.code, SystemClock.elapsedRealtime())
+                tick()
+                poll(name, link.code, started)
             }.onFailure {
                 status.text = "Can't reach Stremio. Trying again…"
-                main.postDelayed({ if (signingIn) showSignIn(name) }, 5_000)
+                main.postDelayed({ if (signingIn && request == signInGeneration) showSignIn(name) }, 5_000)
             }
         }
     }
 
-    private fun onboardingBackdrop() = ImageView(this).apply {
+    private fun onboardingBackdrop(useLastFilm: Boolean = true) = ImageView(this).apply {
         setImageResource(R.drawable.onboarding_scene)
         scaleType = ImageView.ScaleType.CENTER_CROP
+        // Dim, as the doc asks: the copy and code sit over it. A darkening filter, not alpha: the window has no
+        // background, so a see-through backdrop would show the last frame instead of darkening.
+        if (useLastFilm) setColorFilter(android.graphics.Color.argb(166, 14, 12, 10), android.graphics.PorterDuff.Mode.SRC_ATOP)
+        if (useLastFilm) Profiles.active(this@ProfilesActivity)?.let { profile ->
+            background({ Stremio.savedLibrary(profile.authKey)?.let(Library::continueWatching)?.firstOrNull()?.optString("_id") }) { result ->
+                result.getOrNull()?.let(Images::backgroundFor)?.let { url -> Images.load(url, this, resources.displayMetrics.widthPixels) }
+            }
+        }
     }
 
     private fun onboardingFrame(step: String, left: View, right: View, gap: Int, leftWeight: Float, rightWeight: Float, leftWidth: Int = 0) =
@@ -366,38 +560,36 @@ class ProfilesActivity : Screen() {
             val body = LinearLayout(this@ProfilesActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(PAD), dp(86), dp(PAD), dp(44))
+                setPadding(dp(PAD), dp(68), dp(PAD), dp(35))
                 addView(left, if (leftWidth > 0)
-                    LinearLayout.LayoutParams(leftWidth, -1).apply { marginEnd = gap }
+                    LinearLayout.LayoutParams(leftWidth, -2).apply { marginEnd = gap }
                 else LinearLayout.LayoutParams(0, -1, leftWeight).apply { marginEnd = gap })
                 addView(right, LinearLayout.LayoutParams(0, -1, rightWeight))
             }
             addView(body, android.widget.FrameLayout.LayoutParams(-1, -1))
+            val current = step.substringAfter("step ").substringBefore(" of ").toIntOrNull() ?: 1
+            val total = step.substringAfter(" of ").toIntOrNull() ?: 2
             addView(LinearLayout(this@ProfilesActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(PAD), dp(36), dp(PAD), 0)
-                addView(text("Alder", SMALL, bold = true, color = TEXT_MID), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(text(step, SMALL, color = TEXT_MID))
-            }, android.widget.FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP))
+                setPadding(dp(PAD), dp(31), dp(PAD), 0)
+                addView(text("Alder", WORDMARK, serif = true), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text((if (total > 2) "New profile · " else "Welcome · ") + step, SMALL, color = TEXT_2))
+                repeat(total) { index -> addView(View(this@ProfilesActivity).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL; setColor(if (index < current) TUNGSTEN else GLASS_EDGE)
+                    }
+                }, LinearLayout.LayoutParams(dp(5), dp(5)).apply { marginStart = dp(5) }) }
+            }, android.widget.FrameLayout.LayoutParams(-1, dp(58), Gravity.TOP))
         }
 
-    private fun onboardingButton(label: String) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = BODY
-        setTextColor(Color.WHITE)
-        setPadding(dp(26), dp(14), dp(26), dp(14))
-        rowFocus(18, rest = { glass(18) })
-    }
+    private fun onboardingButton(label: String) = pill(label)
 
-    private fun onboardingAvatar(initial: String, size: Int) = TextView(this).apply {
-        text = initial
-        textSize = if (size > 100) 54f else 24f
+    private fun onboardingAvatar(initial: String, size: Int, color: Int = draftColor) = text(initial, if (size > 50) 48f else 19f,
+        serif = true, color = BASE).apply {
         gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(0xFF0878FF.toInt())
+            setColor(color)
         }
         layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
     }
@@ -411,8 +603,11 @@ class ProfilesActivity : Screen() {
                 when {
                     key != null -> {
                         waitingCode = null
+                        signingIn = false
                         val others = Profiles.all(this)
-                        val profile = Profiles.add(this, name, key)
+                        val profile = Profiles.add(this, name, key, draftColor)
+                        draftName = ""
+                        draftColor = Profiles.COLORS[0]
                         // The first profile already has its addons; later ones can copy them from it.
                         if (others.isEmpty()) openHome(profile) else showCopyAddons(profile, others.first())
                     }
@@ -428,16 +623,23 @@ class ProfilesActivity : Screen() {
     // ---------- copy addons ----------
 
     private fun showCopyAddons(profile: Profile, from: Profile) {
-        val list = column(Gravity.START).apply { setPadding(dp(PAD), dp(48), dp(PAD), dp(48)) }
-        list.addView(text("Copy ${from.name}'s addons to ${profile.name}?", DISPLAY, bold = true))
+        backTo = { openHome(profile) }
+        val list = column(Gravity.START).apply { setPadding(dp(22), dp(22), dp(22), dp(22)); background = glass(14) }
+        list.addView(text("Copy ${from.name}'s add-ons?", SERIF_TITLE, serif = true))
         list.addView(text("Personal ones (recommendations, Trakt, lists) are unticked: they're tied to ${from.name}'s history.",
-            BODY, color = MUTED).marginTop(12))
-        setWindowed(ScrollView(this).apply { addView(list) })
+            BODY, color = TEXT_3).marginTop(12))
+        val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(list) }
+        setWindowed(onboardingFrame("step 3 of 4", scroll,
+            column(Gravity.CENTER,
+                onboardingAvatar(profile.name.take(1).uppercase(), 100, profile.color),
+                text(profile.name, SERIF_TITLE, serif = true).marginTop(12),
+                text("Bring over the add-ons you share. Your history stays yours.", BODY, color = TEXT_2).marginTop(10)
+            ).apply { gravity = Gravity.CENTER }, dp(44), 1.2f, 0.8f), onboardingBackdrop())
 
         background({ Stremio.addons(from.authKey, refresh = true) to Stremio.addons(profile.authKey, refresh = true) }) { result ->
             val (theirs, mine) = result.getOrElse {
-                list.addView(text("Couldn't load addons: ${it.message}", BODY).marginTop(24))
-                list.addView(onboardingButton("Skip").apply { setOnClickListener { openHome(profile) } }.also { it.requestFocus() })
+                list.addView(text("Couldn't load add-ons. Check the TV's connection.", BODY).marginTop(24))
+                list.addView(chip("Skip").apply { setOnClickListener { showWatchly(profile, emptyList()) } }.also { it.requestFocus() })
                 return@background
             }
             // Stremio's built-ins (Cinemeta and co.) are on every account already, so they aren't offered.
@@ -445,19 +647,23 @@ class ProfilesActivity : Screen() {
                 CheckBox(this).apply {
                     text = addon.name
                     textSize = BODY
-                    setTextColor(Color.WHITE)
-                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                    setTextColor(TEXT)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(TEXT)
                     minHeight = dp(44)
                     setPadding(dp(12), 0, dp(12), 0)
-                    rowFocus(8) { has -> buttonTintList = android.content.res.ColorStateList.valueOf(if (has) INK else Color.WHITE) }
+                    rowFocus(8) { has -> buttonTintList = android.content.res.ColorStateList.valueOf(if (has) TUNGSTEN else TEXT) }
                     isChecked = !isPersonal(addon)
                     tag = addon
                 }
             }
             boxes.forEach { list.addView(it, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) }) }
-            val copy = onboardingButton("Copy addons")
-            val skip = onboardingButton("Skip")
-            list.addView(LinearLayout(this).apply { addView(copy); addView(skip) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(32) })
+            val copy = onboardingButton("Copy add-ons")
+            val skip = chip("Skip")
+            list.addView(LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(copy)
+                addView(skip, wrap().apply { marginStart = dp(9) })
+            }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(25) })
             copy.requestFocus()
             skip.setOnClickListener { showWatchly(profile, theirs) }
             copy.setOnClickListener {
@@ -485,24 +691,39 @@ class ProfilesActivity : Screen() {
 
     /** Watchly is per person: the new profile sets up its own, connected to its own Stremio account. */
     private fun showWatchly(profile: Profile, sourceAddons: List<Addon>) {
+        backTo = { openHome(profile) }
         val watchly = sourceAddons.firstOrNull { it.name.contains("watchly", ignoreCase = true) }
-            ?: return openHome(profile)
+            ?: return showReady(profile)
         val configure = Uri.parse(watchly.transportUrl).let { "${it.scheme}://${it.authority}/configure" }
-        val qr = ImageView(this).apply { setImageBitmap(qrBitmap(configure, dp(260))) }
+        val qr = ImageView(this).apply { setImageBitmap(qrBitmap(configure, dp(220))) }
         val done = onboardingButton("Continue to Alder").apply { setOnClickListener { openHome(profile) } }
         val steps = column(Gravity.START,
-            text("Recommendations for ${profile.name}", DISPLAY, bold = true),
+            text("Recommendations for ${profile.name}", SERIF_TITLE, bold = true, serif = true),
             text("1.  Scan with ${profile.name}'s phone to open Watchly\n" +
                 "2.  Connect ${profile.name}'s Stremio account there\n" +
                 "3.  Install it to ${profile.name}'s Stremio account\n\n" +
-                "${profile.name}'s own \"Top Picks\" then show up on Home. You can finish this later.", BODY, color = MUTED).marginTop(16),
+                "${profile.name}'s own \"Top Picks\" then show up on Home. You can finish this later.", BODY, color = TEXT_3).marginTop(16),
             done.marginTop(32),
         )
-        setWindowed(LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            addView(qr, LinearLayout.LayoutParams(dp(260), dp(260)).apply { marginEnd = dp(56) })
-            addView(steps)
-        })
+        setWindowed(onboardingFrame("step 4 of 4", column(Gravity.CENTER,
+            qr.apply { background = rounded(TEXT, 12) },
+            text(profile.name, BODY, bold = true).marginTop(12)
+        ).apply { gravity = Gravity.CENTER; setPadding(dp(22), dp(22), dp(22), dp(22)); background = glass(14) },
+            steps, dp(52), 0.9f, 1.1f), onboardingBackdrop())
+        done.requestFocus()
+    }
+
+    private fun showReady(profile: Profile) {
+        backTo = { openHome(profile) }
+        val done = onboardingButton("Continue to Alder").apply { setOnClickListener { openHome(profile) } }
+        setWindowed(onboardingFrame("step 4 of 4", column(Gravity.CENTER,
+            onboardingAvatar(profile.name.take(1).uppercase(), 100, profile.color),
+            text(profile.name, SERIF_TITLE, serif = true).marginTop(12)
+        ).apply { gravity = Gravity.CENTER }, column(Gravity.START,
+            text("You're all set", 40f, serif = true),
+            text("${profile.name}'s profile is ready. You can add more add-ons later in Settings.", BODY, color = TEXT_2).marginTop(12),
+            done.marginTop(24)
+        ).apply { gravity = Gravity.CENTER_VERTICAL }, dp(55), 0.9f, 1.1f), onboardingBackdrop())
         done.requestFocus()
     }
 
@@ -512,12 +733,24 @@ class ProfilesActivity : Screen() {
         val n = m.size + 8
         val px = maxOf(1, maxPx / n)
         val bmp = Bitmap.createBitmap(n * px, n * px, Bitmap.Config.RGB_565)
-        bmp.eraseColor(Color.WHITE)
+        bmp.eraseColor(TEXT)
         val canvas = Canvas(bmp)
-        val paint = Paint().apply { color = Color.BLACK }
+        val paint = Paint().apply { color = BASE }
         for (r in m.indices) for (c in m.indices) if (m[r][c]) {
             canvas.drawRect(((c + 4) * px).toFloat(), ((r + 4) * px).toFloat(), ((c + 5) * px).toFloat(), ((r + 5) * px).toFloat(), paint)
         }
         return bmp
     }
+
+    private companion object {
+        const val LIFT_ROOM = 8 // dp above the portraits for the focused one's 10% lift and ring
+        const val WORDMARK = 22f // sp, "Alder" top left, the mock's size
+        const val KEY_H = 25 // dp a key row on the name step, so Continue fits under the colours
+    }
+}
+
+internal fun profileLastLabel(name: String?, videoId: String?): String {
+    val title = name?.takeIf { it.isNotBlank() } ?: return ""
+    val parts = videoId?.split(":").orEmpty()
+    return if (parts.size >= 3) "$title · S${parts[parts.size - 2]} E${parts.last()}" else title
 }

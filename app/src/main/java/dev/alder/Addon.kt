@@ -49,17 +49,16 @@ class Addon(val descriptor: JSONObject) {
         return type in types && (prefixes == null || prefixes.any { id.startsWith(it) })
     }
 
-    // Catalogs and details are kept on disk as they arrive; the saved* versions read last time's answer, no network.
-    fun catalog(c: Catalog): List<Meta> = get(true, "catalog", c.type, c.id).optJSONArray("metas").objects().map(::Meta)
+    // Catalogs (one [genre] of them with Stremio's `genre` extra) and details are kept on disk as they arrive; the saved*
+    // versions read last time's answer, no network.
+    fun catalog(c: Catalog, genre: String? = null): List<Meta> = get(true, *catalogPath(c, genre)).optJSONArray("metas").objects().map(::Meta)
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
     fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
 
-    /** One genre of a catalog (Stremio's `genre` extra); not kept on disk. */
-    fun catalog(c: Catalog, genre: String): List<Meta> =
-        get(false, "catalog", c.type, c.id, "genre=$genre").optJSONArray("metas").objects().map(::Meta)
+    fun savedCatalog(c: Catalog, genre: String? = null): List<Meta>? = saved(*catalogPath(c, genre))?.optJSONArray("metas")?.objects()?.map(::Meta)
 
-    fun savedCatalog(c: Catalog): List<Meta>? = saved("catalog", c.type, c.id)?.optJSONArray("metas")?.objects()?.map(::Meta)
+    private fun catalogPath(c: Catalog, genre: String?) = listOfNotNull("catalog", c.type, c.id, genre?.let { "genre=$it" }).toTypedArray()
 
     /** The addon's first advertised search catalog for each title type. */
     fun search(query: String): List<Meta> {
@@ -129,17 +128,19 @@ class Meta(json: JSONObject) {
     /** The title as artwork (AIOMetadata and Cinemeta provide it), shown instead of plain text when present. */
     val logo = json.text("logo")
     val description = json.text("description")
-    val year = json.text("releaseInfo")
-    val runtime = json.text("runtime")
+    val year = json.text("releaseInfo")?.trimEnd('–', '-', ' ') // "2026–" (still running) reads as 2026 everywhere
+    val runtime = json.text("runtime")?.let(::runtime)
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)
+    val cast = json.optJSONArray("cast").strings()
     val info = listOfNotNull(year, runtime, genres.joinToString(" · ").ifEmpty { null }).joinToString("   ")
 
     /** Episodes in play order: by season then episode, specials (season 0) last. */
     val videos: List<Video> = json.optJSONArray("videos").objects()
         .map {
             Video(it.getString("id"), it.text("title") ?: it.text("name") ?: "", it.optInt("season"), it.optInt("episode"),
-                it.text("thumbnail"), it.text("overview") ?: it.text("description"))
+                it.text("thumbnail"), it.text("overview") ?: it.text("description"),
+                it.text("released") ?: it.text("available"))
         }
         .sortedWith(compareBy({ if (it.season == 0) Int.MAX_VALUE else it.season }, { it.episode }))
 }
@@ -158,7 +159,8 @@ class Subtitle(val url: String, val lang: String, val addon: String) {
     val local: Boolean get() = Locale.getDefault().let { lang == it.language || runCatching { lang == it.isO3Language }.getOrDefault(false) }
 }
 
-class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?, val overview: String?)
+class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?,
+            val overview: String?, val released: String?)
 
 class Stream(
     val title: String, val description: String, val url: String, val headers: Map<String, String>,
@@ -180,13 +182,39 @@ class Stream(
         Regex("2160|\\b4k\\b|\\buhd\\b").containsMatchIn(words) -> 2160
         "1080" in words -> 1080
         "720" in words -> 720
+        "576" in words -> 576
+        "480" in words -> 480
         else -> 0
     }
     val isHdr get() = hdr || dolbyVision
-    private val dolbyVision = Regex("\\b(dv|dovi|dolby.?vision)\\b").containsMatchIn(words)
-    private val hdr = Regex("\\bhdr|\\bp8\\b|hybrid").containsMatchIn(words) // P8 and hybrid DV carry an HDR10 base
+    val dolbyVision = Regex("\\b(dv|dovi|dolby.?vision)\\b").containsMatchIn(words)
+    val hdr = Regex("\\bhdr|\\bp8\\b|hybrid").containsMatchIn(words) // P8 and hybrid DV carry an HDR10 base
     private val hevc = Regex("hevc|[xh].?265").containsMatchIn(words)
     private val av1 = Regex("\\bav1\\b").containsMatchIn(words)
+
+    // The release type and extras, for Settings' stream preferences.
+    val remux = Regex("\\bremux\\b").containsMatchIn(words)
+    val bluray = !remux && Regex("blu.?ray|\\bbd.?rip|\\bbr.?rip").containsMatchIn(words)
+    val web = Regex("web.?(dl|rip)|\\bweb\\b").containsMatchIn(words)
+    /** Filmed in a cinema or a screener: never picked. */
+    val cam = Regex("\\b(cam|camrip|hdcam|ts|hdts|telesync|tc|telecine|scr|screener|dvdscr)\\b").containsMatchIn(words)
+    private val threeD = Regex("\\b3d\\b").containsMatchIn(words)
+    private val hardSubs = Regex("\\bhc\\b|hardcoded|hardsub").containsMatchIn(words)
+    /** 3D or subtitles burnt into the picture: picked last. */
+    val awkward get() = threeD || hardSubs
+    val bigAudio = Regex("atmos|truehd|dts.?hd|dts.?x\\b").containsMatchIn(words) // what a receiver gains from
+    val multiAudio = Regex("\\b(multi|dual)\\b").containsMatchIn(words)
+    val dubbed = Regex("\\bdub(bed)?\\b").containsMatchIn(words)
+    /** Whether the names mention this language ("hindi" for "hi"). */
+    fun mentions(language: String) = Locale(language).getDisplayLanguage(Locale.ENGLISH).lowercase().let { it.length > 2 && it in words }
+
+    /** Short tags for the source list: "REMUX · DV · Atmos". */
+    val tags get() = listOfNotNull(
+        "REMUX".takeIf { remux }, "BluRay".takeIf { bluray }, "WEB".takeIf { web && !remux && !bluray },
+        "DV".takeIf { dolbyVision }, "HDR".takeIf { hdr }, "Atmos".takeIf { "atmos" in words },
+        "TrueHD".takeIf { "truehd" in words }, "DTS-HD".takeIf { Regex("dts.?hd").containsMatchIn(words) },
+        "Multi audio".takeIf { multiAudio }, "Dub".takeIf { dubbed }, "3D".takeIf { threeD }, "Hard subs".takeIf { hardSubs },
+    )
 
     /**
      * Whether this TV can decode it at all. Dolby Vision without an HDR10 base named (profile 5, common on web
@@ -234,4 +262,13 @@ fun JSONArray?.objects(): List<JSONObject> = items().filterIsInstance<JSONObject
 fun JSONArray?.strings(): List<String> = items().filterIsInstance<String>()
 
 /** The string at [key], or null when it's missing, JSON null or blank (optString would return "null" for JSON null). */
+/** "147 min" reads "2h 27m" as on the mock; under an hour, and anything not in minutes, stays as the addon wrote it. */
+internal fun runtime(text: String): String {
+    // "147 min", or "2h35min" / "2h 35m" as some addons write it.
+    val hm = Regex("""^(\d+)\s*h\s*(\d+)\s*m(in)?$""").find(text.trim())?.groupValues
+    val minutes = hm?.let { it[1].toInt() * 60 + it[2].toInt() }
+        ?: Regex("""^(\d+)\s*min""").find(text.trim())?.groupValues?.get(1)?.toIntOrNull() ?: return text
+    return if (minutes < 60) "$minutes min" else "${minutes / 60}h %02dm".format(minutes % 60)
+}
+
 fun JSONObject.text(key: String): String? = if (isNull(key)) null else optString(key).ifBlank { null }

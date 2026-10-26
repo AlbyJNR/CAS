@@ -15,12 +15,16 @@ import java.util.concurrent.TimeUnit
 
 /** Posters and backgrounds: downloaded off the main thread, scaled down to the size shown, kept in memory. */
 object Images {
-    // Hardware bitmaps live in graphics memory, not the Java heap; the heap limit only scales the budget to the device.
-    // A third (64 MB on the test TV) holds a few full-screen arts and a couple of pages of posters, so switching
-    // pages shows them from memory. At a sixteenth one art pushed out nearly every poster, and nothing was ever found here.
-    private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 3).toInt()) {
+    // Hardware bitmaps live in graphics memory, not the Java heap; the heap limit (192 MB on the test TV) only scales
+    // the budget to the device, so switching pages shows them from memory. Full-screen art (8 MB a picture at 1080p) has a store of its own: sharing one, a few arts pushed out every poster,
+    // so a page seen a moment ago drew blank tiles again. Posters: a quarter (48 MB here, about three pages); art: a
+    // sixth (32 MB, the art on screen, the one fading out and the neighbours fetched ahead).
+    private fun store(budget: Long) = object : LruCache<String, Bitmap>(budget.toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
+    private val cards = store(Runtime.getRuntime().maxMemory() / 4)
+    private val screens = store(Runtime.getRuntime().maxMemory() / 6)
+    private fun cache(widthPx: Int) = if (widthPx > 1000) screens else cards
     // Home asks only for posters near the screen and lets far ones go, so this pool and cache stay small.
     private val pool = newestFirst(8)
     // The picture on screen right now (the full-screen art, a logo) skips the queue of cards loading behind it.
@@ -60,7 +64,7 @@ object Images {
         into.tag = url
         into.setImageDrawable(null)
         val key = key(url, widthPx, look)
-        cache.get(key)?.let { into.setImageBitmap(it); done?.invoke(); return }
+        cache(widthPx).get(key)?.let { into.setImageBitmap(it); done?.invoke(); return }
         (if (urgent) urgentPool else pool).execute {
             if (into.tag != url) return@execute // the view moved on (scrolled away, another title) while this waited
             val bitmap = bitmap(url, widthPx, look)
@@ -77,7 +81,7 @@ object Images {
      * for the picture about to fill the screen (Home's first title at launch).
      */
     fun prefetch(url: String?, widthPx: Int, urgent: Boolean = false, look: Look? = null) {
-        if (cache.get(key(url ?: return, widthPx, look)) != null) return
+        if (cache(widthPx).get(key(url ?: return, widthPx, look)) != null) return
         (if (urgent) urgentPool else aheadPool).execute { bitmap(url, widthPx, look) }
     }
 
@@ -95,19 +99,19 @@ object Images {
      */
     private fun bitmap(url: String, widthPx: Int, look: Look? = null): Bitmap? {
         val key = key(url, widthPx, look)
-        cache.get(key)?.let { return it }
+        cache(widthPx).get(key)?.let { return it }
         val mine = FutureTask {
             runCatching {
                 val bytes = Http.bytes(sized(url, widthPx))
                 if (look == null) decode(bytes, widthPx) else decode(bytes, widthPx, Bitmap.Config.ARGB_8888)?.let(look.paint)
-            }.getOrNull()?.also { cache.put(key, it) }
+            }.getOrNull()?.also { cache(widthPx).put(key, it) }
         }
         val task = inFlight.putIfAbsent(key, mine) ?: mine
         if (task === mine) try { mine.run() } finally { inFlight.remove(key) }
         return runCatching { task.get() }.getOrNull()
     }
 
-    fun cached(url: String, widthPx: Int, look: Look? = null) = cache.get(key(url, widthPx, look)) != null
+    fun cached(url: String, widthPx: Int, look: Look? = null) = cache(widthPx).get(key(url, widthPx, look)) != null
 
     /**
      * [src] frosted for glass, as Plume does it: shrunk to [w] px wide and box-blurred twice. Works on every Android

@@ -37,7 +37,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // -PdebugKey: an optimised build that installs over a debug one on a test TV (same key, data kept).
+            signingConfig = signingConfigs.findByName("release")?.takeUnless { project.hasProperty("debugKey") }
+                ?: signingConfigs.getByName("debug")
         }
     }
 }
