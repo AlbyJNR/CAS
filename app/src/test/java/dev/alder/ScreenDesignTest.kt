@@ -80,4 +80,10 @@ class ScreenDesignTest {
         assertEquals(listOf(" DUNE ", "dune", "Dune Part Two", "Arrival", "Dune Messiah"),
             exactSearchFirst(titles, "Dune") { it })
     }
+
+    @Test fun episodeDateUsesOnlyValidAvailableDates() {
+        assertEquals("25 Sep 2013", episodeDate("2013-09-25T00:00:00.000Z"))
+        assertEquals(null, episodeDate("2013-02-30"))
+        assertEquals(null, episodeDate(null))
+    }
 }

@@ -201,11 +201,7 @@ class SettingsActivity : Screen() {
     /** A bright film (a white kitchen) sits lower than the mock's 75%, so the glass and rows stay readable over it. */
     private fun dimForBrightness() {
         val bitmap = (scene.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return
-        // Decoded art is a hardware bitmap, which can't be read: read a small software copy of it.
-        val pixels = runCatching {
-            val sample = android.graphics.Bitmap.createScaledBitmap(bitmap, 16, 9, true).copy(android.graphics.Bitmap.Config.ARGB_8888, false)
-            IntArray(16 * 9).also { sample.getPixels(it, 0, 16, 0, 0, 16, 9); sample.recycle() }
-        }.getOrNull() ?: return
+        val pixels = samplePixels(bitmap, 16, 9) ?: return
         scene.alpha = if (brightLeft(pixels, 16)) 0.5f else 0.75f
     }
 

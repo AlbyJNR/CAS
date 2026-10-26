@@ -157,13 +157,10 @@ class MainActivity : Screen() {
         val dw = src.width * scale
         val dh = src.height * scale
         canvas.drawBitmap(src, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
-        val sample = Bitmap.createScaledBitmap(src, 16, 24, true)
-        val pixels = IntArray(16 * 24)
-        sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
-        if (sample !== src) sample.recycle()
+        val bright = samplePixels(src, 16, 24)?.let { brightLeft(it, 16) } ?: false
         val shade = Paint().apply {
             shader = LinearGradient(0f, 0f, w * 0.55f, 0f,
-                if (brightLeft(pixels, 16)) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+                if (bright) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
         }
         canvas.drawRect(0f, 0f, w * 0.55f, h.toFloat(), shade)
         shade.shader = LinearGradient(0f, h.toFloat(), 0f, h * 0.55f, 0xF70E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)

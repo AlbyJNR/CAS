@@ -132,13 +132,15 @@ class Meta(json: JSONObject) {
     val runtime = json.text("runtime")?.let(::runtime)
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)
+    val cast = json.optJSONArray("cast").strings()
     val info = listOfNotNull(year, runtime, genres.joinToString(" · ").ifEmpty { null }).joinToString("   ")
 
     /** Episodes in play order: by season then episode, specials (season 0) last. */
     val videos: List<Video> = json.optJSONArray("videos").objects()
         .map {
             Video(it.getString("id"), it.text("title") ?: it.text("name") ?: "", it.optInt("season"), it.optInt("episode"),
-                it.text("thumbnail"), it.text("overview") ?: it.text("description"))
+                it.text("thumbnail"), it.text("overview") ?: it.text("description"),
+                it.text("released") ?: it.text("available"))
         }
         .sortedWith(compareBy({ if (it.season == 0) Int.MAX_VALUE else it.season }, { it.episode }))
 }
@@ -157,7 +159,8 @@ class Subtitle(val url: String, val lang: String, val addon: String) {
     val local: Boolean get() = Locale.getDefault().let { lang == it.language || runCatching { lang == it.isO3Language }.getOrDefault(false) }
 }
 
-class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?, val overview: String?)
+class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?,
+            val overview: String?, val released: String?)
 
 class Stream(
     val title: String, val description: String, val url: String, val headers: Map<String, String>,

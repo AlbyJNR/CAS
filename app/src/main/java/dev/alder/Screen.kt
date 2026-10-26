@@ -71,6 +71,17 @@ internal fun filmGlow(pixels: IntArray): Int {
     return (0x8C shl 24) or ((red * scale).toInt() shl 16) or ((green * scale).toInt() shl 8) or (blue * scale).toInt()
 }
 
+/**
+ * A [w] x [h] copy of [src]'s pixels, or null. Decoded art is often a hardware bitmap, which can't be read: scaling
+ * keeps it hardware, so the small copy is moved to software before reading. Every pixel sample goes through here.
+ */
+internal fun samplePixels(src: Bitmap, w: Int, h: Int): IntArray? = runCatching {
+    val small = Bitmap.createScaledBitmap(src, w, h, true)
+    val soft = if (small.config == Bitmap.Config.HARDWARE) small.copy(Bitmap.Config.ARGB_8888, false) else small
+    IntArray(w * h).also { soft.getPixels(it, 0, w, 0, 0, w, h) }
+        .also { if (small !== src) small.recycle(); if (soft !== small) soft.recycle() }
+}.getOrNull()
+
 internal fun brightLeft(pixels: IntArray, width: Int): Boolean {
     require(width > 0 && pixels.isNotEmpty() && pixels.size % width == 0)
     val left = maxOf(1, width / 2)
@@ -153,12 +164,11 @@ abstract class Screen : Activity() {
         val art = (windowArt?.drawable as? BitmapDrawable)?.bitmap ?: return
         if (art === shadeSource) return
         shadeSource = art
-        val sample = Bitmap.createScaledBitmap(art, 16, 24, true)
-        val pixels = IntArray(16 * 24)
-        sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
-        if (sample !== art) sample.recycle()
+        val pixels = samplePixels(art, 16, 24) ?: return
+        // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
         windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(if (brightLeft(pixels, 16)) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+            if (brightLeft(pixels, 16)) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
+            else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
     }
 
     /** Sharp film art fills the screen; shade stays behind text and the bottom row. */
@@ -351,13 +361,8 @@ abstract class Screen : Activity() {
         if (on && android.os.Build.VERSION.SDK_INT >= 28) {
             val poster = posterBitmap(this)
             outlineSpotShadowColor = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
-                ?: runCatching {
-                    val sample = Bitmap.createScaledBitmap(poster, 16, 24, true)
-                    val pixels = IntArray(16 * 24)
-                    sample.getPixels(pixels, 0, 16, 0, 0, 16, 24)
-                    if (sample !== poster) sample.recycle()
-                    filmGlow(pixels).also { glowCache[this] = poster to it }
-                }.getOrDefault(TUNGSTEN_GLOW)
+                ?: samplePixels(poster, 16, 24)?.let { filmGlow(it).also { glow -> glowCache[this] = poster to glow } }
+                ?: TUNGSTEN_GLOW
         }
         animate().scaleX(if (on) CARD_GROW else 1f).scaleY(if (on) CARD_GROW else 1f)
             .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(150).start()
