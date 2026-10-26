@@ -52,7 +52,8 @@ class ScreenDesignTest {
         assertEquals("2h 27m", runtime("147 min"))
         assertEquals("1h 05m", runtime("65 min"))
         assertEquals("45 min", runtime("45 min"))
-        assertEquals("1h 30min", runtime("1h 30min"))
+        assertEquals("1h 30m", runtime("1h 30min"))
+        assertEquals("2h 35m", runtime("2h35min"))
     }
 
     @Test fun addonStatusIsNotATitle() {
@@ -72,5 +73,11 @@ class ScreenDesignTest {
         assertEquals(3, nextSettingIndex(-1, 4, -1))
         assertEquals(0, nextSettingIndex(3, 4, 1))
         assertEquals(3, nextSettingIndex(0, 4, -1))
+    }
+
+    @Test fun searchMovesExactTitlesFirstWithoutReorderingTheRest() {
+        val titles = listOf("Dune Part Two", "Arrival", " DUNE ", "Dune Messiah", "dune")
+        assertEquals(listOf(" DUNE ", "dune", "Dune Part Two", "Arrival", "Dune Messiah"),
+            exactSearchFirst(titles, "Dune") { it })
     }
 }

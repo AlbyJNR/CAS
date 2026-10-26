@@ -259,7 +259,10 @@ fun JSONArray?.strings(): List<String> = items().filterIsInstance<String>()
 /** The string at [key], or null when it's missing, JSON null or blank (optString would return "null" for JSON null). */
 /** "147 min" reads "2h 27m" as on the mock; under an hour, and anything not in minutes, stays as the addon wrote it. */
 internal fun runtime(text: String): String {
-    val minutes = Regex("""^(\d+)\s*min""").find(text.trim())?.groupValues?.get(1)?.toIntOrNull() ?: return text
+    // "147 min", or "2h35min" / "2h 35m" as some addons write it.
+    val hm = Regex("""^(\d+)\s*h\s*(\d+)\s*m(in)?$""").find(text.trim())?.groupValues
+    val minutes = hm?.let { it[1].toInt() * 60 + it[2].toInt() }
+        ?: Regex("""^(\d+)\s*min""").find(text.trim())?.groupValues?.get(1)?.toIntOrNull() ?: return text
     return if (minutes < 60) "$minutes min" else "${minutes / 60}h %02dm".format(minutes % 60)
 }
 

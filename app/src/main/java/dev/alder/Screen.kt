@@ -278,6 +278,14 @@ abstract class Screen : Activity() {
         background = glassOver(this, 16)
     }
 
+    /** The IMDb tag beside a rating, as tall as the letters. */
+    protected fun imdbTag() = text("IMDb", SMALL, bold = true, color = BASE).apply {
+        background = rounded(TUNGSTEN, 3)
+        includeFontPadding = false
+        setLineSpacing(0f, 1f)
+        setPadding(dp(4), dp(1), dp(4), dp(1))
+    }
+
     /** Null animates loading; for countdowns set progress to fraction × max as time changes. */
     protected fun ring(fraction: Float? = null): ProgressBar = object : ProgressBar(this) {
         private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -366,10 +374,12 @@ abstract class Screen : Activity() {
      * Frosted glass, as the episode list draws it: the art behind, blurred, seen through a rounded pane under the
      * glass tint. A background for [host] (pills, the top bar, panels); without a [backdrop] it's the plain tint.
      */
-    protected fun glassOver(host: View, radiusDp: Int): Drawable {
+    /** [shade]: how much of the screen's own shade lies over the art there (0..1), so glass over a shaded part of the art
+     *  is as dark as the art around it instead of a milky patch of the unshaded picture. */
+    protected fun glassOver(host: View, radiusDp: Int, shade: Float = 0f): Drawable {
         val behind = backdrop ?: return glass(radiusDp)
         frostHosts += host
-        return Frost(host, behind, dp(radiusDp).toFloat())
+        return Frost(host, behind, dp(radiusDp).toFloat(), shade)
     }
 
     /** The art behind changed: glass redraws with the new picture once it's blurred. */
@@ -388,7 +398,8 @@ abstract class Screen : Activity() {
         return frostBitmap
     }
 
-    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float) : Drawable() {
+    private inner class Frost(private val host: View, private val behind: ImageView, private val radius: Float,
+                              private val shade: Float = 0f) : Drawable() {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val tint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS }
         private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GLASS_EDGE; style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat() }
@@ -414,6 +425,7 @@ abstract class Screen : Activity() {
                 if (behind.alpha < 1f) canvas.drawColor(BASE)
                 paint.alpha = (behind.alpha * 255).toInt()
                 canvas.drawBitmap(f, null, Rect(0, 0, d?.intrinsicWidth ?: f.width, d?.intrinsicHeight ?: f.height), paint)
+                if (shade > 0f) canvas.drawColor(Color.argb((shade * 255).toInt(), 14, 12, 10))
                 canvas.restore()
             }
             canvas.drawPath(path, tint)

@@ -338,8 +338,14 @@ class MainActivity : Screen() {
             rows.filter { it.active && (now == null || !isInside(now, it.view)) }.forEach { it.light(false) }
             if (mode == Mode.CINEMA) chrome() // the top bar shows only while the remote is on it
         }
-        showPage(Page.HOME)
+        showPage(Page.entries.firstOrNull { it.label == intent.getStringExtra("page") } ?: Page.HOME)
         main.postDelayed(::warmPages, WARM_AFTER)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Page.entries.firstOrNull { it.label == intent.getStringExtra("page") }?.let(::showPage)
     }
 
     /**
@@ -749,13 +755,7 @@ class MainActivity : Screen() {
         heroLogo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START; maxHeight = dp(55) }
         heroFacts = text("", SMALL, color = TEXT_2).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         // A small tag, as tall as the letters: SMALL's leading and font padding made it a block twice the mock's.
-        heroRating = text("IMDb", SMALL, bold = true, color = BASE).apply {
-            background = rounded(TUNGSTEN, 3)
-            includeFontPadding = false
-            setLineSpacing(0f, 1f)
-            setPadding(dp(4), dp(1), dp(4), dp(1))
-            visibility = View.GONE
-        }
+        heroRating = imdbTag().apply { visibility = View.GONE }
         heroScore = text("", SMALL, color = TEXT_2).onArt().apply { visibility = View.GONE }
         heroAdded = text("", SMALL, color = TEXT_3).onArt().apply { visibility = View.GONE }
         heroAbout = text("", BODY, color = TEXT).onArt().apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
