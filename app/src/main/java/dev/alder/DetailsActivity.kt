@@ -62,6 +62,7 @@ class DetailsActivity : Screen() {
     private var meta: Meta? = null
     private var item: JSONObject? = null // the title's library item: progress and whether it's in My List
     private var itemChangedHere = false
+    private var similarRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,14 +89,14 @@ class DetailsActivity : Screen() {
 
         fun show(m: Meta) {
             meta = m
-            val art = m?.background ?: initialArt ?: poster
+            val art = m.background ?: initialArt ?: poster
             if (heroArt.tag != art) Images.load(art, heroArt, artWidth, urgent = true) {
                 heroArt.animate().alpha(1f).setDuration(250).start()
                 refrost()
             }
             showHero(m)
             if (type == "series" && m.videos.isNotEmpty()) buildGuide(m.videos)
-            if (type == "movie") loadSimilar()
+            if (type == "movie" && !similarRequested) { similarRequested = true; loadSimilar() }
         }
         background({
             val addon = (Stremio.savedAddons(key) ?: Stremio.addons(key))

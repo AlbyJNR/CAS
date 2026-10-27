@@ -50,6 +50,7 @@ object Profiles {
         }
         edit.apply()
         Settings.forget(context, id)
+        context.getSharedPreferences("search", Context.MODE_PRIVATE).edit().remove("recent:$id").apply()
     }
 
     /** One owner's configured stream add-on, used only on this TV; watch progress still uses the active account. */

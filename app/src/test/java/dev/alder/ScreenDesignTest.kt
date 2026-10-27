@@ -40,6 +40,14 @@ class ScreenDesignTest {
             catalogGenres(listOf("Western", "Comedy", "All", "Drama", "Sci-Fi", "drama")))
     }
 
+    @Test fun genreStripWaitsForAllRowsAndKeepsOnlyRowsWithTitles() {
+        val names = listOf("Drama", "Comedy", "Sci-Fi")
+        assertEquals(null, settledGenres(names, mapOf("Drama" to true, "Comedy" to false)))
+        assertEquals(listOf("Drama", "Sci-Fi"), settledGenres(names,
+            mapOf("Drama" to true, "Comedy" to false, "Sci-Fi" to true)))
+        assertEquals(emptyList<String>(), settledGenres(names, names.associateWith { false }))
+    }
+
     @Test fun catalogRowsHaveShortNames() {
         assertEquals("For you", shortRowName("Top Picks for You"))
         assertEquals("Popular", shortRowName("Trending Now"))
@@ -69,6 +77,12 @@ class ScreenDesignTest {
         assertEquals(4, listRowCount(24, 6))
     }
 
+    @Test fun catalogsContinueAfterTheFirstTwentyInSmallBatches() {
+        assertEquals(4, nextCatalogSection(37, 0))
+        assertEquals(8, nextCatalogSection(37, 4))
+        assertEquals(37, nextCatalogSection(37, 36))
+    }
+
     @Test fun settingsChoicesWrapAndCustomStartsAtTheEndForLeft() {
         assertEquals(0, nextSettingIndex(-1, 4, 1))
         assertEquals(3, nextSettingIndex(-1, 4, -1))
@@ -82,6 +96,13 @@ class ScreenDesignTest {
             rankSearchTitles(titles, "Dune") { it })
         assertEquals(listOf("Amelie", "Amélie Returns", "Arrival"),
             rankSearchTitles(listOf("Arrival", "Amélie Returns", "Amelie"), "Amélie") { it })
+    }
+
+    @Test fun partialSearchAnswersKeepAddonOrder() {
+        val answers = arrayOf<List<String>?>(null, listOf("later"))
+        assertEquals(listOf("later"), searchAnswersInAddonOrder(answers))
+        answers[0] = listOf("first")
+        assertEquals(listOf("first", "later"), searchAnswersInAddonOrder(answers))
     }
 
     @Test fun episodeDateUsesOnlyValidAvailableDates() {
@@ -108,6 +129,16 @@ class ScreenDesignTest {
         assertEquals("BluRay · HEVC · 5.1", sourceSummary(stream))
         assertEquals("405 MB", sourceSize(stream.size))
         assertEquals(480, Stream("480p", "", "https://example.invalid/low", emptyMap(), 175_000_000L, null, null).height)
+    }
+
+    @Test fun sourceSelectionKeepsAddonOrderUntilItsShortWaitEnds() {
+        val first = Stream("first", "", "https://example.invalid/first", emptyMap(), 0, null, null)
+        val later = Stream("later", "", "https://example.invalid/later", emptyMap(), 0, null, null)
+        val answers = arrayOf<List<Stream>?>(null, listOf(later))
+        assertEquals(emptyList<Stream>(), readyStreams(answers, false))
+        assertEquals(listOf(later), readyStreams(answers, true))
+        answers[0] = listOf(first)
+        assertEquals(listOf(first, later), readyStreams(answers, false))
     }
 
     @Test fun profilePickerShowsTheLastEpisodeWithoutInventingOneForMovies() {

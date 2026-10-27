@@ -58,7 +58,8 @@ class Addon(val descriptor: JSONObject) {
 
     // Catalogs (one [genre] of them with Stremio's `genre` extra) and details are kept on disk as they arrive; the saved*
     // versions read last time's answer, no network.
-    fun catalog(c: Catalog, genre: String? = null): List<Meta> = get(true, *catalogPath(c, genre)).optJSONArray("metas").objects().map(::Meta)
+    fun catalog(c: Catalog, genre: String? = null, timeoutMs: Int = 20_000): List<Meta> =
+        JSONObject(Http.get(url(catalogPath(c, genre)), true, timeoutMs)).optJSONArray("metas").objects().map(::Meta)
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
     fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
@@ -90,13 +91,14 @@ class Addon(val descriptor: JSONObject) {
         val deadline = System.currentTimeMillis() + 5_000
         val answers = mutableListOf<Pair<Int, List<Meta>>>()
         var succeeded = false
-        repeat(catalogs.size) {
-            val finished = completion.poll((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
-                ?: return@repeat
-            val (index, result) = finished.get()
-            result.getOrNull()?.let { succeeded = true; answers += index to it }
-        }
-        pending.forEach { it.cancel(true) }
+        try {
+            repeat(catalogs.size) {
+                val finished = completion.poll((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+                    ?: return@repeat
+                val (index, result) = finished.get()
+                result.getOrNull()?.let { succeeded = true; answers += index to it }
+            }
+        } finally { pending.forEach { it.cancel(true) } }
         if (catalogs.isNotEmpty() && !succeeded) throw IOException("Search catalog unavailable")
         return answers.sortedBy { it.first }.flatMap { it.second }
     }

@@ -17,6 +17,9 @@ import java.util.Locale
 
 // Finds the sources for one video. Normally it picks one and hands the player a short list to fall back on, so Play
 // is one click; with "pick" (held OK on Play, or after three sources failed) it lists them all.
+internal fun readyStreams(answers: Array<List<Stream>?>, allowGaps: Boolean): List<Stream> =
+    (if (allowGaps) answers.asList() else answers.takeWhile { it != null }).flatMap { it.orEmpty() }
+
 class StreamsActivity : Screen() {
     private val pick by lazy { intent.getBooleanExtra("pick", false) || Settings.alwaysList(this) }
 
@@ -142,6 +145,7 @@ class StreamsActivity : Screen() {
             val answers = arrayOfNulls<List<Stream>>(addons.size)
             var started = false
             var listed = false
+            var waitingForEarlier = false
             fun showList() {
                 listed = true
                 val available = addons.flatMapIndexed { i, addon -> answers[i].orEmpty()
@@ -163,11 +167,10 @@ class StreamsActivity : Screen() {
                 }
             }
 
-            // One click: as soon as every addon above the first one with something playable has answered, the best of
-            // what's in goes to the player, so a slow addon further down the list doesn't hold Play up.
-            fun tryStart() {
+            // Keep add-on order when earlier ones answer promptly; after 800 ms, a playable later answer can start.
+            fun tryStart(allowGaps: Boolean = false) {
                 if (started || pick || listed) return
-                val ready = answers.takeWhile { it != null }.flatMap { it!! }
+                val ready = readyStreams(answers, allowGaps)
                 val best = rank(ready.filter { it.isVideo && it.playableOn(tv) && wanted(it) }, videoId)
                 if (best.isEmpty() && answers.any { it == null }) return
                 if (best.isEmpty()) return showList()
@@ -182,7 +185,13 @@ class StreamsActivity : Screen() {
                     answers[i] = streams.getOrDefault(emptyList())
                     if (answers.all { it != null }) {
                         if (pick || listed) showList() else tryStart()
-                    } else if (!pick) tryStart()
+                    } else if (!pick) {
+                        tryStart()
+                        if (!started && !waitingForEarlier && readyStreams(answers, true).any { it.isVideo && it.playableOn(tv) && wanted(it) }) {
+                            waitingForEarlier = true
+                            main.postDelayed({ tryStart(allowGaps = true) }, 800)
+                        }
+                    }
                 }
             }
         }

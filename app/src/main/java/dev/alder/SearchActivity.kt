@@ -27,8 +27,7 @@ import android.widget.TextClock
 import android.widget.TextView
 import java.util.Locale
 import java.text.Normalizer
-import java.util.concurrent.ExecutorCompletionService
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.Future
 
 /** More complete title matches lead; ties retain the installed add-ons' order. */
 internal fun <T> rankSearchTitles(items: List<T>, query: String, title: (T) -> String): List<T> {
@@ -47,6 +46,8 @@ internal fun <T> rankSearchTitles(items: List<T>, query: String, title: (T) -> S
         }
     }
 }
+
+internal fun <T> searchAnswersInAddonOrder(answers: Array<List<T>?>): List<T> = answers.filterNotNull().flatten()
 
 /** House Lights search: remote keyboard on the left, focused title and poster rows on the right. */
 class SearchActivity : Screen() {
@@ -75,8 +76,8 @@ class SearchActivity : Screen() {
     private var firstResult: View? = null
     private var focused: Meta? = null
     private var numeric = false
-    private var nativeKeyboard = false
     private var request = 0
+    private val searchTasks = mutableListOf<Future<*>>()
     private val typed = Runnable { search(false) }
     override val backdrop get() = art
 
@@ -155,8 +156,6 @@ class SearchActivity : Screen() {
             field.background = if (has) glass(17, true) else fieldRest
             placeCursor()
             if (!has) {
-                nativeKeyboard = false
-                input.showSoftInputOnFocus = false
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
             }
         }
@@ -213,6 +212,8 @@ class SearchActivity : Screen() {
                 placeCursor()
                 clear.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                 ++request
+                searchTasks.forEach { it.cancel(true) }
+                searchTasks.clear()
                 main.removeCallbacks(typed)
                 main.postDelayed(typed, TYPING_PAUSE)
             }
@@ -330,9 +331,9 @@ class SearchActivity : Screen() {
         val last = keyRow()
         val speech = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         val canSpeak = speech.resolveActivity(packageManager) != null
-        key("SPACE", last, if (canSpeak) 2 else 4, false) { append(" ") }
+        key("SPACE", last, if (canSpeak) 4 else 6, !canSpeak) { append(" ") }
         if (canSpeak) {
-            key("", last, 2, false) {
+            key("", last, 2, true) {
                 runCatching {
                     startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -344,12 +345,6 @@ class SearchActivity : Screen() {
                     setTint(TUNGSTEN); setBounds(0, 0, dp(13), dp(17))
                 }, null, null)
             }
-        }
-        key("⌨", last, 2, true) {
-            nativeKeyboard = true
-            input.showSoftInputOnFocus = true
-            input.requestFocus()
-            input.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         }
     }
 
@@ -412,14 +407,12 @@ class SearchActivity : Screen() {
                     if ((lastKeyboardFocus ?: firstKey)?.requestFocus() == true) return true
                 }
             }
-            if (!nativeKeyboard) {
-                if (event.keyCode == KeyEvent.KEYCODE_DEL) { delete(); return true }
-                if (event.keyCode == KeyEvent.KEYCODE_SPACE) { append(" "); return true }
-                val char = event.unicodeChar.takeIf { it in 32..126 }?.toChar()
-                if (char != null && !event.isCtrlPressed && !event.isAltPressed) {
-                    append(char.toString())
-                    return true
-                }
+            if (event.keyCode == KeyEvent.KEYCODE_DEL) { delete(); return true }
+            if (event.keyCode == KeyEvent.KEYCODE_SPACE) { append(" "); return true }
+            val char = event.unicodeChar.takeIf { it in 32..126 }?.toChar()
+            if (char != null && !event.isCtrlPressed && !event.isAltPressed) {
+                append(char.toString())
+                return true
             }
         }
         return super.dispatchKeyEvent(event)
@@ -437,12 +430,14 @@ class SearchActivity : Screen() {
         search(false)
     }
 
-    private fun recent() = getSharedPreferences("search", MODE_PRIVATE).getString("recent", "").orEmpty()
+    private fun recentKey() = "recent:${Profiles.active(this)?.id.orEmpty()}"
+
+    private fun recent() = getSharedPreferences("search", MODE_PRIVATE).getString(recentKey(), "").orEmpty()
         .split("\n").filter { it.isNotBlank() }
 
     private fun remember(query: String) {
         val values = (listOf(query) + recent().filterNot { it.equals(query, ignoreCase = true) }).take(RECENT)
-        getSharedPreferences("search", MODE_PRIVATE).edit().putString("recent", values.joinToString("\n")).apply()
+        getSharedPreferences("search", MODE_PRIVATE).edit().putString(recentKey(), values.joinToString("\n")).apply()
         showRecent()
     }
 
@@ -470,7 +465,7 @@ class SearchActivity : Screen() {
                         choose("Remove recent search?", listOf("Remove $query", "Cancel")) { picked ->
                             if (picked == 0) {
                                 getSharedPreferences("search", MODE_PRIVATE).edit()
-                                    .putString("recent", recent().filterNot { it == query }.joinToString("\n")).apply()
+                                    .putString(recentKey(), recent().filterNot { it == query }.joinToString("\n")).apply()
                                 showRecent()
                             }
                         }
@@ -487,6 +482,8 @@ class SearchActivity : Screen() {
     private fun search(moveFocus: Boolean) {
         val query = input.text.toString().trim()
         val token = ++request
+        searchTasks.forEach { it.cancel(true) }
+        searchTasks.clear()
         firstResult = null
         cards.clear()
         focused = null
@@ -516,39 +513,61 @@ class SearchActivity : Screen() {
             }
             return
         }
-        background({
-            var failed = false
-            val completion = ExecutorCompletionService<Pair<Int, Result<List<Meta>>>>(searchPool)
-            val key = authKey.orEmpty()
-            val addons = Stremio.savedAddons(key) ?: Stremio.addons(key)
-            val deadline = System.currentTimeMillis() + SEARCH_WAIT
-            val pending = addons.mapIndexed { index, addon -> completion.submit { index to runCatching { addon.search(query) } } }
-            val answers = mutableListOf<Pair<Int, List<Meta>>>()
-            repeat(addons.size) {
-                val completed = completion.poll((deadline - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
-                    ?: return@repeat
-                val (index, result) = completed.get()
-                result.onFailure { failed = true }.getOrNull()?.let { answers += index to it }
-            }
-            pending.forEach { it.cancel(true) }
-            val found = answers.sortedBy { it.first }.flatMap { it.second }
-                .filter { it.type == "movie" || it.type == "series" }
-                .filterNot { isAddonMessage(it.name) }
-                .distinctBy { it.type to it.id }
-            val ranked = rankSearchTitles(found, query) { it.name }
-            linkedMapOf("Movies" to ranked.filter { it.type == "movie" }.take(PER_TYPE),
-                "Shows" to ranked.filter { it.type == "series" }.take(PER_TYPE)).filterValues { it.isNotEmpty() } to failed
-        }) { answer ->
+        background({ Stremio.savedAddons(authKey.orEmpty()) ?: Stremio.addons(authKey.orEmpty()) }) { loaded ->
             if (token != request) return@background
-            val (sections, failed) = answer.getOrElse { emptyMap<String, List<Meta>>() to true }
-            if (sections.isEmpty() && failed) {
+            val addons = loaded.getOrElse {
                 results.removeAllViews()
                 results.addView(failed("Search is unavailable right now.") { search(false) })
-            } else render(sections, query, moveFocus)
+                return@background
+            }
+            val answers = arrayOfNulls<List<Meta>>(addons.size)
+            var completed = 0
+            var failedCount = 0
+            var finished = false
+            fun update(final: Boolean = false) {
+                if (token != request || finished) return
+                val found = searchAnswersInAddonOrder(answers)
+                    .filter { it.type == "movie" || it.type == "series" }
+                    .filterNot { isAddonMessage(it.name) }
+                    .distinctBy { it.type to it.id }
+                val ranked = rankSearchTitles(found, query) { it.name }
+                val sections = linkedMapOf("Movies" to ranked.filter { it.type == "movie" }.take(PER_TYPE),
+                    "Shows" to ranked.filter { it.type == "series" }.take(PER_TYPE)).filterValues { it.isNotEmpty() }
+                if (sections.isNotEmpty()) render(sections, query, moveFocus && (final || completed == addons.size))
+                else if (final || completed == addons.size) {
+                    results.removeAllViews()
+                    results.addView(if (failedCount == completed && (completed > 0 || final))
+                        failed("Search is unavailable right now.") { search(false) }
+                    else text("No matches · Try a shorter title", BODY, color = TEXT_2))
+                    resultCount.text = ""
+                }
+            }
+            if (addons.isEmpty()) { update(true); return@background }
+            main.postDelayed({ if (token == request) { update(true); finished = true } }, SEARCH_WAIT)
+            addons.forEachIndexed { index, addon ->
+                searchTasks += searchPool.submit {
+                    val answer = runCatching { addon.search(query) }
+                    main.post {
+                        if (isDestroyed || token != request || finished) return@post
+                        completed++
+                        answer.fold({ answers[index] = it }) { failedCount++ }
+                        update()
+                        if (completed == addons.size) finished = true
+                    }
+                }
+            }
         }
     }
 
+    override fun onDestroy() {
+        searchTasks.forEach { it.cancel(true) }
+        super.onDestroy()
+    }
+
     private fun render(sections: Map<String, List<Meta>>, query: String, moveFocus: Boolean) {
+        val selected = (currentFocus?.tag as? String)?.takeIf { resultsScroll.hasFocus() }
+        cards.clear()
+        firstResult = null
         results.removeAllViews()
         val total = sections.values.sumOf { it.size }
         resultCount.text = if (total == 0 || query.isEmpty()) "" else if (total == 1) "1 title" else "$total titles" // not for Popular
@@ -600,13 +619,15 @@ class SearchActivity : Screen() {
             results.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(28) })
         }
         sections.values.firstOrNull()?.firstOrNull()?.let(::show)
-        if (moveFocus) firstResult?.requestFocus()
+        if (selected != null) (cards.firstOrNull { it.first.tag == selected }?.first ?: firstResult)?.requestFocus()
+        else if (moveFocus) firstResult?.requestFocus()
     }
 
     private fun card(meta: Meta, caption: TextView, scroller: HorizontalScrollView, firstInRow: Boolean): View {
         val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(BASE) }
         val shade = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0.5f }
         val card = FrameLayout(this).apply {
+            tag = "${meta.type}:${meta.id}"
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) =
                     outline.setRoundRect(0, 0, view.width, view.height, dp(6).toFloat())
