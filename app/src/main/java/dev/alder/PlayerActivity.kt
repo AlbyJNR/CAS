@@ -50,6 +50,7 @@ import kotlin.math.roundToInt
 
 internal fun lowerSourceHeight(height: Int): Int? = listOf(1080, 720, 480).firstOrNull { it < height }
 internal fun upNextWindow(durationMs: Long) = minOf(60_000L, maxOf(30_000L, durationMs / 25))
+internal fun plausibleEpisode(durationMs: Long) = durationMs >= 2 * 60_000L
 
 // ExoPlayer with our own controls (buildControls) and audio/subtitle panel (openOptions). Resumes where Stremio says you stopped and
 // writes progress back to the account, so Continue Watching matches on every device.
@@ -245,7 +246,13 @@ class PlayerActivity : Screen() {
 
             override fun onPlaybackStateChanged(state: Int) {
                 // At the real end the next episode starts, unless the viewer chose to watch the credits.
-                if (state == Player.STATE_ENDED) if (nextVideo() != null && !upNextDismissed) playNext() else finish()
+                if (state == Player.STATE_ENDED) {
+                    // shortcut: sub-two-minute series streams are treated as addon placeholders; revisit for short-form shows.
+                    if (type == "series" && !plausibleEpisode(player.duration)) {
+                        started = false // retry from the original resume point, not the placeholder's short ending
+                        next("source ended as a short placeholder")
+                    } else if (nextVideo() != null && !upNextDismissed) playNext() else finish()
+                }
                 if (state == Player.STATE_BUFFERING) showLoading(if (started) "Loading" else startMessage ?: "Starting · ${sources[at].label}")
                 if (state == Player.STATE_READY && started) hideLoading()
                 // A seek buffers too; only stalls in plain playback count.
@@ -479,6 +486,7 @@ class PlayerActivity : Screen() {
     private fun record() {
         // Nothing is saved until a picture shows: a source that never starts would otherwise reset the resume point.
         if (!started || player.isCurrentMediaItemLive) return // live TV has no progress to keep
+        if (type == "series" && !plausibleEpisode(player.duration)) return
         val item = item ?: return
         val position = player.currentPosition
         val duration = player.duration.takeIf { it > 0 } ?: return
@@ -573,6 +581,7 @@ class PlayerActivity : Screen() {
     }
 
     private fun showUpNext() {
+        if (type == "series" && !plausibleEpisode(player.duration)) return
         val next = nextVideo() ?: return
         if (offeringLower) dismissStall()
         if (shown) hideControls(force = true)
@@ -1196,7 +1205,7 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(skipTask)
         main.removeCallbacks(loadingTask)
         player.pause()
-        if (!watched || player.isCurrentMediaItemLive) return // nothing played, or live: the account keeps what it had
+        if (!watched || player.isCurrentMediaItemLive || type == "series" && !plausibleEpisode(player.duration)) return
         record()
         // The player's own episode list first: Home's Resume passes no next episode when the title's details weren't in
         // yet, and a finished episode with no next one drops the title out of Continue Watching.

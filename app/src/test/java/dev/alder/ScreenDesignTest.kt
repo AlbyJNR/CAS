@@ -83,6 +83,19 @@ class ScreenDesignTest {
         assertEquals(37, nextCatalogSection(37, 36))
     }
 
+    @Test fun catalogAnswersAreNotReusedAfterTheirSourceChanges() {
+        val first = catalogAnswerKey("Shows", "Popular", null, listOf("addon-a/series/popular"))
+        assertEquals(first, catalogAnswerKey("Shows", "Popular", null, listOf("addon-a/series/popular")))
+        assertEquals(false, first == catalogAnswerKey("Shows", "Popular", null, listOf("addon-b/series/popular")))
+        assertEquals(false, first == catalogAnswerKey("Shows", "Popular", "Drama", listOf("addon-a/series/popular")))
+    }
+
+    @Test fun shortEpisodePlaceholdersCannotAdvanceTheSeries() {
+        assertEquals(false, plausibleEpisode(30_000L))
+        assertEquals(false, plausibleEpisode(119_999L))
+        assertEquals(true, plausibleEpisode(120_000L))
+    }
+
     @Test fun settingsChoicesWrapAndCustomStartsAtTheEndForLeft() {
         assertEquals(0, nextSettingIndex(-1, 4, 1))
         assertEquals(3, nextSettingIndex(-1, 4, -1))

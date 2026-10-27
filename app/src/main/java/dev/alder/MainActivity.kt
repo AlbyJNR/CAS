@@ -87,6 +87,9 @@ internal fun listRowCount(titles: Int, columns: Int) = (titles + columns - 1) / 
 
 internal fun nextCatalogSection(total: Int, loaded: Int) = minOf(total, loaded + 4)
 
+internal fun catalogAnswerKey(page: String, title: String, genre: String?, sources: List<String>) =
+    (listOf(page, title, genre.orEmpty()) + sources).joinToString("\u0000")
+
 // Home for the profile in use, built to feel like a cinema rather than a catalogue. The whole screen is one title's
 // art: sharp where nothing sits on it, with light shading behind text and cards.
 //  - Browse (every page, Home opening on Continue Watching): one row of wide 16:9 art cards along the bottom, the
@@ -115,7 +118,7 @@ class MainActivity : Screen() {
     private val Page.isCatalog get() = this == Page.SHOWS || this == Page.MOVIES
     private var mode = Mode.BROWSE
     private var library: List<JSONObject> = emptyList()
-    // ponytail: every row's answers this session, by page and row name; unbounded, but a few hundred titles per page.
+    // ponytail: row answers this session, including their catalogs; unbounded, but a few hundred titles per page.
     private val answers = java.util.concurrent.ConcurrentHashMap<String, List<Pair<List<Meta>, Boolean>>>()
     private var genre: String? = null
     private var jumpTo: String? = null // a chip's row that wasn't made yet when OK was pressed
@@ -393,7 +396,9 @@ class MainActivity : Screen() {
         for (p in listOf(Page.SHOWS, Page.MOVIES)) {
             val shelves = catalogs.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it } }.sortedBy { it.second.rank }
             sections(p, shelves).forEachIndexed { i, (title, sources, picked) ->
-                val key = p.label + "|" + title
+                val key = catalogAnswerKey(p.label, title, picked, sources.map { (c, _) ->
+                    "${c.addon.transportUrl}/${c.type}/${c.id}"
+                })
                 if (answers.containsKey(key)) return@forEachIndexed
                 val kept = sources.map { (c, _) -> (c.addon.savedCatalog(c, picked) ?: return@forEachIndexed) to true }
                 answers.putIfAbsent(key, kept)
@@ -1107,7 +1112,9 @@ class MainActivity : Screen() {
                 if (p.isCatalog && genres.any { it.equals(title, true) } && title !in genreNames) genreNames += title
                 val rowCatalogs = sources.map { it.first }
                 val slot = slot()
-                val key = p.label + "|" + title
+                val key = catalogAnswerKey(p.label, title, picked, rowCatalogs.map { c ->
+                    "${c.addon.transportUrl}/${c.type}/${c.id}"
+                })
                 val sourceAnswers = arrayOfNulls<Pair<List<Meta>, Boolean>>(rowCatalogs.size)
                 var completed = 0
                 var reported = false
