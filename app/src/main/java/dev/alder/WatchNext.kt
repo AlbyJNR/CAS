@@ -22,6 +22,7 @@ object WatchNext {
             while (c.moveToNext()) resolver.delete(TvContract.buildWatchNextProgramUri(c.getLong(0)), null, null)
         }
         if (locked) return@runCatching
+        val logoUri = "android.resource://${context.packageName}/drawable/logo_transparent"
         items.take(MAX).forEach { item ->
             val state = item.optJSONObject("state") ?: JSONObject()
             val series = item.optString("type") == "series"
@@ -53,6 +54,7 @@ object WatchNext {
                 put(WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS, lastWatched(state))
                 put(WatchNextPrograms.COLUMN_INTERNAL_PROVIDER_ID, item.optString("_id"))
                 put(WatchNextPrograms.COLUMN_INTENT_URI, open.toUri(Intent.URI_INTENT_SCHEME))
+                put(WatchNextPrograms.COLUMN_LOGO_URI, logoUri)
             })
         }
     }.onFailure { android.util.Log.w("Alder", "Watch Next not updated", it) }

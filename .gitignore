@@ -13,3 +13,5 @@ CLAUDE.md
 SPEC.md
 /*.png
 /alder-tv-*
+hs_err_pid*.log
+replay_pid*.log
