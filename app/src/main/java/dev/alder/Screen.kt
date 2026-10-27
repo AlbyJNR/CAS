@@ -113,6 +113,15 @@ abstract class Screen : Activity() {
         super.onDestroy()
     }
 
+    /** Downloads [release] and hands it to Android's installer, which asks to confirm and restarts Alder. */
+    protected fun installUpdate(release: Updates.Release) {
+        if (!Updates.canInstall(this)) return
+        android.widget.Toast.makeText(this, "Downloading Alder ${release.version}…", android.widget.Toast.LENGTH_LONG).show()
+        background({ Updates.install(applicationContext, release) }) { r ->
+            if (r.isFailure) choose("Couldn't download the update", listOf("OK"), "Check the TV's connection and try again from Settings › About.") {}
+        }
+    }
+
     /** Runs [work] off the main thread and hands its result back on it, unless the screen is gone. */
     protected fun <T> background(work: () -> T, done: (Result<T>) -> Unit) {
         pool.execute {
@@ -292,7 +301,7 @@ abstract class Screen : Activity() {
         minHeight = dp(CHIP_H)
         setPadding(dp(16), 0, dp(16), 0)
         background = glass(CHIP_H / 2)
-        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has); v.grow(has).start() }
+        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has); v.grow(has, CHIP_GROW).start() }
     }
 
     /** A [chip]'s open state: the tungsten dot and full-strength words. */
@@ -563,6 +572,7 @@ abstract class Screen : Activity() {
         const val BUTTON_H = 34
         const val CHIP_H = 24 // the mocks' 46–48 px chips
         const val CARD_GROW = 1.08f
+        const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
         const val CARD_LIFT = 8
         // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
         // the focused card to grow), and above a heading, so each heading belongs to the row under it.

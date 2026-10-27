@@ -61,6 +61,7 @@ class DetailsActivity : Screen() {
     private var episodeRows = emptyList<View>()
     private var meta: Meta? = null
     private var item: JSONObject? = null // the title's library item: progress and whether it's in My List
+    private var itemChangedHere = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,21 +86,37 @@ class DetailsActivity : Screen() {
 
         (initialArt ?: poster)?.let { Images.load(it, heroArt, artWidth, urgent = true) { heroArt.alpha = 1f; refrost() } }
 
-        background({
-            val m = Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.meta(type, metaId)
-            m to runCatching { Stremio.library(key, listOf(metaId)).firstOrNull() }.getOrNull()
-        }) { result ->
-            val (m, libraryItem) = result.getOrElse { null to null }
+        fun show(m: Meta) {
             meta = m
-            item = libraryItem
             val art = m?.background ?: initialArt ?: poster
             if (heroArt.tag != art) Images.load(art, heroArt, artWidth, urgent = true) {
                 heroArt.animate().alpha(1f).setDuration(250).start()
                 refrost()
             }
             showHero(m)
-            if (m != null && type == "series" && m.videos.isNotEmpty()) buildGuide(m.videos)
-            if (m != null && type == "movie") loadSimilar()
+            if (type == "series" && m.videos.isNotEmpty()) buildGuide(m.videos)
+            if (type == "movie") loadSimilar()
+        }
+        background({
+            val addon = (Stremio.savedAddons(key) ?: Stremio.addons(key))
+                .firstOrNull { it.serves("meta", type, metaId) }
+            addon?.savedMeta(type, metaId) to Stremio.savedLibrary(key)?.firstOrNull { it.optString("_id") == metaId }
+        }) { result ->
+            result.getOrNull()?.let { (saved, libraryItem) ->
+                if (!itemChangedHere && item == null) item = libraryItem
+                if (meta == null) saved?.let(::show)
+            }
+        }
+        background({ Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.meta(type, metaId) }) { result ->
+            val fresh = result.getOrNull()
+            if (fresh != null) show(fresh)
+            else if (meta == null) showHero(null)
+        }
+        background({ Stremio.library(key, listOf(metaId)).firstOrNull() }) { result ->
+            if (!itemChangedHere) {
+                item = result.getOrNull() ?: item
+                if (meta != null) showHero(meta)
+            }
         }
     }
 
@@ -222,6 +239,7 @@ class DetailsActivity : Screen() {
     }
 
     private fun toggleList() {
+        itemChangedHere = true
         val entry = item ?: Library.newItem(metaId, type, meta?.name ?: name, meta?.poster ?: poster)
         Library.setInList(entry, !Library.inList(item))
         item = entry
@@ -341,7 +359,7 @@ class DetailsActivity : Screen() {
                     seasonButtons[season]?.requestFocus()
                 }
                 seasonStrip.addView(this, LinearLayout.LayoutParams(-2, dp(24)).apply {
-                    if (seasonStrip.childCount > 0) marginStart = dp(5)
+                    if (seasonStrip.childCount > 0) marginStart = dp(8)
                 })
             }
         }

@@ -410,6 +410,11 @@ class MainActivity : Screen() {
     override fun onResume() {
         super.onResume()
         // ponytail: idle dim and the cinema screensaver are off (2026-10-26, not wanted yet); post `idle` here to bring the cinema back.
+        if (Updates.due(this)) background({ Updates.latest(applicationContext) }) { r ->
+            val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) } ?: return@background
+            if (Updates.offerOnce(this, release.version)) choose("Alder ${release.version} is ready", listOf("Later", "Install"),
+                "Install it now? It takes a minute, and your profiles and settings stay.") { if (it == 1) installUpdate(release) }
+        }
     }
 
     override fun onPause() {

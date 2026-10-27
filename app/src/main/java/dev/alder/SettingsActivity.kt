@@ -341,9 +341,24 @@ class SettingsActivity : Screen() {
                     if (choice == 1) (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
                 }
             }
-            Group.ABOUT -> actionRow("Alder", "Version " + packageManager.getPackageInfo(packageName, 0).versionName,
-                "Alder is a TV interface for your Stremio account.") {
-                choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
+            Group.ABOUT -> {
+                actionRow("Alder", "Version " + Updates.mine(this),
+                    "Alder is a TV interface for your Stremio account.") {
+                    choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
+                }
+                var found: Updates.Release? = null
+                val value = actionRow("Updates", "Checking…", "New versions come from Alder's releases on GitHub.") {
+                    found?.let(::installUpdate) ?: showGroup(Group.ABOUT)
+                }
+                background({ Updates.latest(applicationContext) }) { r ->
+                    val release = r.getOrNull()
+                    found = release?.takeIf { newerVersion(it.version, Updates.mine(this)) }
+                    value.text = when {
+                        found != null -> "Install ${found!!.version}  ›"
+                        release == null -> "Couldn't check · Try again  ›"
+                        else -> "Up to date"
+                    }
+                }
             }
         }
     }
