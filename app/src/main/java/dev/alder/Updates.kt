@@ -25,12 +25,14 @@ object Updates {
     /** The newest release, or null if the check failed or it has no .apk. Blocks: run it off the main thread. */
     fun latest(c: Context): Release? = runCatching {
         val json = JSONObject(Http.get(LATEST, timeoutMs = 10_000))
-        val assets = json.getJSONArray("assets")
-        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-            .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url") ?: return null
-        Release(json.getString("tag_name").removePrefix("v"), apk).also {
-            prefs(c).edit().putLong("checked", System.currentTimeMillis()).apply()
+        // No release published yet: GitHub answers "Not Found", so nothing is newer than this version.
+        val release = if (json.optString("message") == "Not Found") Release(mine(c), "") else {
+            val assets = json.getJSONArray("assets")
+            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
+                .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url") ?: return null
+            Release(json.getString("tag_name").removePrefix("v"), apk)
         }
+        release.also { prefs(c).edit().putLong("checked", System.currentTimeMillis()).apply() }
     }.onFailure { android.util.Log.w("Alder", "update check failed: $it") }.getOrNull()
 
     /** A day since the last check: Home asks once a day, Settings whenever it's opened. */

@@ -24,7 +24,6 @@ class AddonsActivity : Screen() {
     private var addons: List<Addon> = emptyList()
 
     private val scene by lazy { ImageView(this).apply {
-        setImageResource(R.drawable.settings_scene)
         scaleType = ImageView.ScaleType.CENTER_CROP
         alpha = 0.75f
     } }
@@ -76,7 +75,7 @@ class AddonsActivity : Screen() {
         }, scene)
         val art = Profiles.active(this)?.let { getSharedPreferences("home", MODE_PRIVATE).getString("art:" + it.id, null) }
         if (art != null) Images.load(art, scene, metrics.widthPixels, urgent = true,
-            failed = { scene.setImageResource(R.drawable.settings_scene); refrost() }) { refrost() }
+            failed = { refrost() }) { refrost() }
         show(loading = true)
         load()
     }

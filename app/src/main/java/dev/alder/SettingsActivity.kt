@@ -99,12 +99,6 @@ class SettingsActivity : Screen() {
             listOf(true to "On", false to "Off")),
     )
 
-    private val scene by lazy { ImageView(this).apply {
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        setImageResource(R.drawable.settings_scene)
-        alpha = 0.75f
-    } }
-    override val backdrop get() = scene
     private lateinit var groups: LinearLayout
     private lateinit var detailRows: LinearLayout
     private lateinit var rowsScroll: ScrollView
@@ -128,11 +122,6 @@ class SettingsActivity : Screen() {
         val width = resources.displayMetrics.widthPixels / resources.displayMetrics.density
         val height = resources.displayMetrics.heightPixels / resources.displayMetrics.density
         val root = FrameLayout(this).apply { setBackgroundColor(BASE); clipChildren = false; clipToPadding = false }
-        root.addView(scene, FrameLayout.LayoutParams(-1, -1))
-        root.addView(View(this).apply {
-            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(0x660E0C0A, 0xB00E0C0A.toInt(), 0x990E0C0A.toInt()))
-        }, FrameLayout.LayoutParams(-1, -1))
 
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         avatar = text(Profiles.active(this)?.name?.take(1)?.uppercase() ?: "A", BODY, bold = true, color = TUNGSTEN).apply {
@@ -342,6 +331,9 @@ class SettingsActivity : Screen() {
                 }
             }
             Group.ABOUT -> {
+                detailRows.addView(brand(SERIF_TITLE), LinearLayout.LayoutParams(-2, -2).apply {
+                    marginStart = dp(12); bottomMargin = dp(14)
+                })
                 actionRow("Alder", "Version " + Updates.mine(this),
                     "Alder is a TV interface for your Stremio account.") {
                     choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
@@ -378,8 +370,6 @@ class SettingsActivity : Screen() {
         }
         val row = FrameLayout(this).apply {
             addView(line, FrameLayout.LayoutParams(-1, -1))
-            addView(View(this@SettingsActivity).apply { setBackgroundColor(GLASS_EDGE) },
-                FrameLayout.LayoutParams(-1, dp(1), Gravity.BOTTOM))
             rowFocus(9) { has ->
                 if (has) hint.text = help
                 elevation = if (has) dp(8).toFloat() else 0f

@@ -154,12 +154,6 @@ class ScreenDesignTest {
         assertEquals(listOf(first, later), readyStreams(answers, false))
     }
 
-    @Test fun profilePickerShowsTheLastEpisodeWithoutInventingOneForMovies() {
-        assertEquals("Modern Family · S5 E2", profileLastLabel("Modern Family", "tt1442437:5:2"))
-        assertEquals("Dune: Part Two", profileLastLabel("Dune: Part Two", "tt15239678"))
-        assertEquals("", profileLastLabel(null, null))
-    }
-
     @Test fun addonRowsUseShortNamesAndActualResources() {
         assertEquals("Watchly", addonShortName("Watchly | ElfHosted"))
         assertEquals("OpenSubtitles", addonShortName("OpenSubtitles v3"))

@@ -89,7 +89,9 @@ class ProfilesActivity : Screen() {
     // ---------- who's watching ----------
 
     private fun showPicker() {
-        backTo = null
+        // Opened from inside a profile (Switch profile, Manage profiles): Back returns to it instead of leaving Alder.
+        val current = Profiles.active(this)?.takeIf { intent.getBooleanExtra("pick", false) }
+        backTo = current?.let { { openHome(it) } }
         nameInput = null
         val generation = ++pickerGeneration
         val profiles = Profiles.all(this)
@@ -118,10 +120,7 @@ class ProfilesActivity : Screen() {
             else showArt(p, recent[p.id])
         }
         profiles.forEach { p ->
-            val last = text("", SMALL, color = TEXT_3).apply {
-                gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            tiles.addView(tile(p, last) { focus(p) }.apply {
+            tiles.addView(tile(p, null) { focus(p) }.apply {
                 setOnClickListener { enter(p) }
                 setOnLongClickListener { showMenu(p); true }
             }, LinearLayout.LayoutParams(dp(124), -2).apply { marginStart = dp(10); marginEnd = dp(10) })
@@ -134,7 +133,6 @@ class ProfilesActivity : Screen() {
                 if (generation != pickerGeneration) return@background
                 val item = result.getOrNull()
                 recent[p.id] = item
-                last.text = profileLastLabel(item?.text("name"), item?.optJSONObject("state")?.text("video_id"))
                 showArt(p, item)
             }
         }
@@ -143,8 +141,8 @@ class ProfilesActivity : Screen() {
                 LinearLayout.LayoutParams(dp(124), -2).apply { marginStart = dp(10); marginEnd = dp(10) })
         }
         val content = FrameLayout(this).apply {
-            addView(text("Alder", WORDMARK, serif = true).onArt(), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-                leftMargin = dp(PAD); topMargin = dp(35)
+            addView(brand(), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+                leftMargin = dp(PAD); topMargin = dp(31)
             })
             addView(TextClock(this@ProfilesActivity).apply {
                 format12Hour = "h:mm a"; format24Hour = "HH:mm"; textSize = SMALL; setTextColor(TEXT_2)
@@ -571,7 +569,7 @@ class ProfilesActivity : Screen() {
             addView(LinearLayout(this@ProfilesActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(PAD), dp(31), dp(PAD), 0)
-                addView(text("Alder", WORDMARK, serif = true), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(brand(), LinearLayout.LayoutParams(0, -2, 1f))
                 addView(text((if (total > 2) "New profile · " else "Welcome · ") + step, SMALL, color = TEXT_2))
                 repeat(total) { index -> addView(View(this@ProfilesActivity).apply {
                     background = GradientDrawable().apply {
@@ -742,13 +740,6 @@ class ProfilesActivity : Screen() {
 
     private companion object {
         const val LIFT_ROOM = 8 // dp above the portraits for the focused one's 10% lift and ring
-        const val WORDMARK = 22f // sp, "Alder" top left, the mock's size
         const val KEY_H = 25 // dp a key row on the name step, so Continue fits under the colours
     }
-}
-
-internal fun profileLastLabel(name: String?, videoId: String?): String {
-    val title = name?.takeIf { it.isNotBlank() } ?: return ""
-    val parts = videoId?.split(":").orEmpty()
-    return if (parts.size >= 3) "$title · S${parts[parts.size - 2]} E${parts.last()}" else title
 }
