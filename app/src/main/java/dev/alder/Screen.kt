@@ -113,6 +113,15 @@ abstract class Screen : Activity() {
         super.onDestroy()
     }
 
+    /** Downloads [release] and hands it to Android's installer, which asks to confirm and restarts Alder. */
+    protected fun installUpdate(release: Updates.Release) {
+        if (!Updates.canInstall(this)) return
+        android.widget.Toast.makeText(this, "Downloading Alder ${release.version}…", android.widget.Toast.LENGTH_LONG).show()
+        background({ Updates.install(applicationContext, release) }) { r ->
+            if (r.isFailure) choose("Couldn't download the update", listOf("OK"), "Check the TV's connection and try again from Settings › About.") {}
+        }
+    }
+
     /** Runs [work] off the main thread and hands its result back on it, unless the screen is gone. */
     protected fun <T> background(work: () -> T, done: (Result<T>) -> Unit) {
         pool.execute {
@@ -121,9 +130,8 @@ abstract class Screen : Activity() {
         }
     }
 
-    private val interMedium by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build() }
-    private val interSemiBold by lazy { Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build() }
-    private val instrumentSerif by lazy { Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf") }
+    // Read once for the whole app, not per screen: Inter alone is 870 KB, read twice, on the main thread.
+    private val fonts get() = loadedFonts ?: Fonts(applicationContext.assets).also { loadedFonts = it }
 
     /** Shared House Lights typography. */
     protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = TEXT, serif: Boolean = false) =
@@ -131,7 +139,7 @@ abstract class Screen : Activity() {
             text = value
             textSize = sp
             setTextColor(color)
-            typeface = if (serif) instrumentSerif else if (bold) interSemiBold else interMedium
+            typeface = if (serif) fonts.serif else if (bold) fonts.semiBold else fonts.medium
             LEADING[sp]?.let { lead ->
                 val want = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, lead, resources.displayMetrics)
                 setLineSpacing(want - paint.getFontMetricsInt(null), 1f)
@@ -160,15 +168,24 @@ abstract class Screen : Activity() {
     private var windowArt: ImageView? = null
     private var shadeSource: Bitmap? = null
 
+    /** The left shade is for text over bare art; a screen that puts its text on glass can lift it off the art. */
+    protected fun leftShade(on: Boolean) {
+        windowShade?.animate()?.alpha(if (on) 1f else 0f)?.setDuration(260)?.start()
+    }
+
     private fun updateWindowShade() {
         val art = (windowArt?.drawable as? BitmapDrawable)?.bitmap ?: return
         if (art === shadeSource) return
         shadeSource = art
-        val pixels = samplePixels(art, 16, 24) ?: return
-        // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
-        windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            if (brightLeft(pixels, 16)) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
-            else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+        // Sampled off the main thread: reading a hardware bitmap back from the GPU stalls it for several ms.
+        background({ samplePixels(art, 16, 24)?.let { brightLeft(it, 16) } }) { r ->
+            val bright = r.getOrNull() ?: return@background
+            if (art !== shadeSource) return@background
+            // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
+            windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                if (bright) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
+                else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+        }
     }
 
     /** Sharp film art fills the screen; shade stays behind text and the bottom row. */
@@ -211,12 +228,12 @@ abstract class Screen : Activity() {
 
     protected fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
 
-    /** House Lights' single glass recipe; focused controls add their own tungsten rim. */
+    /** House Lights' single glass recipe; focus brightens the face (no rim: dots are the only indicator). */
     protected fun glass(radiusDp: Int, focused: Boolean = false): Drawable {
         val face = GradientDrawable().apply {
             setColor(if (focused) GLASS_FOCUSED else GLASS)
             cornerRadius = dp(radiusDp).toFloat()
-            setStroke(dp(1), if (focused) TUNGSTEN else GLASS_EDGE)
+            setStroke(dp(1), GLASS_EDGE)
         }
         return LayerDrawable(arrayOf(face, Highlight(dp(radiusDp).toFloat())))
     }
@@ -238,7 +255,7 @@ abstract class Screen : Activity() {
         return shape.apply { op(lower, Path.Op.DIFFERENCE) }
     }
 
-    /** The warm-white primary action; focus adds the tungsten rim. */
+    /** The warm-white primary action; focus lifts and grows it. */
     protected fun pill(label: String, icon: Int = 0): TextView = text(label, SMALL, bold = true).apply {
         isFocusable = true
         gravity = Gravity.CENTER_VERTICAL
@@ -250,7 +267,6 @@ abstract class Screen : Activity() {
             background = GradientDrawable().apply {
                 setColor(TEXT)
                 cornerRadius = dp(BUTTON_H / 2).toFloat()
-                if (focused) setStroke(dp(2), TUNGSTEN)
             }
             setTextColor(BASE)
             compoundDrawablesRelative[0]?.setTint(BASE)
@@ -285,7 +301,7 @@ abstract class Screen : Activity() {
         minHeight = dp(CHIP_H)
         setPadding(dp(16), 0, dp(16), 0)
         background = glass(CHIP_H / 2)
-        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has) }
+        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has); v.grow(has, CHIP_GROW).start() }
     }
 
     /** A [chip]'s open state: the tungsten dot and full-strength words. */
@@ -367,7 +383,6 @@ abstract class Screen : Activity() {
             v.background = if (has) GradientDrawable().apply {
                 setColor(ROW_FOCUSED)
                 cornerRadius = dp(radiusDp).toFloat()
-                setStroke(dp(2), TUNGSTEN)
             } else rest()
             also(has)
         }
@@ -394,13 +409,17 @@ abstract class Screen : Activity() {
         foreground = if (on) GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
             cornerRadius = dp(radiusDp).toFloat()
-            setStroke(dp(2), TUNGSTEN)
+            setStroke(dp(1), TUNGSTEN_RIM) // a hairline: the glow and the lift carry focus
         } else null
         if (on && android.os.Build.VERSION.SDK_INT >= 28) {
             val poster = posterBitmap(this)
-            outlineSpotShadowColor = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
-                ?: samplePixels(poster, 16, 24)?.let { filmGlow(it).also { glow -> glowCache[this] = poster to glow } }
-                ?: TUNGSTEN_GLOW
+            val known = if (poster == null) TUNGSTEN_GLOW else glowCache[this]?.takeIf { it.first === poster }?.second
+            outlineSpotShadowColor = known ?: TUNGSTEN_GLOW
+            // Reading a poster's pixels back from the GPU took ~7 ms on the main thread per press: the glow is sampled
+            // off it and tints the shadow a moment later, while the lift is still growing.
+            if (known == null && poster != null) background({ samplePixels(poster, 16, 24)?.let(::filmGlow) }) { r ->
+                r.getOrNull()?.let { glow -> glowCache[this] = poster to glow; if (hasFocus()) outlineSpotShadowColor = glow }
+            }
         }
         grow(on)
             .translationZ(if (on) dp(CARD_LIFT).toFloat() else 0f).setDuration(150).start()
@@ -537,7 +556,14 @@ abstract class Screen : Activity() {
     }
 
     // House Lights' shared values. Screens keep their layout and content; the helpers above own component styling.
+    private class Fonts(assets: android.content.res.AssetManager) {
+        val medium: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build()
+        val semiBold: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build()
+        val serif: Typeface = Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf")
+    }
+
     companion object {
+        private var loadedFonts: Fonts? = null // main thread only
         const val PAD = 48
         const val TILE_RADIUS = 8
         const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges
@@ -546,6 +572,7 @@ abstract class Screen : Activity() {
         const val BUTTON_H = 34
         const val CHIP_H = 24 // the mocks' 46–48 px chips
         const val CARD_GROW = 1.08f
+        const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
         const val CARD_LIFT = 8
         // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
         // the focused card to grow), and above a heading, so each heading belongs to the row under it.
@@ -573,13 +600,14 @@ abstract class Screen : Activity() {
         const val TEXT_2 = 0xB8F3EEE6.toInt()
         const val TEXT_3 = 0x73F3EEE6
         const val TUNGSTEN = 0xFFF3D9B1.toInt()
+        const val TUNGSTEN_RIM = 0x99F3D9B1.toInt()
         const val TUNGSTEN_GLOW = 0x59F3D9B1
         const val GLASS = 0x4D28221C
-        const val GLASS_FOCUSED = 0x6628221C
+        const val GLASS_FOCUSED = 0x3DF3EEE6 // a lit face: with no rim, the fill alone carries focus
         const val GLASS_EDGE = 0x24FFF0DC
         const val GLASS_HIGHLIGHT = 0x4DFFF5E6
         const val ROW_FOCUSED = 0x29F3EEE6
-        const val PROGRESS_TRACK = 0x99000000.toInt()
+        const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
         private val pool = Executors.newFixedThreadPool(6)
     }
 }

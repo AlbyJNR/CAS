@@ -192,17 +192,6 @@ class SettingsActivity : Screen() {
         profileName.text = Profiles.active(this)?.name?.let { "Profile " + it } ?: ""
         showGroup(Group.STREAMS)
         groupViews[Group.STREAMS]?.post { groupViews[Group.STREAMS]?.requestFocus() }
-        val profile = Profiles.active(this)
-        val art = profile?.let { getSharedPreferences("home", MODE_PRIVATE).getString("art:" + it.id, null) }
-        if (art != null) Images.load(art, scene, resources.displayMetrics.widthPixels, urgent = true,
-            failed = { scene.setImageResource(R.drawable.settings_scene); refrost() }) { dimForBrightness(); refrost() }
-    }
-
-    /** A bright film (a white kitchen) sits lower than the mock's 75%, so the glass and rows stay readable over it. */
-    private fun dimForBrightness() {
-        val bitmap = (scene.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return
-        val pixels = samplePixels(bitmap, 16, 9) ?: return
-        scene.alpha = if (brightLeft(pixels, 16)) 0.5f else 0.75f
     }
 
     override fun onResume() {
@@ -293,9 +282,22 @@ class SettingsActivity : Screen() {
             Group.STREAMS -> {
                 presetRow()
                 streaming.forEach(::choiceRow)
-                actionRow("More filters", "", "Release groups, codecs and more are set in AIOStreams.") {
+                actionRow("Share my streaming source", "", "Let another profile use one of this profile's configured stream add-ons on this TV.") {
+                    shareStreamAddon()
+                }
+                Profiles.sharedStream(this)?.let { (owner, _) ->
+                    actionRow("Shared source in use", owner.name, "This profile uses a configured stream add-on from ${owner.name} on this TV.") {
+                        choose("Stop using ${owner.name}'s source?", listOf("Cancel", "Stop using")) { selected ->
+                            if (selected == 1) {
+                                Profiles.active(this)?.let { Profiles.clearSharedStream(this, it.id) }
+                                showGroup(Group.STREAMS)
+                            }
+                        }
+                    }
+                }
+                actionRow("More filters", "", "Release groups, codecs and more are set in your streaming add-on.") {
                     choose("More filters", listOf("OK"),
-                        "Release groups, codecs, languages and more are set in AIOStreams' settings on your phone or at web.stremio.com. This TV follows its order.") {}
+                        "Release groups, codecs, languages and more are set in your streaming add-on on your phone or at web.stremio.com. This TV follows its order.") {}
                 }
             }
             Group.PICTURE -> pictureAndSound.forEach(::choiceRow)
@@ -339,9 +341,24 @@ class SettingsActivity : Screen() {
                     if (choice == 1) (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData()
                 }
             }
-            Group.ABOUT -> actionRow("Alder", "Version " + packageManager.getPackageInfo(packageName, 0).versionName,
-                "Alder is a TV interface for your Stremio account.") {
-                choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
+            Group.ABOUT -> {
+                actionRow("Alder", "Version " + Updates.mine(this),
+                    "Alder is a TV interface for your Stremio account.") {
+                    choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
+                }
+                var found: Updates.Release? = null
+                val value = actionRow("Updates", "Checking…", "New versions come from Alder's releases on GitHub.") {
+                    found?.let(::installUpdate) ?: showGroup(Group.ABOUT)
+                }
+                background({ Updates.latest(applicationContext) }) { r ->
+                    val release = r.getOrNull()
+                    found = release?.takeIf { newerVersion(it.version, Updates.mine(this)) }
+                    value.text = when {
+                        found != null -> "Install ${found!!.version}  ›"
+                        release == null -> "Couldn't check · Try again  ›"
+                        else -> "Up to date"
+                    }
+                }
             }
         }
     }
@@ -380,6 +397,28 @@ class SettingsActivity : Screen() {
         val display = text(if (value.isEmpty()) "›" else "$value  ›", BODY, color = TEXT_2)
         settingRow(label, display, help, focus = { display.setTextColor(if (it) TUNGSTEN else TEXT_2) }, click = click)
         return display
+    }
+
+    private fun shareStreamAddon() {
+        val source = Profiles.active(this) ?: return
+        val recipients = Profiles.all(this).filter { it.id != source.id }
+        if (recipients.isEmpty()) return choose("Add another profile first", listOf("OK")) {}
+        background({ Stremio.addons(source.authKey).filter { !it.official && it.providesStreams && !it.personal } }) { answer ->
+            val addons = answer.getOrElse {
+                choose("Couldn't load stream add-ons", listOf("OK")) {}
+                return@background
+            }
+            if (addons.isEmpty()) return@background choose("No stream add-ons on ${source.name}", listOf("OK")) {}
+            choose("Choose a streaming source", addons.map { addonShortName(it.name) }) { picked ->
+                val addon = addons[picked]
+                choose("Share ${addonShortName(addon.name)} with", recipients.map { it.name },
+                    "The add-on stays in ${source.name}'s Stremio account. ${source.name}'s provider may record playback; watch history in Alder stays with the viewer.") { selected ->
+                    val recipient = recipients[selected]
+                    Profiles.shareStream(this, recipient.id, source.id, addon.id)
+                    choose("${recipient.name} can use ${addonShortName(addon.name)}", listOf("OK")) {}
+                }
+            }
+        }
     }
 
     private fun key(c: Choice) = if (c.perProfile) Settings.profileKey(this, c.key) else c.key

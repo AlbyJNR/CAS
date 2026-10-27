@@ -34,7 +34,8 @@ Alder has no add-on store of its own. Setting up add-ons is typing and web forms
 - **A profile for everyone.** Up to 5 profiles, each its own Stremio account with its own history and recommendations, and an optional PIN.
 - **Continue Watching on the Google TV home screen.** Jump straight back into a show without opening the app first.
 - **A cinematic interface.** Full-screen art, title logos and rows of posters, with everything else out of the way.
-- **The player you'd want.** Skip intro, Up next with autoplay, audio and subtitle choice in one panel, subtitles from add-ons like OpenSubtitles with size, background and timing controls, DTS and TrueHD audio, and frame-rate matching.
+- **The player you'd want.** Skip intro, Up next in the last minute (it plays on at the end unless you watch the credits), audio and subtitle choice in one panel, subtitles from add-ons like OpenSubtitles with size, background and timing controls, DTS and TrueHD audio, and frame-rate matching.
+- **Share a streaming source at home.** A profile can let another profile use one of its configured stream add-ons on this TV without merging their Stremio watch histories.
 - **Tidy add-ons from the sofa.** Reorder, remove, or add one by URL. Changes save to your Stremio account.
 
 ## How it compares

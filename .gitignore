@@ -11,3 +11,5 @@ keystore.properties
 design/
 CLAUDE.md
 SPEC.md
+/*.png
+/alder-tv-*
