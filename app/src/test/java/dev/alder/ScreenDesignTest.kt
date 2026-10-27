@@ -102,6 +102,16 @@ class ScreenDesignTest {
         assertEquals(480, Stream("480p", "", "https://example.invalid/low", emptyMap(), 175_000_000L, null, null).height)
     }
 
+    @Test fun sourceSelectionKeepsAddonOrderUntilItsShortWaitEnds() {
+        val first = Stream("first", "", "https://example.invalid/first", emptyMap(), 0, null, null)
+        val later = Stream("later", "", "https://example.invalid/later", emptyMap(), 0, null, null)
+        val answers = arrayOf<List<Stream>?>(null, listOf(later))
+        assertEquals(emptyList<Stream>(), readyStreams(answers, false))
+        assertEquals(listOf(later), readyStreams(answers, true))
+        answers[0] = listOf(first)
+        assertEquals(listOf(first, later), readyStreams(answers, false))
+    }
+
     @Test fun profilePickerShowsTheLastEpisodeWithoutInventingOneForMovies() {
         assertEquals("Modern Family · S5 E2", profileLastLabel("Modern Family", "tt1442437:5:2"))
         assertEquals("Dune: Part Two", profileLastLabel("Dune: Part Two", "tt15239678"))

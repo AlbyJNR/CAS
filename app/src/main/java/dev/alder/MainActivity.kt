@@ -342,7 +342,8 @@ class MainActivity : Screen() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        Page.entries.firstOrNull { it.label == intent.getStringExtra("page") }?.let(::showPage)
+        Page.entries.firstOrNull { it.label == intent.getStringExtra("page") }
+            ?.takeIf { it != page }?.let(::showPage)
     }
 
     /**
