@@ -198,10 +198,11 @@ class StreamsActivity : Screen() {
     }
 
     /**
-     * The order to try sources in: the file played last time for this video (debrid links expire, so the link is fresh
-     * but the release is the same), then the release the previous episode used (AIOStreams' bingeGroup), then the
-     * addon's own order, with releases above the screen's resolution or HDR on a screen without it moved down, 3D and
-     * hard-coded subtitles last, and then Settings' stream preferences. The sort is stable, so ties keep the addon's order.
+     * The order to try sources in: when the player asked for a lower quality, the tallest that's left first; then the
+     * file played last time for this video (debrid links expire, so the link is fresh but the release is the same), then
+     * the release the previous episode used (AIOStreams' bingeGroup), then the addon's own order, with releases above the
+     * screen's resolution or HDR on a screen without it moved down, 3D and hard-coded subtitles last, and then Settings'
+     * stream preferences. The sort is stable, so ties keep the addon's order.
      */
     private fun rank(streams: List<Stream>, videoId: String): List<Stream> {
         val prefs = getSharedPreferences("sources", MODE_PRIVATE)
@@ -209,7 +210,9 @@ class StreamsActivity : Screen() {
         val binge = prefs.getString("binge:${intent.getStringExtra("id")}", null)
         val tv = Device.of(this)
         val prefer = preference()
-        return streams.sortedWith(compareByDescending<Stream> { file != null && it.filename == file }
+        val lower = intent.getIntExtra("maxHeight", 0) > 0 // the player asked for less: the tallest that's left
+        return streams.sortedWith(compareByDescending<Stream> { if (lower) it.height else 0 }
+            .thenByDescending { file != null && it.filename == file }
             .thenByDescending { binge != null && it.bingeGroup == binge }
             .thenBy { it.awkward }
             .thenByDescending { it.fit(tv) }
