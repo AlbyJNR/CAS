@@ -25,7 +25,7 @@ class ScreenDesignTest {
     }
 
     @Test fun languageCodesFromEverySourceMatch() {
-        listOf("es", "spa", "es-MX", "Spanish").forEach { assertEquals("es", Languages.code(it)) }
+        listOf("es", "spa", "spl", "es-MX", "Spanish").forEach { assertEquals("es", Languages.code(it)) }
         assertEquals("de", Languages.code("ger"))
         assertEquals("fr", Languages.code("fre"))
         assertEquals("nl", Languages.code("dut"))
