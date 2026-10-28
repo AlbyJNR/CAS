@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/home.png" alt="Alder home screen with Continue Watching" width="100%">
+  <img src="docs/home.png" alt="Alder home screen featuring Harry Potter and Continue Watching" width="100%">
 </p>
 
 Alder is an Android TV app for your Stremio account. Your account, add-ons, library and watch progress stay exactly where they are, and everything you watch syncs back to Stremio on your phone and computer. What changes is the app on the TV: built for a remote, simple enough for anyone in the family, and quiet enough that the film is the main thing on screen.
