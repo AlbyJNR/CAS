@@ -16,7 +16,8 @@ object Http {
         set(dir) {
             field = dir
             dir?.mkdirs()
-            trim()
+            // Off the main thread: listing and stat-ing hundreds of saved answers on TV flash stalled the first screen.
+            if (dir != null) Thread({ runCatching { trim() } }, "answers-trim").apply { isDaemon = true }.start()
         }
 
     /** Set once at start with the app's version. */

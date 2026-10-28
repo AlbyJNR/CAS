@@ -8,9 +8,15 @@ class MetaTest {
     private fun meta(json: String) = Meta(JSONObject(json))
 
     @Test fun trailersComeFromBothCinemetaShapes() {
-        val m = meta("""{"id":"tt1","name":"X","trailers":[{"source":"abc","type":"Trailer"},{"source":"clip1","type":"Clip"}],
-            "trailerStreams":[{"title":"X","ytId":"def"},{"title":"again","ytId":"abc"}]}""")
-        assertEquals(listOf("abc", "def"), m.trailers)
+        val m = meta("""{"id":"tt1","name":"X","trailers":[{"source":"dQw4w9WgXcQ","type":"Trailer"},{"source":"aaaaaaaaaaa","type":"Clip"}],
+            "trailerStreams":[{"title":"X","ytId":"bbbbbbbbbbb"},{"title":"again","ytId":"dQw4w9WgXcQ"}]}""")
+        assertEquals(listOf("dQw4w9WgXcQ", "bbbbbbbbbbb"), m.trailers)
+    }
+
+    @Test fun trailersThatAreNotYouTubeIdsAreDropped() {
+        // An add-on's data ends up inside a script: anything but an 11-character id is refused.
+        val m = meta("""{"id":"tt1","name":"X","trailers":[{"source":"abc","type":"Trailer"},{"source":"x');alert(1);('","type":"Trailer"}]}""")
+        assertEquals(emptyList<String>(), m.trailers)
     }
 
     @Test fun trailersAbsentIsEmpty() {

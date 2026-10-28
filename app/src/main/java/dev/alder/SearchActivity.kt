@@ -227,12 +227,12 @@ class SearchActivity : Screen() {
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         firstKey?.post { firstKey?.requestFocus() }
         // Opened with a name from a title's cast: the search runs at once, and the remote lands on the results.
-        intent.getStringExtra("query")?.takeIf { it.isNotBlank() }?.let { query ->
+        val query = intent.getStringExtra("query")?.takeIf { it.isNotBlank() }
+        if (query != null) {
             input.setText(query)
             main.removeCallbacks(typed)
             main.post { search(true) }
-        }
-        search(false)
+        } else search(false)
     }
 
     private lateinit var cursor: View

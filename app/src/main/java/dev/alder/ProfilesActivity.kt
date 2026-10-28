@@ -341,7 +341,7 @@ class ProfilesActivity : Screen() {
 
     private fun confirmRemove(p: Profile) {
         choose("Remove ${p.name}?", listOf("Cancel", "Remove"),
-            "This signs ${p.name} out on this TV. Their Stremio account, history and addons stay as they are.") { i ->
+            "This signs ${p.name} out on this TV. Their Stremio account, history and add-ons stay as they are.") { i ->
             if (i == 0) return@choose
             Profiles.remove(this, p.id)
             background({ Http.forget() }) {}
@@ -564,7 +564,7 @@ class ProfilesActivity : Screen() {
         background({ Stremio.createLink() }) { result ->
             if (!signingIn || request != signInGeneration) return@background
             result.onSuccess { link ->
-                qr.setImageBitmap(qrBitmap(link.url, dp(200)))
+                runCatching { qrBitmap(link.url, dp(200)) }.getOrNull()?.let(qr::setImageBitmap) // a long link: the typed code still works
                 codeTiles.forEachIndexed { i, tile -> tile.text = link.code.getOrNull(i)?.toString() ?: "" }
                 val started = SystemClock.elapsedRealtime()
                 fun tick() {
@@ -703,7 +703,7 @@ class ProfilesActivity : Screen() {
         val watchly = sourceAddons.firstOrNull { it.name.contains("watchly", ignoreCase = true) }
             ?: return showReady(profile)
         val configure = Uri.parse(watchly.transportUrl).let { "${it.scheme}://${it.authority}/configure" }
-        val qr = ImageView(this).apply { setImageBitmap(qrBitmap(configure, dp(220))) }
+        val qr = ImageView(this).apply { runCatching { qrBitmap(configure, dp(220)) }.getOrNull()?.let(::setImageBitmap) }
         val done = onboardingButton("Continue to CAS").apply { setOnClickListener { openHome(profile) } }
         val steps = column(Gravity.START,
             text("Recommendations for ${profile.name}", SERIF_TITLE, bold = true, serif = true),

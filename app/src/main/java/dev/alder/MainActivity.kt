@@ -357,15 +357,19 @@ class MainActivity : Screen() {
             // Rows settle after a focus move (the next heading can peek in): name it once, whichever shows.
             main.removeCallbacks(nextRowCheck); main.postDelayed(nextRowCheck, 300)
         }
-        showPage(Page.entries.firstOrNull { it.label == intent.getStringExtra("page") } ?: Page.HOME)
+        showPage(pageNamed(intent.getStringExtra("page")) ?: Page.HOME)
         main.postDelayed(::warmPages, WARM_AFTER)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        Page.entries.firstOrNull { it.label == intent.getStringExtra("page") }
-            ?.takeIf { it != page }?.let(::showPage)
+        pageNamed(intent.getStringExtra("page"))?.takeIf { it != page }?.let(::showPage)
+    }
+
+    /** A page by its name on screen or in code; "My List" is what Search and older callers call the Library. */
+    private fun pageNamed(name: String?) = name?.let { n ->
+        Page.entries.firstOrNull { it.label.equals(n, true) || it.name.equals(n, true) } ?: Page.LIBRARY.takeIf { n.equals("My List", true) }
     }
 
     /**
@@ -835,7 +839,7 @@ class MainActivity : Screen() {
         }
         // Only Resume: OK on any card already opens its title page. It shows only for a title in progress, which lives in
         // the first row, so Up from any other row goes straight to the row above.
-        heroActions = LinearLayout(this).apply { clipChildren = false; addView(heroResume) }
+        heroActions = LinearLayout(this).apply { clipChildren = false; addView(heroResume); visibility = View.GONE } // shown per title
         // No progress line here: the focused card already shows it, right below.
         browseInfo = column(Gravity.START,
             FrameLayout(this).apply {
@@ -868,12 +872,9 @@ class MainActivity : Screen() {
 
     /** The focused title: its art across the screen, and logo, facts (and time left) and description top left. */
     private fun showHero(item: Item) {
-        // A new title's words fade up with its art instead of snapping.
-        if (heroItem !== item && heroItem != null && mode != Mode.CINEMA) {
-            browseInfo.animate().cancel()
-            browseInfo.alpha = 0.4f
-            browseInfo.animate().alpha(1f).setInterpolator(FOCUS_OUT).setDuration(280).start()
-        }
+        // A new title's words fade up with its art instead of snapping (the fade itself runs below, once).
+        val newTitle = heroItem !== item && heroItem != null && mode == Mode.BROWSE
+        if (newTitle) { browseInfo.animate().cancel(); browseInfo.alpha = 0.4f }
         heroItem = item
         heroName.text = item.name
         heroName.visibility = View.VISIBLE
@@ -914,7 +915,10 @@ class MainActivity : Screen() {
         }
         heroActions.visibility = if (page != Page.HOME && page != Page.LIBRARY && item.resume) View.VISIBLE else View.GONE
         if (page == Page.HOME || page.isCatalog) showCaption(item)
-        if (mode == Mode.BROWSE) browseInfo.animate().alpha(if (homeDimmed && (page == Page.HOME || page.isCatalog || page == Page.LIBRARY)) 0.3f else 1f).setDuration(150).start()
+        if (mode == Mode.BROWSE) {
+            val target = if (homeDimmed && (page == Page.HOME || page.isCatalog || page == Page.LIBRARY)) 0.3f else 1f
+            browseInfo.animate().alpha(target).setInterpolator(if (newTitle) FOCUS_OUT else null).setDuration(if (newTitle) 280 else 150).start()
+        }
         showArt(item)
     }
 
@@ -1002,11 +1006,6 @@ class MainActivity : Screen() {
         content.removeAllViews()
         rows.forEach { r -> r.cards.forEach { it.unload() } }
         rows.clear()
-        if (switched) { // the new page's rows fade in rather than appearing mid-draw
-            scroller.animate().cancel()
-            scroller.alpha = 0f
-            scroller.animate().alpha(1f).setStartDelay(60).setDuration(260).withEndAction { scroller.animate().setStartDelay(0) }.start()
-        }
         genreStrip.animate().cancel()
         genreStrip.alpha = 1f
         genreStrip.visibility = if (p.isCatalog) View.INVISIBLE else if (grid) View.VISIBLE else View.GONE
@@ -1029,6 +1028,11 @@ class MainActivity : Screen() {
         scroller.visibility = View.VISIBLE
         scroller.translationY = 0f
         scroller.alpha = 1f
+        if (switched) { // the new page's rows fade in rather than appearing mid-draw
+            scroller.animate().cancel()
+            scroller.alpha = 0f
+            scroller.animate().alpha(1f).setStartDelay(60).setDuration(260).withEndAction { scroller.animate().setStartDelay(0) }.start()
+        }
         stage.isFocusable = false
         chrome()
         val key = profile.authKey
@@ -1109,7 +1113,7 @@ class MainActivity : Screen() {
                 // Quiet, one line, and on Home hidden again as soon as a Continue row arrives: a two-line note under
                 // that row peeked into the caption band at the bottom of the screen.
                 val note = text(if (p == Page.HOME) "Picks for you appear here once Watchly is installed on this profile's Stremio account."
-                    else "None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", SMALL, color = TEXT_3)
+                    else "None of your add-ons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", SMALL, color = TEXT_3)
                     .apply { setPadding(dp(PAD), 0, dp(PAD), 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
                 content.addView(note)
                 if (p == Page.HOME) homeEmptyNote = note

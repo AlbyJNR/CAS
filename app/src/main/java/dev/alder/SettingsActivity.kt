@@ -141,7 +141,7 @@ class SettingsActivity : Screen() {
     }
     private enum class Group(val label: String, val icon: Int = 0, val glyph: String = "") {
         STREAMS("Streams", R.drawable.ic_play),
-        PICTURE("Picture & Sound", R.drawable.ic_tv),
+        PICTURE("Picture & sound", R.drawable.ic_tv),
         SUBTITLES("Subtitles", R.drawable.ic_subtitles),
         TITLE("Title page", R.drawable.ic_article),
         ADDONS("Add-ons", R.drawable.ic_layers),
@@ -174,7 +174,7 @@ class SettingsActivity : Screen() {
             listOf("" to "On", "dv" to "Dolby Vision first", "hdr10" to "HDR10 first", "off" to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate so pans don't judder.",
             listOf(true to "On", false to "Off")),
-        Choice("passthrough", "Audio output", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes the sound here, which always works.",
+        Choice("passthrough", "Audio output", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes the sound on the TV, which always workss.",
             listOf(false to "TV speakers", true to "Receiver")),
     )
     private val dubbed = listOf(
@@ -208,6 +208,7 @@ class SettingsActivity : Screen() {
     private var firstDetail: View? = null
     private var addonValue: TextView? = null
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+    private var latestChecked: Result<Updates.Release?>? = null // the About group's update check, kept for this visit
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -377,6 +378,7 @@ class SettingsActivity : Screen() {
                 Profiles.streamLenders(this).forEach { lender ->
                     val value = actionRow("Shared by ${lender.name}", "…",
                         "${lender.name} shares these stream add-ons with every profile on this TV. Your history stays yours.") {}
+                        .apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END } // many add-ons: one line, not a wrapped row
                     background({ (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey)).filter { it.shareable } }) { result ->
                         value.text = result.getOrNull()?.map { addonShortName(it.name) }?.ifEmpty { null }?.joinToString(", ")
                             ?: if (result.isSuccess) "No stream add-ons" else "Couldn't load"
@@ -458,9 +460,11 @@ class SettingsActivity : Screen() {
                 actionRow("What's new", "Version " + Updates.mine(this), "The changes in the version on this TV.") { whatsNew() }
                 var found: Updates.Release? = null
                 val value = actionRow("Updates", "Checking…", "New versions come from CAS's releases on GitHub.") {
-                    found?.let(::installUpdate) ?: showGroup(Group.ABOUT)
+                    found?.let(::installUpdate) ?: run { latestChecked = null; showGroup(Group.ABOUT) }
                 }
-                background({ Updates.latest(applicationContext) }) { r ->
+                // One check per visit to Settings: the group is rebuilt on every focus, and GitHub allows 60 anonymous
+                // calls an hour. "Try again" asks afresh.
+                fun gotLatest(r: Result<Updates.Release?>) {
                     val release = r.getOrNull()
                     found = release?.takeIf { newerVersion(it.version, Updates.mine(this)) }
                     value.text = when {
@@ -469,6 +473,7 @@ class SettingsActivity : Screen() {
                         else -> "Up to date"
                     }
                 }
+                latestChecked?.let(::gotLatest) ?: background({ Updates.latest(applicationContext) }) { r -> latestChecked = r; gotLatest(r) }
             }
         }
     }

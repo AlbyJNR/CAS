@@ -191,6 +191,8 @@ fun List<Addon>.savedMeta(type: String, id: String): Meta? =
 
 private val metaPool = java.util.concurrent.Executors.newCachedThreadPool()
 
+private val YOUTUBE_ID = Regex("^[A-Za-z0-9_-]{11}$")
+
 class Meta(json: JSONObject) {
     val id: String = json.getString("id")
     val type: String = json.optString("type")
@@ -210,7 +212,8 @@ class Meta(json: JSONObject) {
     val trailers: List<String> = (json.optJSONArray("trailers").objects()
         .filter { it.optString("type").let { t -> t.isEmpty() || t.equals("Trailer", true) } }
         .mapNotNull { it.text("source") } +
-        json.optJSONArray("trailerStreams").objects().mapNotNull { it.text("ytId") }).distinct()
+        json.optJSONArray("trailerStreams").objects().mapNotNull { it.text("ytId") })
+        .filter { it.matches(YOUTUBE_ID) }.distinct()
     val info = listOfNotNull(year, runtime, genres.joinToString(" · ").ifEmpty { null }).joinToString("   ")
 
     /** Episodes in play order: by season then episode, specials (season 0) last. */

@@ -15,6 +15,17 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.3.2
+
+- **Series pages stay visible.** Before, a series page could go blank when its details arrived while the episode list was open.
+- **The remote stays put.** On a title page, focus no longer jumps back to Play when more details arrive.
+- **Recap and trailer hand-offs work on newer TVs.** Before, Fire OS 8 and Android TV 11 said there was no YouTube app.
+- **Search → My List** opens the Library page. Before, it opened Home.
+- **Smaller downloads.** Episode stills and title logos load at the size they show, not twice it.
+- **Smoother first screen.** Cache housekeeping no longer runs on the main thread at launch.
+- Settings checks for updates once per visit, not on every focus change.
+- Updates on Android 12+ install without a confirm box after the first one.
+
 ## 1.3.1
 
 - **Trailers show their picture.** Before, a trailer played its sound over a black box on some TVs.

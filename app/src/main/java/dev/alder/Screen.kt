@@ -107,7 +107,9 @@ abstract class Screen : Activity() {
         // Disk cache for pictures (and anything else whose server allows caching), and last time's answers.
         android.net.http.HttpResponseCache.install(java.io.File(cacheDir, "http"), 250L * 1024 * 1024)
         Http.saved = java.io.File(cacheDir, "answers")
+        // ASCII only: a model name with other characters would make every request throw before it was sent.
         Http.userAgent = "CAS/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
+            .filter { it.code in 0x20..0x7E }
     }
 
     override fun onDestroy() {
@@ -153,7 +155,7 @@ abstract class Screen : Activity() {
     protected fun <T> background(work: () -> T, done: (Result<T>) -> Unit) {
         pool.execute {
             val result = runCatching(work)
-            main.post { if (!isDestroyed) done(result) }
+            main.post { if (!isDestroyed && !isFinishing) done(result) } // a dialog on a finishing screen throws
         }
     }
 
@@ -317,16 +319,20 @@ abstract class Screen : Activity() {
         if (on) generateSequence(parent as? android.view.ViewGroup) { it.parent as? android.view.ViewGroup }
             .takeWhile { it !is android.widget.ScrollView && it !is android.widget.HorizontalScrollView && it !is android.widget.AbsListView }
             .forEach { it.clipChildren = false; it.clipToPadding = false }
+        focusScale[this] = if (on) by else 1f
         return animate().scaleX(if (on) by else 1f).scaleY(if (on) by else 1f)
             .setInterpolator(if (on) FOCUS_IN else FOCUS_OUT).setDuration(if (on) FOCUS_IN_MS else FOCUS_OUT_MS)
     }
+
+    // The scale each control is meant to rest at while focused: the press release returns to this, not to whatever
+    // mid-animation value it happened to have when OK went down.
+    private val focusScale = java.util.WeakHashMap<View, Float>()
 
     // ---------- press feedback ----------
 
     // OK on a control dips it, and letting go springs it back: the remote feels joined to the screen. Done once here
     // for every screen rather than per view, so no view's own key listener is displaced.
     private var pressedView: View? = null
-    private var pressedScale = 1f
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER ||
@@ -335,11 +341,12 @@ abstract class Screen : Activity() {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && v != null && v.isClickable &&
                 v !is android.widget.EditText && v !is android.widget.ScrollView) {
                 pressedView = v
-                pressedScale = v.scaleX
-                v.animate().scaleX(pressedScale * PRESS_DIP).scaleY(pressedScale * PRESS_DIP).setInterpolator(FOCUS_OUT).setDuration(80).start()
+                val rest = focusScale[v] ?: 1f
+                v.animate().scaleX(rest * PRESS_DIP).scaleY(rest * PRESS_DIP).setInterpolator(FOCUS_OUT).setDuration(80).start()
             } else if (event.action == KeyEvent.ACTION_UP) pressedView?.let { p ->
                 pressedView = null
-                if (p.isAttachedToWindow) p.animate().scaleX(pressedScale).scaleY(pressedScale).setInterpolator(FOCUS_IN).setDuration(FOCUS_IN_MS).start()
+                val rest = if (p.hasFocus()) focusScale[p] ?: 1f else 1f
+                if (p.isAttachedToWindow) p.animate().scaleX(rest).scaleY(rest).setInterpolator(FOCUS_IN).setDuration(FOCUS_IN_MS).start()
             }
         }
         return super.dispatchKeyEvent(event)
@@ -492,7 +499,8 @@ abstract class Screen : Activity() {
 
     private var frostSource: Bitmap? = null
     private var frostBitmap: Bitmap? = null
-    private val frostHosts = mutableListOf<View>()
+    // Weak: hosts come and go with dialogs, search results and rebuilt panes, and must not be kept alive here.
+    private val frostHosts: MutableSet<View> = java.util.Collections.newSetFromMap(java.util.WeakHashMap())
 
     /**
      * Frosted glass, as the episode list draws it: the art behind, blurred, seen through a rounded pane under the
@@ -579,6 +587,7 @@ abstract class Screen : Activity() {
      */
     protected fun choose(title: String, items: List<String>, message: String? = null, checked: Int = -1,
                          focus: Int = maxOf(checked, 0), pick: (Int) -> Unit) {
+        if (isFinishing || isDestroyed) return // Back pressed while the answer was on its way: nothing to show it on
         val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
         val list = column(Gravity.START).apply { setPadding(dp(12), dp(16), dp(12), dp(12)) }
         val words = column(Gravity.START, text(title, BODY, bold = true)).apply { setPadding(dp(16), 0, dp(16), dp(10)) }
@@ -614,6 +623,7 @@ abstract class Screen : Activity() {
      * [quiet]: nothing at all when there are no notes (the pop-up after an update), else a short message (Settings).
      */
     protected fun whatsNew(version: String = Updates.mine(this), quiet: Boolean = false) {
+        if (isFinishing || isDestroyed) return
         val changes = runCatching { assets.open("CHANGELOG.md").bufferedReader().use { it.readText() } }.getOrNull()
             ?.let { changesFor(it, version) }.orEmpty()
         if (changes.isEmpty()) {

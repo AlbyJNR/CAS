@@ -100,8 +100,15 @@ class DetailsActivity : Screen() {
                 heroArt.animate().alpha(1f).setDuration(250).start()
                 refrost()
             }
+            // Fresh details can land while the episode guide is open (Down pressed within the first second): the
+            // guide is rebuilt, so it reopens on the same episode rather than leaving a hidden title behind.
+            val wasGuide = guideOpen
+            val episodeTag = currentFocus?.takeIf { it in episodeRows }?.tag
             showHero(m)
-            if (type == "series" && m.videos.isNotEmpty()) buildGuide(m.videos)
+            if (type == "series" && m.videos.isNotEmpty()) {
+                buildGuide(m.videos)
+                if (wasGuide) { showGuide(); episodeRows.firstOrNull { it.tag == episodeTag }?.requestFocus() }
+            }
             if (type == "movie" && !similarRequested) { similarRequested = true; loadSimilar() }
         }
         background({
@@ -127,7 +134,10 @@ class DetailsActivity : Screen() {
 
     // ---------- title and watch window ----------
 
+    private var keepFocus: String? = null // the hero control the remote was on before a rebuild, by its words
+
     private fun showHero(m: Meta?) {
+        keepFocus = currentFocus?.takeIf { isInside(it, hero) }?.let { it.contentDescription?.toString() ?: (it as? TextView)?.text?.toString() }
         hero.removeAllViews()
         val title = text(m?.name ?: name, SERIF_HERO, serif = true).onArt().apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL
@@ -142,7 +152,7 @@ class DetailsActivity : Screen() {
                     visibility = View.GONE
                 }
                 addView(logo, FrameLayout.LayoutParams(dp(260), -1))
-                Images.load(m.logo ?: Images.logoFor(m.id), logo, dp(520), urgent = true, failed = {
+                Images.load(m.logo ?: Images.logoFor(m.id), logo, dp(260), urgent = true, failed = {
                     title.visibility = View.VISIBLE; logo.visibility = View.GONE
                 }) {
                     title.visibility = View.GONE; logo.visibility = View.VISIBLE
@@ -262,7 +272,18 @@ class DetailsActivity : Screen() {
             addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
             addView(infoButton)
         }, wrap().apply { topMargin = dp(16) })
-        playButton.post { if (!guideOpen && !infoOpen && !similarOpen) playButton.requestFocus() }
+        // The title's details arrive in two or three steps, each redrawing this block: the remote stays on the
+        // control it was on (Trailer, a cast name, ⓘ) rather than snapping back to Play each time.
+        playButton.post {
+            if (guideOpen || infoOpen || similarOpen) return@post
+            (keepFocus?.let { key -> keyed(hero, key) } ?: playButton).requestFocus()
+        }
+    }
+
+    private fun keyed(root: View, key: String): View? {
+        if (root.isFocusable && (root.contentDescription?.toString() == key || (root as? TextView)?.text?.toString() == key)) return root
+        if (root is android.view.ViewGroup) for (i in 0 until root.childCount) keyed(root.getChildAt(i), key)?.let { return it }
+        return null
     }
 
     private fun iconButton(symbol: String, description: String, action: () -> Unit) = text(symbol, 18f).apply {
@@ -289,6 +310,7 @@ class DetailsActivity : Screen() {
      * the YouTube app instead. The art stays behind, dimmed, so Back lands you where you were.
      */
     private fun showTrailer(ytId: String, title: String) {
+        if (!ytId.matches(YT_ID)) return // an add-on's data goes into a script below: only a real YouTube id does
         hideTrailer()
         val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
         trailerWeb = web
@@ -305,12 +327,18 @@ class DetailsActivity : Screen() {
             // HTML5 video draws only with a chrome client attached and a hardware layer: without them Android plays
             // the sound over a black box (the 1.2.0 trailer).
             webChromeClient = android.webkit.WebChromeClient()
+            // The page is CAS's own and loads only YouTube's player: it never navigates anywhere else.
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = request.isForMainFrame
+            }
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             addJavascriptInterface(object {
                 @JavascriptInterface fun ended() = main.post { hideTrailer() }
                 @JavascriptInterface fun failed(code: Int) = main.post { hideTrailer(); openTrailerOutside(ytId) }
             }, "CAS")
-            loadDataWithBaseURL("https://cas.app/trailer", trailerPage(ytId), "text/html", "utf-8", null)
+            loadDataWithBaseURL(TRAILER_ORIGIN, trailerPage(ytId), "text/html", "utf-8", null)
         }
         // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
         // is what some TVs' WebViews refuse to draw.
@@ -348,20 +376,26 @@ class DetailsActivity : Screen() {
     private fun hideTrailer() {
         val overlay = trailerOverlay ?: return
         trailerOverlay = null
+        root.removeView(overlay) // off the screen first: destroying an attached WebView has crashed some TVs
         trailerWeb?.let { web ->
             runCatching { web.loadUrl("about:blank"); web.stopLoading(); web.destroy() }
         }
         trailerWeb = null
-        root.removeView(overlay)
         if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
     }
 
     /** The TV's YouTube app, for a trailer YouTube won't let a page embed; failing that, a word. */
     private fun openTrailerOutside(ytId: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$ytId"))
-        if (intent.resolveActivity(packageManager) != null) startActivity(intent)
-        else choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
+        if (!ytId.matches(YT_ID)) return
+        if (!openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
+            choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
     }
+
+    /** Hands [uri] to whatever app takes it (the YouTube app, a browser). False when nothing on this TV does. */
+    private fun openOutside(uri: Uri): Boolean = try {
+        // startActivity, not resolveActivity: on Android 11+ the latter can't see other apps and says "none".
+        startActivity(Intent(Intent.ACTION_VIEW, uri)); true
+    } catch (e: android.content.ActivityNotFoundException) { false }
 
     private fun trailerJs(script: String) { trailerWeb?.evaluateJavascript(script, null) }
 
@@ -371,9 +405,8 @@ class DetailsActivity : Screen() {
      */
     private fun openRecap(m: Meta, season: Int) {
         val query = Uri.encode("${m.name} season ${season.coerceAtLeast(1)} recap")
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$query"))
-        if (intent.resolveActivity(packageManager) != null) startActivity(intent)
-        else choose("Recap unavailable", listOf("OK"), "This TV has no YouTube app to search for a recap.") {}
+        if (!openOutside(Uri.parse("https://www.youtube.com/results?search_query=$query")))
+            choose("Recap unavailable", listOf("OK"), "This TV has no YouTube app to search for a recap.") {}
     }
 
     /** YouTube's IFrame player, bare: no controls or related videos, told to start, and reporting back to [CAS]. */
@@ -436,7 +469,7 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         guide.addView(fallback, FrameLayout.LayoutParams(dp(250), -2).apply {
             leftMargin = x; topMargin = dp(28)
         })
-        Images.load(meta?.logo ?: Images.logoFor(metaId), smallLogo, dp(300), urgent = true, failed = {
+        Images.load(meta?.logo ?: Images.logoFor(metaId), smallLogo, dp(150), urgent = true, failed = {
             smallLogo.visibility = View.GONE; fallback.visibility = View.VISIBLE
         })
 
@@ -565,7 +598,7 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
     }
 
     private fun updatePreview(video: Video) {
-        Images.load(video.thumbnail, previewImage, dp(870), orElse = meta?.background)
+        Images.load(video.thumbnail, previewImage, previewImage.layoutParams?.width?.takeIf { it > 0 } ?: dp(436), orElse = meta?.background)
         previewTitle.text = video.title.ifBlank { "Episode ${video.episode}" }
         previewFacts.text = listOfNotNull("S${video.season} E${video.episode}", meta?.runtime,
             episodeDate(video.released)).joinToString(DOT)
@@ -843,6 +876,8 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
         const val STARTED = 60_000L // ms watched before a title counts as started
         const val TRAILER_W = 0.58f // share of the screen the trailer box takes: a box, not a page
+        const val TRAILER_ORIGIN = "https://albyjnr.github.io/cas/trailer" // the page's origin: ours, not an invented domain
+        val YT_ID = Regex("^[A-Za-z0-9_-]{11}$")
         const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
         const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
     }
