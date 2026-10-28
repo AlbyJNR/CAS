@@ -278,6 +278,7 @@ class PlayerActivity : Screen() {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                trackStatus.text = trackStatus(tracks)
                 if (selectAddonSub) tracks.groups.firstOrNull(::isAddonSub)?.let { g ->
                     selectAddonSub = false
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -785,6 +786,7 @@ class PlayerActivity : Screen() {
     private lateinit var length: TextView
     private lateinit var playPause: TextView
     private lateinit var audioButton: TextView
+    private lateinit var trackStatus: TextView // "English  ·  Spanish subtitles", under the bar whenever the controls are up
     private lateinit var nextCell: FrameLayout
     private lateinit var playerLogo: ImageView
     private lateinit var topName: TextView
@@ -818,6 +820,7 @@ class PlayerActivity : Screen() {
             addView(pauseFacts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
         }
 
+        trackStatus = text("", SMALL, color = TEXT_2).onArt().apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         elapsed = text("", SMALL).onArt()
         length = text("", SMALL).onArt()
         bar = SeekBar(this).apply {
@@ -907,6 +910,10 @@ class PlayerActivity : Screen() {
             addView(length, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
                 rightMargin = dp(PAD); bottomMargin = dp(91)
             })
+            addView(trackStatus, FrameLayout.LayoutParams(dp(420), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = dp(91)
+            })
+            trackStatus.gravity = Gravity.CENTER
             addView(buttons, FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply {
                 bottomMargin = dp(11)
             })
@@ -1132,10 +1139,13 @@ class PlayerActivity : Screen() {
 
     /** Rows stay on clear glass; a tungsten rim and tick carry focus and selection. */
     private fun section(list: LinearLayout, heading: String, labels: List<String>, chosen: Int, pick: (Int) -> Unit): View {
-        list.addView(caps(heading, TUNGSTEN), wrap().apply {
+        // The heading names the choice in use ("SUBTITLES · SPANISH"), so it reads before any scrolling.
+        fun headingFor(index: Int) = (listOf(heading) + listOfNotNull(labels.getOrNull(index)?.substringBefore("  ·  "))).joinToString(" · ")
+        val title = caps(headingFor(chosen), TUNGSTEN)
+        list.addView(title, wrap().apply {
             topMargin = dp(18); bottomMargin = dp(5)
         })
-        val checks = mutableListOf<ImageView>()
+        val checks = mutableListOf<View>()
         val names = mutableListOf<TextView>()
         val rows = labels.mapIndexed { index, label ->
             val name = text(label.substringBefore("  ·  "), BODY, color = TEXT_2).apply {
@@ -1145,27 +1155,28 @@ class PlayerActivity : Screen() {
             val tag = text(label.substringAfter("  ·  ", ""), SMALL, color = TEXT_3).apply {
                 maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             }
-            val check = ImageView(this).apply {
-                setImageResource(R.drawable.ic_check)
-                imageTintList = ColorStateList.valueOf(TUNGSTEN)
+            // The choice in use: the tungsten dot before its name, as on chips and filters, and its name at full strength.
+            val check = View(this).apply {
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(TUNGSTEN) }
                 visibility = if (index == chosen) View.VISIBLE else View.INVISIBLE
             }
             checks += check
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(9), 0, dp(9), 0)
+                addView(check, LinearLayout.LayoutParams(dp(6), dp(6)).apply { marginEnd = dp(8) })
                 addView(name)
                 if (tag.text.isNotEmpty()) addView(tag, LinearLayout.LayoutParams(0, -2, 1f).apply {
                     marginStart = dp(7)
                 })
                 else addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-                addView(check, LinearLayout.LayoutParams(dp(16), dp(16)))
                 rowFocus(8) { has ->
                     name.setTextColor(if (has || check.visibility == View.VISIBLE) TEXT else TEXT_2)
                 }
                 setOnClickListener {
                     pick(index)
                     checks.forEachIndexed { i, icon -> icon.visibility = if (i == index) View.VISIBLE else View.INVISIBLE }
+                    title.text = headingFor(index).uppercase()
                     names.forEachIndexed { i, word -> word.setTextColor(if (i == index) TEXT else TEXT_2) }
                 }
             }.also { list.addView(it, LinearLayout.LayoutParams(-1, dp(32))) }
@@ -1176,6 +1187,18 @@ class PlayerActivity : Screen() {
     private fun closeOptions() {
         options.visibility = View.GONE
         showControls(audioButton)
+    }
+
+    /** What's playing, in a few words: "English  ·  Spanish subtitles", or "English  ·  Subtitles off". */
+    private fun trackStatus(tracks: Tracks): String {
+        fun name(language: String?) = Languages.code(language)?.let(Languages::name)
+        val audio = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }?.getTrackFormat(0)?.language
+        val text = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
+        val subtitles = when {
+            text == null || C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes -> "Subtitles off"
+            else -> name(if (isAddonSub(text)) chosenSub?.lang else text.getTrackFormat(0).language)?.let { "$it subtitles" } ?: "Subtitles on"
+        }
+        return listOfNotNull(name(audio), subtitles).joinToString(DOT)
     }
 
     /** "English · Dolby Digital 5.1": the language, then the release's own name for the track or, for audio, its format. */
