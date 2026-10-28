@@ -205,6 +205,12 @@ class Meta(json: JSONObject) {
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)
     val cast = json.optJSONArray("cast").strings()
+    val director = json.optJSONArray("director").strings()
+    /** YouTube ids of the title's trailers: Cinemeta's `trailers` (source + type) and `trailerStreams` (ytId). */
+    val trailers: List<String> = (json.optJSONArray("trailers").objects()
+        .filter { it.optString("type").let { t -> t.isEmpty() || t.equals("Trailer", true) } }
+        .mapNotNull { it.text("source") } +
+        json.optJSONArray("trailerStreams").objects().mapNotNull { it.text("ytId") }).distinct()
     val info = listOfNotNull(year, runtime, genres.joinToString(" · ").ifEmpty { null }).joinToString("   ")
 
     /** Episodes in play order: by season then episode, specials (season 0) last. */

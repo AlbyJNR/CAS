@@ -13,8 +13,8 @@ android {
         applicationId = "uk.albyjnr.cas"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.0"
+        versionCode = 7
+        versionName = "1.1.0"
         // TVs are ARM; the x86 builds of ffmpeg's native code would only add size.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
@@ -36,7 +36,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // -PdebugKey: an optimised build that installs over a debug one on a test TV (same key, data kept).
             signingConfig = signingConfigs.findByName("release")?.takeUnless { project.hasProperty("debugKey") }
                 ?: signingConfigs.getByName("debug")
@@ -72,4 +72,5 @@ dependencies {
     // Software audio for what TVs can't decode themselves (DTS, TrueHD), so those files still have sound.
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517") // the real org.json for tests of Meta parsing (the SDK stub throws)
 }

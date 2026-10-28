@@ -1,6 +1,9 @@
 package dev.alder
 
 import android.content.Intent
+import android.net.Uri
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.TextUtils
@@ -54,6 +57,8 @@ class DetailsActivity : Screen() {
     private lateinit var playButton: TextView
     private lateinit var infoButton: TextView
     private lateinit var infoOverlay: FrameLayout
+    private var trailerOverlay: FrameLayout? = null // the trailer, playing in a box over the title
+    private var trailerWeb: WebView? = null
     private var guideOpen = false
     private var similarOpen = false
     private var infoOpen = false
@@ -169,6 +174,14 @@ class DetailsActivity : Screen() {
                     maxLines = 3; ellipsize = TextUtils.TruncateAt.END
                 }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(8) })
             }
+            // The leads, one quiet line: the full list stays behind the information button.
+            if (m.cast.isNotEmpty()) stack.addView(LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(caps("Cast", TEXT_3).onArt())
+                addView(text(m.cast.take(4).joinToString("  ·  "), SMALL, color = TEXT_2).onArt().apply {
+                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+            }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(10) })
             addWatch(m, stack)
         }
         hero.addView(stack, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
@@ -210,9 +223,11 @@ class DetailsActivity : Screen() {
         } else null
         infoButton = iconButton("ⓘ", "More information") { showInfo() }
         listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }
+        val trailer = m.trailers.firstOrNull()?.let { id -> glassButton("Trailer") { showTrailer(id, m.name) } }
         stack.addView(LinearLayout(this).apply {
             clipChildren = false
             addView(playButton, wrap().apply { marginEnd = dp(14) })
+            trailer?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
             startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }) }
             addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
             addView(infoButton)
@@ -227,6 +242,102 @@ class DetailsActivity : Screen() {
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
     }
+
+    /** A worded glass control beside Play, as tall as the icon buttons. */
+    private fun glassButton(label: String, action: () -> Unit) = text(label, SMALL, bold = true).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(14), 0, dp(14), 0)
+        rowFocus(16, rest = { glass(16) })
+        setOnClickListener { action() }
+    }
+
+    // ---------- trailer ----------
+
+    /**
+     * The trailer in a box over the title, not a page of its own: YouTube's player in the TV's own WebView, which adds
+     * nothing to CAS. OK pauses, Left and Right skip ten seconds, Back closes; a trailer that can't be embedded opens in
+     * the YouTube app instead. The art stays behind, dimmed, so Back lands you where you were.
+     */
+    private fun showTrailer(ytId: String, title: String) {
+        hideTrailer()
+        val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
+        trailerWeb = web
+        val screenW = resources.displayMetrics.widthPixels
+        val boxW = (screenW * TRAILER_W).toInt()
+        val boxH = boxW * 9 / 16
+        web.apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            setBackgroundColor(android.graphics.Color.BLACK)
+            isFocusable = false // the remote's keys stay with the screen (dispatchKeyEvent), not the page
+            isFocusableInTouchMode = false
+            addJavascriptInterface(object {
+                @JavascriptInterface fun ended() = main.post { hideTrailer() }
+                @JavascriptInterface fun failed(code: Int) = main.post { hideTrailer(); openTrailerOutside(ytId) }
+            }, "CAS")
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS).toFloat())
+            }
+            clipToOutline = true
+            loadDataWithBaseURL("https://cas.app/trailer", trailerPage(ytId), "text/html", "utf-8", null)
+        }
+        val box = FrameLayout(this).apply {
+            background = glass(TILE_RADIUS + 1)
+            setPadding(dp(1), dp(1), dp(1), dp(1))
+            addView(web, FrameLayout.LayoutParams(-1, -1))
+        }
+        val hints = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(keyHint("OK", "Play / pause"))
+            addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+            addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+        }
+        trailerOverlay = FrameLayout(this).apply {
+            setBackgroundColor(TRAILER_SCRIM)
+            isFocusable = true // holds the remote while the box is up
+            addView(column(Gravity.CENTER_HORIZONTAL,
+                caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
+                text(title, SMALL, color = TEXT_3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = boxW }.marginTop(4),
+                box.apply { layoutParams = LinearLayout.LayoutParams(boxW, boxH).apply { topMargin = dp(14) } },
+                hints.marginTop(14),
+            ), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            alpha = 0f
+        }
+        root.addView(trailerOverlay, FrameLayout.LayoutParams(-1, -1))
+        trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
+        trailerOverlay?.requestFocus()
+    }
+
+    private fun hideTrailer() {
+        val overlay = trailerOverlay ?: return
+        trailerOverlay = null
+        trailerWeb?.let { web ->
+            runCatching { web.loadUrl("about:blank"); web.stopLoading(); web.destroy() }
+        }
+        trailerWeb = null
+        root.removeView(overlay)
+        if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
+    }
+
+    /** The TV's YouTube app, for a trailer YouTube won't let a page embed; failing that, a word. */
+    private fun openTrailerOutside(ytId: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$ytId"))
+        if (intent.resolveActivity(packageManager) != null) startActivity(intent)
+        else choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
+    }
+
+    private fun trailerJs(script: String) { trailerWeb?.evaluateJavascript(script, null) }
+
+    /** YouTube's IFrame player, bare: no controls or related videos, told to start, and reporting back to [CAS]. */
+    private fun trailerPage(ytId: String) = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#p{width:100%;height:100%}</style></head><body><div id="p"></div>
+<script>var player;var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);
+function onYouTubeIframeAPIReady(){player=new YT.Player('p',{videoId:'$ytId',playerVars:{autoplay:1,controls:0,rel:0,modestbranding:1,playsinline:1,fs:0,iv_load_policy:3,disablekb:1},
+events:{onReady:function(e){try{e.target.unloadModule('captions');e.target.unloadModule('cc')}catch(x){}e.target.playVideo()},onStateChange:function(e){if(e.data==0)CAS.ended()},onError:function(e){CAS.failed(e.data)}}})}
+function toggle(){if(!player||!player.getPlayerState)return;player.getPlayerState()==1?player.pauseVideo():player.playVideo()}
+function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.max(0,player.getCurrentTime()+d),true)}
+</script></body></html>"""
 
     /** What Play opens: the episode Continue Watching points at, or the first episode, or the movie itself. */
     private fun playTarget(m: Meta?): Pair<String, Video?>? {
@@ -477,6 +588,10 @@ class DetailsActivity : Screen() {
                     addView(text(m.cast.take(12).joinToString("  ·  "), BODY).onArt(),
                         wrap().apply { topMargin = dp(6) })
                 }
+                if (m.director.isNotEmpty()) {
+                    addView(caps(if (m.director.size > 1) "Directors" else "Director", TEXT_2).onArt(), wrap().apply { topMargin = dp(18) })
+                    addView(text(m.director.take(3).joinToString("  ·  "), BODY).onArt(), wrap().apply { topMargin = dp(6) })
+                }
             })
         }
         infoOverlay.addView(column(Gravity.START,
@@ -622,6 +737,16 @@ class DetailsActivity : Screen() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (trailerOverlay != null) {
+            if (event.action == KeyEvent.ACTION_DOWN) when (event.keyCode) {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MEDIA_STOP -> hideTrailer()
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> trailerJs("toggle()")
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> trailerJs("seek(-10)")
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> trailerJs("seek(10)")
+            }
+            return true
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (guideOpen) {
                 val focused = currentFocus
@@ -648,8 +773,14 @@ class DetailsActivity : Screen() {
         return super.dispatchKeyEvent(event)
     }
 
+    override fun onPause() {
+        hideTrailer()
+        super.onPause()
+    }
+
     override fun onBackPressed() {
         when {
+            trailerOverlay != null -> hideTrailer()
             infoOpen -> hideInfo()
             guideOpen -> hideGuide()
             similarOpen -> hideSimilar()
@@ -661,5 +792,7 @@ class DetailsActivity : Screen() {
         const val PANE_SHADE = 0.55f // the episode panel's frost, darkened to the mock's smoked glass
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
         const val STARTED = 60_000L // ms watched before a title counts as started
+        const val TRAILER_W = 0.58f // share of the screen the trailer box takes: a box, not a page
+        const val TRAILER_SCRIM = 0xCC08090B.toInt()
     }
 }

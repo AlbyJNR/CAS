@@ -15,6 +15,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.1.0
+
+- **Trailers.** Select **Trailer** on a title. The trailer plays in a box over the title. Press OK to pause, Left or Right to skip 10 seconds, and Back to close.
+- **Cast on the title page.** The four main cast members show under the description. Select the information button to see all of them and the director.
+
 ## 1.0.0
 
 - **CAS identity.** New wordmark, TV banner, launcher icon and welcome screens.
