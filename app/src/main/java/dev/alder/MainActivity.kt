@@ -1560,6 +1560,7 @@ class MainActivity : Screen() {
         }.apply {
             isHorizontalScrollBarEnabled = false
             addView(strip)
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> showVisibleCards() }
             setOnScrollChangeListener { _, _, _, _, _ ->
                 showVisibleCards()
                 loadRest(this@Row)

@@ -1029,6 +1029,7 @@ class PlayerActivity : Screen() {
 
     private fun openOptions() {
         hideControls(force = true)
+        controls.visibility = View.GONE
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         list.addView(text("Audio & subtitles", SERIF_TITLE, serif = true), wrap())
         list.addView(text(listOfNotNull(pauseTitle.text.toString().takeIf { it.isNotBlank() },
@@ -1087,7 +1088,7 @@ class PlayerActivity : Screen() {
             addView(list)
             setPadding(dp(22), dp(20), dp(22), dp(22))
             clipToPadding = false
-            background = glass(14)
+            background = android.graphics.drawable.LayerDrawable(arrayOf(rounded(0xF00E0C0A.toInt(), 14), glass(14)))
         }, FrameLayout.LayoutParams(dp(310), resources.displayMetrics.heightPixels - dp(54)).apply {
             leftMargin = dp(27); topMargin = dp(27)
         })
