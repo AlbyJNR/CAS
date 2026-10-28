@@ -271,17 +271,21 @@ class SettingsActivity : Screen() {
             Group.STREAMS -> {
                 presetRow()
                 streaming.forEach(::choiceRow)
-                actionRow("Share my streaming source", "", "Let another profile use one of this profile's configured stream add-ons on this TV.") {
-                    shareStreamAddon()
+                Profiles.active(this)?.let { me ->
+                    lateinit var value: TextView
+                    value = actionRow("Share my streaming sources", if (Profiles.sharesStreams(this, me.id)) "On" else "Off",
+                        "Other profiles on this TV can find sources with this profile's stream add-ons. Your add-on's provider may see what they play.") {
+                        val on = !Profiles.sharesStreams(this, me.id)
+                        Profiles.setSharesStreams(this, me.id, on)
+                        value.text = (if (on) "On" else "Off") + "  ›"
+                    }
                 }
-                Profiles.sharedStream(this)?.let { (owner, _) ->
-                    actionRow("Shared source in use", owner.name, "This profile uses a configured stream add-on from ${owner.name} on this TV.") {
-                        choose("Stop using ${owner.name}'s source?", listOf("Cancel", "Stop using")) { selected ->
-                            if (selected == 1) {
-                                Profiles.active(this)?.let { Profiles.clearSharedStream(this, it.id) }
-                                showGroup(Group.STREAMS)
-                            }
-                        }
+                Profiles.streamLenders(this).forEach { lender ->
+                    val value = actionRow("Shared by ${lender.name}", "…",
+                        "${lender.name} shares these stream add-ons with every profile on this TV. Your history stays yours.") {}
+                    background({ (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey)).filter { it.shareable } }) { result ->
+                        value.text = result.getOrNull()?.map { addonShortName(it.name) }?.ifEmpty { null }?.joinToString(", ")
+                            ?: if (result.isSuccess) "No stream add-ons" else "Couldn't load"
                     }
                 }
                 actionRow("More filters", "", "Release groups, codecs and more are set in your streaming add-on.") {
@@ -387,28 +391,6 @@ class SettingsActivity : Screen() {
         val display = text(if (value.isEmpty()) "›" else "$value  ›", BODY, color = TEXT_2)
         settingRow(label, display, help, focus = { display.setTextColor(if (it) TUNGSTEN else TEXT_2) }, click = click)
         return display
-    }
-
-    private fun shareStreamAddon() {
-        val source = Profiles.active(this) ?: return
-        val recipients = Profiles.all(this).filter { it.id != source.id }
-        if (recipients.isEmpty()) return choose("Add another profile first", listOf("OK")) {}
-        background({ Stremio.addons(source.authKey).filter { !it.official && it.providesStreams && !it.personal } }) { answer ->
-            val addons = answer.getOrElse {
-                choose("Couldn't load stream add-ons", listOf("OK")) {}
-                return@background
-            }
-            if (addons.isEmpty()) return@background choose("No stream add-ons on ${source.name}", listOf("OK")) {}
-            choose("Choose a streaming source", addons.map { addonShortName(it.name) }) { picked ->
-                val addon = addons[picked]
-                choose("Share ${addonShortName(addon.name)} with", recipients.map { it.name },
-                    "The add-on stays in ${source.name}'s Stremio account. ${source.name}'s provider may record playback; watch history in Alder stays with the viewer.") { selected ->
-                    val recipient = recipients[selected]
-                    Profiles.shareStream(this, recipient.id, source.id, addon.id)
-                    choose("${recipient.name} can use ${addonShortName(addon.name)}", listOf("OK")) {}
-                }
-            }
-        }
     }
 
     private fun key(c: Choice) = if (c.perProfile) Settings.profileKey(this, c.key) else c.key

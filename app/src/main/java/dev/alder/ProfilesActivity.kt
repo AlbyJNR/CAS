@@ -1,6 +1,5 @@
 package dev.alder
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -15,16 +14,14 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextClock
 import android.widget.TextView
 
-// Profile picker, Stremio sign-in, copying add-ons, and setting up Watchly.
+// Profile picker, Stremio sign-in, and setting up Watchly.
 // The app starts here; with a single profile it goes straight on to Home.
 class ProfilesActivity : Screen() {
     // The sign-in code being waited on; anything else stops its polling loop.
@@ -241,22 +238,36 @@ class ProfilesActivity : Screen() {
     }
 
     private fun rename(p: Profile) {
-        val field = EditText(this).apply {
-            setText(p.name)
-            setSelection(p.name.length)
-            setSingleLine()
-            imeOptions = EditorInfo.IME_ACTION_DONE
+        ++pickerGeneration
+        backTo = ::showPicker
+        val previewName = text(p.name, BODY, bold = true).apply { gravity = Gravity.CENTER }
+        val avatar = onboardingAvatar(p.name.firstOrNull()?.uppercase().orEmpty(), 100, p.color)
+        val error = text("", SMALL, color = TUNGSTEN)
+        val (name, keyboard, firstKey) = nameEntry(p.name) { typed ->
+            previewName.text = typed
+            avatar.text = typed.firstOrNull()?.uppercase().orEmpty()
+            error.text = ""
         }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Rename ${p.name}")
-            .setView(field)
-            .setPositiveButton("Save") { _, _ ->
-                field.text.toString().trim().ifEmpty { null }?.let { Profiles.update(this, p.id, name = it) }
-                showPicker()
-            }
-            .setNegativeButton("Cancel") { _, _ -> showPicker() }
-            .show()
-        field.setOnEditorActionListener { _, _, _ -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); true }
+        val save = onboardingButton("Save")
+        val go = {
+            name.text.toString().trim().takeIf { it.isNotEmpty() }
+                ?.let { Profiles.update(this, p.id, name = it); showPicker() }
+                ?: run { error.text = "Enter a name to save." }
+        }
+        name.setOnEditorActionListener { _, _, _ -> go(); true }
+        save.setOnClickListener { go() }
+        val copy = column(Gravity.START,
+            text("Rename ${p.name}", SERIF_TITLE, serif = true),
+            text("History and add-ons stay as they are.", BODY, color = TEXT_2).marginTop(4),
+            name.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(16) } },
+            keyboard.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } },
+            error.marginTop(5),
+            save.marginTop(7),
+        ).apply { gravity = Gravity.CENTER_VERTICAL }
+        val preview = column(Gravity.CENTER, avatar, previewName.marginTop(16)).apply { gravity = Gravity.CENTER }
+        setWindowed(onboardingFrame("", copy, preview, dp(65), 1.05f, 0.95f), onboardingBackdrop())
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        firstKey.requestFocus()
     }
 
     /**
@@ -342,22 +353,15 @@ class ProfilesActivity : Screen() {
         signingIn = false
         waitingCode = null
         val first = Profiles.all(this).isEmpty()
-        val name = EditText(this).apply {
-            hint = "Your name"
-            textSize = BODY
-            setTextColor(TEXT)
-            setHintTextColor(TEXT_3)
-            setPadding(dp(14), 0, dp(14), 0)
-            background = glass(8)
-            setOnFocusChangeListener { v, has -> v.background = glass(8, has) }
-            setSingleLine()
-            showSoftInputOnFocus = false
-            imeOptions = EditorInfo.IME_ACTION_DONE
-        }
-        nameInput = name
-        name.setText(draftName)
-        val next = onboardingButton("Continue    →")
+        val previewName = text(draftName, BODY, bold = true).apply { gravity = Gravity.CENTER }
+        val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase().orEmpty(), 100, draftColor)
         val error = text("", SMALL, color = TUNGSTEN)
+        val (name, keyboard, firstKey) = nameEntry(draftName) { typed ->
+            previewName.text = typed
+            avatar.text = typed.firstOrNull()?.uppercase().orEmpty()
+            error.text = ""
+        }
+        val next = onboardingButton("Continue    →")
         val go = {
             name.text.toString().trim().takeIf { it.isNotEmpty() }?.replaceFirstChar { it.titlecase() }
                 ?.let { draftName = it; showSignIn(it) }
@@ -365,40 +369,6 @@ class ProfilesActivity : Screen() {
         }
         name.setOnEditorActionListener { _, _, _ -> go(); true }
         next.setOnClickListener { go() }
-        val keyboard = column(Gravity.START).apply {
-            setPadding(dp(8), dp(8), dp(8), dp(8)); background = glass(10)
-        }
-        var firstKey: View? = null
-        fun key(label: String, row: LinearLayout, width: Int = 1, action: () -> Unit) {
-            val view = text(label, SMALL, color = TEXT_2).apply {
-                gravity = Gravity.CENTER
-                rowFocus(6)
-                setOnClickListener { action() }
-            }
-            row.addView(view, LinearLayout.LayoutParams(0, -1, width.toFloat()).apply {
-                if (row.childCount > 0) marginStart = dp(3)
-            })
-            if (firstKey == null) firstKey = view
-        }
-        "abcdefghijklmnopqrstuvwxyz".chunked(6).forEach { letters ->
-            keyboard.addView(LinearLayout(this).apply {
-                letters.forEach { letter -> key(letter.toString(), this) { name.text.append(letter) } }
-                // "yz" keeps the grid: empty cells fill the row instead of two keys stretched across it.
-                repeat(6 - letters.length) { addView(View(context), LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(3) }) }
-            }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { if (keyboard.childCount > 0) topMargin = dp(3) })
-        }
-        keyboard.addView(LinearLayout(this).apply {
-            key("SPACE", this, 3) { name.text.append(" ") }
-            key("⌫", this) { if (name.length() > 0) name.text.delete(name.length() - 1, name.length()) }
-            key("⌨", this) {
-                name.showSoftInputOnFocus = true
-                name.requestFocus()
-                name.post { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                    .showSoftInput(name, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
-            }
-        }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { topMargin = dp(3) })
-        val avatar = onboardingAvatar(draftName.firstOrNull()?.uppercase().orEmpty(), 100, draftColor)
-        val previewName = text(draftName, BODY, bold = true).apply { gravity = Gravity.CENTER }
         val swatches = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val marks = mutableListOf<TextView>()
         Profiles.COLORS.forEachIndexed { index, color ->
@@ -434,19 +404,83 @@ class ProfilesActivity : Screen() {
             avatar,
             previewName.marginTop(16),
         ).apply { gravity = Gravity.CENTER }
+        val content = onboardingFrame(if (first) "step 1 of 2" else "step 1 of 3", copy, preview, dp(65), 1.05f, 0.95f)
+        setWindowed(content, onboardingBackdrop())
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        firstKey.requestFocus()
+    }
+
+    /**
+     * The name box and its remote keyboard: letters, a one-shot ⇧ (on while the box is empty, so names start with a
+     * capital), space, ⌫ and the system keyboard. [changed] gets the text after every edit.
+     */
+    private fun nameEntry(initial: String, changed: (String) -> Unit): Triple<EditText, View, View> {
+        val name = EditText(this).apply {
+            hint = "Your name"
+            textSize = BODY
+            setTextColor(TEXT)
+            setHintTextColor(TEXT_3)
+            setPadding(dp(14), 0, dp(14), 0)
+            background = glass(8)
+            setOnFocusChangeListener { v, has -> v.background = glass(8, has) }
+            setSingleLine()
+            showSoftInputOnFocus = false
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setText(initial)
+            setSelection(initial.length)
+        }
+        nameInput = name
+        val keyboard = column(Gravity.START).apply {
+            setPadding(dp(8), dp(8), dp(8), dp(8)); background = glass(10)
+        }
+        val keys = mutableListOf<TextView>()
+        fun key(label: String, row: LinearLayout, width: Int = 1, action: () -> Unit) = text(label, SMALL, color = TEXT_2).apply {
+            gravity = Gravity.CENTER
+            rowFocus(6)
+            setOnClickListener { action() }
+            row.addView(this, LinearLayout.LayoutParams(0, -1, width.toFloat()).apply {
+                if (row.childCount > 0) marginStart = dp(3)
+            })
+            keys += this
+        }
+        var upper = false
+        val letterKeys = mutableListOf<TextView>()
+        fun caps(on: Boolean) {
+            upper = on
+            letterKeys.forEach { it.text = if (on) it.text.toString().uppercase() else it.text.toString().lowercase() }
+        }
+        "abcdefghijklmnopqrstuvwxyz".chunked(6).forEach { letters ->
+            keyboard.addView(LinearLayout(this).apply {
+                letters.forEach { letter -> letterKeys += key(letter.toString(), this) {
+                    val typed = if (upper) letter.uppercaseChar() else letter
+                    if (upper) caps(false)
+                    name.text.append(typed)
+                } }
+                // "yz" keeps the grid: empty cells fill the row instead of two keys stretched across it.
+                repeat(6 - letters.length) { addView(View(context), LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(3) }) }
+            }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { if (keyboard.childCount > 0) topMargin = dp(3) })
+        }
+        keyboard.addView(LinearLayout(this).apply {
+            key("⇧", this) { caps(!upper) }
+            key("SPACE", this, 3) { name.text.append(" ") }
+            key("⌫", this) { if (name.length() > 0) name.text.delete(name.length() - 1, name.length()) }
+            key("⌨", this) {
+                name.showSoftInputOnFocus = true
+                name.requestFocus()
+                name.post { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                    .showSoftInput(name, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+            }
+        }, LinearLayout.LayoutParams(-1, dp(KEY_H)).apply { topMargin = dp(3) })
+        caps(initial.isEmpty())
         name.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                previewName.text = s?.toString().orEmpty()
-                avatar.text = s?.firstOrNull()?.uppercase().orEmpty()
-                error.text = ""
+                if (s.isNullOrEmpty()) caps(true)
+                changed(s?.toString().orEmpty())
             }
             override fun afterTextChanged(s: android.text.Editable?) = Unit
         })
-        val content = onboardingFrame(if (first) "step 1 of 2" else "step 1 of 4", copy, preview, dp(65), 1.05f, 0.95f)
-        setWindowed(content, onboardingBackdrop())
-        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-        firstKey?.requestFocus()
+        return Triple(name, keyboard, keys.first())
     }
 
     private fun showSignIn(name: String) {
@@ -508,7 +542,7 @@ class ProfilesActivity : Screen() {
                 SMALL, color = TEXT_3).onArt().marginTop(24),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
         val first = Profiles.all(this).isEmpty()
-        val content = onboardingFrame(if (first) "step 2 of 2" else "step 2 of 4", left, steps, dp(55), 0f, 1f, dp(300))
+        val content = onboardingFrame(if (first) "step 2 of 2" else "step 2 of 3", left, steps, dp(55), 0f, 1f, dp(300))
         content.addView(back, FrameLayout.LayoutParams(-2, dp(32), Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = dp(PAD); bottomMargin = dp(40)
         })
@@ -570,6 +604,7 @@ class ProfilesActivity : Screen() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(PAD), dp(31), dp(PAD), 0)
                 addView(brand(), LinearLayout.LayoutParams(0, -2, 1f))
+                if (step.isEmpty()) return@apply // a profile's own screens (rename) aren't part of a setup
                 addView(text((if (total > 2) "New profile · " else "Welcome · ") + step, SMALL, color = TEXT_2))
                 repeat(total) { index -> addView(View(this@ProfilesActivity).apply {
                     background = GradientDrawable().apply {
@@ -605,8 +640,12 @@ class ProfilesActivity : Screen() {
                         val profile = Profiles.add(this, name, key, draftColor)
                         draftName = ""
                         draftColor = Profiles.COLORS[0]
-                        // The first profile already has its addons; later ones can copy them from it.
-                        if (others.isEmpty()) openHome(profile) else showCopyAddons(profile, others.first())
+                        // Each profile brings its own add-ons (stream add-ons are shared in Settings, never copied);
+                        // the others' lists only tell where Watchly lives, so the new profile can set up its own.
+                        if (others.isEmpty()) openHome(profile)
+                        else background({ others.flatMap { runCatching { Stremio.addons(it.authKey) }.getOrDefault(emptyList()) } }) {
+                            showWatchly(profile, it.getOrDefault(emptyList()))
+                        }
                     }
                     // ponytail: Stremio doesn't say when a code expires (waiting and expired look the same),
                     // so a fresh code every 5 minutes. Read the expiry if their API ever exposes it.
@@ -616,72 +655,6 @@ class ProfilesActivity : Screen() {
             }
         }, 3_000)
     }
-
-    // ---------- copy addons ----------
-
-    private fun showCopyAddons(profile: Profile, from: Profile) {
-        backTo = { openHome(profile) }
-        val list = column(Gravity.START).apply { setPadding(dp(22), dp(22), dp(22), dp(22)); background = glass(14) }
-        list.addView(text("Copy ${from.name}'s add-ons?", SERIF_TITLE, serif = true))
-        list.addView(text("Personal and configured stream add-ons are unticked. Sharing a streaming source in Settings keeps its configuration with ${from.name}.",
-            BODY, color = TEXT_3).marginTop(12))
-        val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(list) }
-        setWindowed(onboardingFrame("step 3 of 4", scroll,
-            column(Gravity.CENTER,
-                onboardingAvatar(profile.name.take(1).uppercase(), 100, profile.color),
-                text(profile.name, SERIF_TITLE, serif = true).marginTop(12),
-                text("Bring over the add-ons you share. Your history stays yours.", BODY, color = TEXT_2).marginTop(10)
-            ).apply { gravity = Gravity.CENTER }, dp(44), 1.2f, 0.8f), onboardingBackdrop())
-
-        background({ Stremio.addons(from.authKey, refresh = true) to Stremio.addons(profile.authKey, refresh = true) }) { result ->
-            val (theirs, mine) = result.getOrElse {
-                list.addView(text("Couldn't load add-ons. Check the TV's connection.", BODY).marginTop(24))
-                list.addView(chip("Skip").apply { setOnClickListener { showWatchly(profile, emptyList()) } }.also { it.requestFocus() })
-                return@background
-            }
-            // Stremio's built-ins (Cinemeta and co.) are on every account already, so they aren't offered.
-            val boxes = theirs.filterNot { it.official }.map { addon ->
-                CheckBox(this).apply {
-                    text = addon.name
-                    textSize = BODY
-                    setTextColor(TEXT)
-                    buttonTintList = android.content.res.ColorStateList.valueOf(TEXT)
-                    minHeight = dp(44)
-                    setPadding(dp(12), 0, dp(12), 0)
-                    rowFocus(8) { has -> buttonTintList = android.content.res.ColorStateList.valueOf(if (has) TUNGSTEN else TEXT) }
-                    isChecked = !isPersonal(addon)
-                    tag = addon
-                }
-            }
-            boxes.forEach { list.addView(it, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) }) }
-            val copy = onboardingButton("Copy add-ons")
-            val skip = chip("Skip")
-            list.addView(LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(copy)
-                addView(skip, wrap().apply { marginStart = dp(9) })
-            }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(25) })
-            copy.requestFocus()
-            skip.setOnClickListener { showWatchly(profile, theirs) }
-            copy.setOnClickListener {
-                copy.isEnabled = false
-                val picked = boxes.filter { it.isChecked }.map { it.tag as Addon }.map { it.id }.toSet()
-                // In the source profile's order (it decides which addon answers first), with the account's
-                // own built-ins in their places, then anything else the account already had.
-                val merged = theirs.mapNotNull { a ->
-                    if (a.official) mine.firstOrNull { it.id == a.id } ?: a else a.takeIf { it.id in picked }
-                }
-                val addons = merged + mine.filter { m -> merged.none { it.id == m.id } }
-                background({ Stremio.setAddons(profile.authKey, addons) }) { saved ->
-                    saved.onSuccess { showWatchly(profile, theirs) }
-                        .onFailure { copy.isEnabled = true; copy.text = "Couldn't copy, try again" }
-                }
-            }
-        }
-    }
-
-    // Personal addons and stream credentials stay with their owner unless explicitly selected for copying.
-    private fun isPersonal(addon: Addon) = addon.providesStreams || addon.personal
 
     // ---------- recommendations ----------
 
@@ -701,7 +674,7 @@ class ProfilesActivity : Screen() {
                 "${profile.name}'s own \"Top Picks\" then show up on Home. You can finish this later.", BODY, color = TEXT_3).marginTop(16),
             done.marginTop(32),
         )
-        setWindowed(onboardingFrame("step 4 of 4", column(Gravity.CENTER,
+        setWindowed(onboardingFrame("step 3 of 3", column(Gravity.CENTER,
             qr.apply { background = rounded(TEXT, 12) },
             text(profile.name, BODY, bold = true).marginTop(12)
         ).apply { gravity = Gravity.CENTER; setPadding(dp(22), dp(22), dp(22), dp(22)); background = glass(14) },
@@ -712,7 +685,7 @@ class ProfilesActivity : Screen() {
     private fun showReady(profile: Profile) {
         backTo = { openHome(profile) }
         val done = onboardingButton("Continue to Alder").apply { setOnClickListener { openHome(profile) } }
-        setWindowed(onboardingFrame("step 4 of 4", column(Gravity.CENTER,
+        setWindowed(onboardingFrame("step 3 of 3", column(Gravity.CENTER,
             onboardingAvatar(profile.name.take(1).uppercase(), 100, profile.color),
             text(profile.name, SERIF_TITLE, serif = true).marginTop(12)
         ).apply { gravity = Gravity.CENTER }, column(Gravity.START,

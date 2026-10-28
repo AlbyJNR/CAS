@@ -27,6 +27,8 @@ class Addon(val descriptor: JSONObject) {
     }
     /** Reads one person's history or lists (MyTrakt also declares `stream`): never shared or copied by default. */
     val personal = listOf("watchly", "trakt", "simkl", "syncribullet", "aiolists").any { name.contains(it, ignoreCase = true) }
+    /** What a profile lends when it shares its streaming sources: its own stream add-ons, not Stremio's or personal ones. */
+    val shareable get() = !official && providesStreams && !personal
     private val base = transportUrl.removeSuffix("/manifest.json")
 
     /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
