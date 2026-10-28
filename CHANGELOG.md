@@ -28,6 +28,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Some sources cannot skip. In these sources, Alder shows a message, and the movie continues. To get a different source, select **Change stream**.
 - **Title details with all add-ons.** Alder gets title details from your add-ons in their order, as Stremio does. When an add-on gives no details, Alder uses the next add-on. Before, some users saw "Couldn't load this title's details" on all titles.
 - Alder shows a title when an add-on sends an episode that has no id.
+- **Sources in your audio language.** Select a language above the source list. Alder shows only the sources in that language. Sources with "Multi" or "Dual" audio show for all languages.
+- When **Dubbed releases** is **My language first**, the source list opens on your audio language.
 
 ## 1.1
 

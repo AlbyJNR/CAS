@@ -42,6 +42,15 @@ class ScreenDesignTest {
         assertEquals(listOf("en", "es"), Languages.all.take(2))
     }
 
+    @Test fun audioLanguagesFromFlagsNamesAndTags() {
+        assertEquals(setOf("en", "it"), audioLanguagesIn("👤 52 💾 4.2 GB ⚙️ ThePirateBay 🇬🇧 / 🇮🇹"))
+        assertEquals(setOf("en", "es"), audioLanguagesIn("🇺🇸🇪🇸")) // not also Sweden from the middle letters
+        assertEquals(setOf("en", "hi"), audioLanguagesIn("🌐 English | Hindi"))
+        assertEquals(setOf("it"), audioLanguagesIn("Movie.2024.1080p.BluRay.ITA.x264"))
+        assertEquals(setOf("fr"), audioLanguagesIn("Movie 2024 TRUEFRENCH 2160p WEB"))
+        assertEquals(emptySet<String>(), audioLanguagesIn("Movie.2024.2160p.WEB-DL.DV.HDR.H265"))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))

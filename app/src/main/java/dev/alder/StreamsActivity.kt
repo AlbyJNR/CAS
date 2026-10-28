@@ -8,6 +8,7 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -25,6 +26,10 @@ class StreamsActivity : Screen() {
 
     private lateinit var art: ImageView
     override val backdrop get() = art
+    // Audio language chips above the list: All, then each language the sources name. A pick lasts while the page is open.
+    private lateinit var languageStrip: HorizontalScrollView
+    private var audio: String? = null
+    private var audioOpened = false // the first list opens on the profile's language (Dubbed releases: My language first)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +69,9 @@ class StreamsActivity : Screen() {
             addView(caps("Quality", TEXT_3).apply { maxLines = 1 }, LinearLayout.LayoutParams(dp(QUALITY_W), -2))
             addView(caps("Release", TEXT_3), LinearLayout.LayoutParams(0, -2, 1f))
             addView(caps("Size", TEXT_3).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(dp(72), -2))
+        }
+        languageStrip = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; visibility = View.GONE
         }
         val rows = column(Gravity.START)
         val status = text(intent.getStringExtra("message") ?: "Finding sources…", BODY, color = TEXT_2).onArt()
@@ -114,6 +122,7 @@ class StreamsActivity : Screen() {
                 background = glassOver(this, 14, 0.18f)
                 addView(header, LinearLayout.LayoutParams(-1, dp(58)))
                 addView(View(context).apply { setBackgroundColor(GLASS_EDGE) }, LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(6) })
+                addView(languageStrip, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
                 addView(cols, LinearLayout.LayoutParams(-1, -2))
                 addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
                 addView(help, LinearLayout.LayoutParams(-1, dp(34)))
@@ -146,25 +155,35 @@ class StreamsActivity : Screen() {
             var started = false
             var listed = false
             var waitingForEarlier = false
-            fun showList() {
-                listed = true
-                val available = addons.flatMapIndexed { i, addon -> answers[i].orEmpty()
-                    .filter { it.isVideo && it.playableOn(tv) }.map { it to addon.name } }
-                val providers = available.toMap()
-                val ranked = rank(available.map { it.first }, videoId)
-                val eligible = ranked.filter(::wanted)
-                val ordered = eligible + ranked.filterNot(::wanted)
-                count.text = "${ordered.size} " + if (ordered.size == 1) "source" else "sources"
+            var providers = emptyMap<Stream, String>()
+            var eligible = emptyList<Stream>()
+            var ordered = emptyList<Stream>()
+            /** The list in the chosen audio language; Best match is the first within Settings' limits that's in it. */
+            fun drawRows(focusList: Boolean) {
+                val shown = audio?.let { lang -> ordered.filter { speaks(it, lang) } } ?: ordered
+                count.text = "${shown.size} " + if (shown.size == 1) "source" else "sources"
                 rows.removeAllViews()
-                if (ordered.isEmpty()) {
+                if (shown.isEmpty()) {
                     rows.addView(text("No playable sources found for this TV.", BODY, color = TEXT_2).onArt().apply {
                         setPadding(dp(12), dp(12), 0, 0)
                     })
                 } else {
-                    ordered.forEach { stream -> rows.addView(streamRow(stream, providers[stream].orEmpty(), stream === eligible.firstOrNull()),
+                    val best = eligible.firstOrNull { it in shown }
+                    shown.forEach { stream -> rows.addView(streamRow(stream, providers[stream].orEmpty(), stream === best),
                         LinearLayout.LayoutParams(-1, dp(ROW_H)).apply { bottomMargin = dp(2) }) }
-                    rows.getChildAt(0).requestFocus()
+                    if (focusList) rows.getChildAt(0).requestFocus()
                 }
+            }
+            fun showList() {
+                listed = true
+                val available = addons.flatMapIndexed { i, addon -> answers[i].orEmpty()
+                    .filter { it.isVideo && it.playableOn(tv) }.map { it to addon.name } }
+                providers = available.toMap()
+                val ranked = rank(available.map { it.first }, videoId)
+                eligible = ranked.filter(::wanted)
+                ordered = eligible + ranked.filterNot(::wanted)
+                showLanguages(ordered) { drawRows(focusList = false) }
+                drawRows(focusList = true)
             }
 
             // Keep add-on order when earlier ones answer promptly; after 800 ms, a playable later answer can start.
@@ -196,6 +215,47 @@ class StreamsActivity : Screen() {
             }
         }
     }
+
+    /**
+     * All, then each audio language the sources name, the profile's audio language and English first; hidden when the
+     * sources name only one. Sources that name no language count as English, as most English releases name none.
+     */
+    private fun showLanguages(streams: List<Stream>, redraw: () -> Unit) {
+        val unnamed = streams.any { it.audioLanguages.isEmpty() && !it.multiAudio }
+        val mine = Settings.audioLanguage(this)
+        val codes = (streams.flatMap { it.audioLanguages } + listOfNotNull("en".takeIf { unnamed })).distinct()
+            .sortedWith(compareBy({ it != mine }, { it != "en" }, ::languageName))
+        if (!audioOpened) {
+            audioOpened = true
+            if (Settings.dub(this) == "mine" && mine in codes) audio = mine
+        }
+        if (audio !in codes) audio = null
+        languageStrip.removeAllViews()
+        if (codes.size < 2) { languageStrip.visibility = View.GONE; audio = null; return }
+        val line = LinearLayout(this).apply { clipChildren = false; setPadding(dp(2), dp(2), dp(2), dp(2)) }
+        val chips = mutableMapOf<String?, android.widget.TextView>()
+        fun label(code: String?) = code?.let(::languageName) ?: "All languages"
+        (listOf<String?>(null) + codes).forEach { code ->
+            val control = chip(label(code), code == audio).apply {
+                setOnClickListener {
+                    audio = code
+                    chips.forEach { (value, chip) -> chip.select(label(value), value == code) }
+                    redraw()
+                }
+            }
+            chips[code] = control
+            line.addView(control, LinearLayout.LayoutParams(-2, dp(CHIP_H)).apply { if (line.childCount > 0) marginStart = dp(6) })
+        }
+        languageStrip.addView(line)
+        languageStrip.visibility = View.VISIBLE
+    }
+
+    /** In [language] by its names: it names that language, it's multi or dual audio, or (English) it names none. */
+    private fun speaks(s: Stream, language: String) =
+        language in s.audioLanguages || s.multiAudio || (language == "en" && s.audioLanguages.isEmpty())
+
+    private fun languageName(code: String) =
+        Locale(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     /**
      * The order to try sources in: when the player asked for a lower quality, the tallest that's left first; then the
