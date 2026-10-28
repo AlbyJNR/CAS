@@ -1,19 +1,22 @@
 # Changelog
 
-Write every entry in ASD-STE100 Simplified Technical English:
+Write every entry in ASD-STE100 Simplified Technical English (STE):
 
-- Write one idea in each sentence. Use 20 words or fewer in each sentence.
-- Use the active voice and the present tense.
+- Use only the approved words of the STE dictionary, with their approved meanings. You can also use technical names: Alder, Stremio, add-on, subtitle, and the names that Alder shows on the screen.
+- Write one idea in each sentence. Write 20 words or fewer in an instruction and 25 words or fewer in a description.
+- Use the active voice. Use the simple present tense, or the simple past tense for "Before, …".
+- Do not use words that end in "-ing", except in technical names.
+- Do not use contractions. Write "does not", not "doesn't". Text that Alder shows on the screen stays as it is.
 - Write instructions as commands: "Select **Subtitles**", not "**Subtitles** can be selected".
 - Use one word for one thing. Use the names that Alder shows on the screen.
 - Put the 3 most interesting changes first.
 
-Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
+Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
 
 ## Unreleased
 
-- **Title details with any add-ons.** Alder now asks your add-ons for details in their order, as Stremio does. When one add-on fails, Alder asks the next one. Before, some setups showed "Couldn't load this title's details" on every title.
-- Titles show when an add-on sends an episode without an id.
+- **Title details with all add-ons.** Alder gets title details from your add-ons in their order, as Stremio does. When an add-on gives no details, Alder uses the next add-on. Before, some users saw "Couldn't load this title's details" on all titles.
+- Alder shows a title when an add-on sends an episode that has no id.
 
 ## 1.1
 
