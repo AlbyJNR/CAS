@@ -1,14 +1,5 @@
 # CAS changelog
 
-## 1.1.1
-
-- **CAS identity.** New wordmark, TV banner, launcher icon and welcome screens.
-- **A quieter interface.** Charcoal surfaces, Inter headings, white focus controls and more space between cards.
-- **Simpler navigation.** CAS at left, destinations in the centre and profile at right.
-- **Separate installation.** CAS has its own package identity and checks this fork for updates.
-
-# Changelog
-
 Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 - Use only the approved words of the STE dictionary, with their approved meanings. You can also use technical names: CAS, Stremio, add-on, subtitle, and the names that CAS shows on the screen.
@@ -24,6 +15,12 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.0.0
+
+- **CAS identity.** New wordmark, TV banner, launcher icon and welcome screens.
+- **A quieter interface.** Charcoal surfaces, Inter headings, white focus controls and more space between cards.
+- **Simpler navigation.** CAS at left, destinations in the centre and profile at right.
+- **Separate installation.** CAS has its own package identity and checks this fork for updates.
 - **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language**. Then select a language. Each profile keeps its own language. Subtitles in that language start with the video. They also start when the audio is in that language.
 - **All subtitle languages in the player.** **Audio & subtitles** shows all the languages from your subtitle add-ons. Your subtitle language and English are at the top. Before, CAS showed only the language of the TV and English.
 - **All audio languages.** **Settings → Picture & Sound → Audio language** has all the languages. Before, it had only 7. Frequently used languages are at the top.
@@ -60,6 +57,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **See the debrid service of each source.** The source list shows the service of each source, for example **RD** for Real-Debrid. **⚡** shows that the file is ready and starts immediately.
 - The player shows the debrid service of the source that plays, for example "Torrentio · 2160p · Real-Debrid".
 - **All catalogs from AIOMetadata show.** Before, CAS did not show a catalog that needs a genre, for example an AIOMetadata catalog that is not on the Stremio home page. Now CAS shows these catalogs, as Stremio does. This also corrects a **Shows** page with no rows.
+
+Earlier versions below are the upstream history CAS was built from, kept for reference.
 
 ## 1.1
 
