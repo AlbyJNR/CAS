@@ -43,6 +43,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - After you let Alder install apps, the update continues. Before, you had to select **Install** again.
 - When the download of an update stops or is not complete, Alder tells you. Before, nothing happened.
 - Before an update, Alder tells you that it closes. Open Alder again after the update.
+- **Remove titles from Continue Watching.** Hold OK on a title in **Continue**. Then select **Remove from Continue Watching**. Stremio also removes it on your other devices. When you watch the title again, it comes back.
+- Hold OK on a title in **Continue** now opens a menu. To see all sources, select **Choose a source**.
 
 ## 1.1
 
