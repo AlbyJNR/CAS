@@ -16,6 +16,7 @@ import java.net.URL
  */
 object Updates {
     private const val LATEST = "https://api.github.com/repos/AlbyJNR/CAS/releases/latest"
+    private const val RELEASES = "https://github.com/AlbyJNR/CAS/releases/download/"
     private const val DAY = 24 * 3600_000L
 
     class Release(val version: String, val apk: String)
@@ -28,8 +29,11 @@ object Updates {
         // No release published yet: GitHub answers "Not Found", so nothing is newer than this version.
         val release = if (json.optString("message") == "Not Found") Release(mine(c), "") else {
             val assets = json.getJSONArray("assets")
+            // Only this repository's own release files: Android checks the signing key on install anyway, but there's
+            // no reason to download anything else that an answer might name.
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url") ?: return null
+                .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url")
+                ?.takeIf { it.startsWith(RELEASES) } ?: return null
             Release(json.getString("tag_name").removePrefix("v"), apk)
         }
         release.also { prefs(c).edit().putLong("checked", System.currentTimeMillis()).apply() }

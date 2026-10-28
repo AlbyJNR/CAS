@@ -37,7 +37,7 @@ jobs:
           } > keystore.properties
           echo "CAS_SIGNED=true" >> "$GITHUB_ENV"
       - name: Test and build
-        run: bash gradlew testDebugUnitTest assembleRelease --no-daemon --console=plain
+        run: bash gradlew lintRelease testDebugUnitTest assembleRelease --no-daemon --console=plain
       - name: Name the APK
         run: mkdir -p dist && cp app/build/outputs/apk/release/app-release.apk dist/CAS.apk
       - uses: actions/upload-artifact@v5

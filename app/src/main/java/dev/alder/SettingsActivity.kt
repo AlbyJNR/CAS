@@ -432,8 +432,12 @@ class SettingsActivity : Screen() {
             }
             Group.LANGUAGE -> actionRow("App language", Locale.getDefault().displayLanguage,
                 "The app follows this TV's language setting.") {
-                runCatching { startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS)
-                    .setData(android.net.Uri.parse("package:$packageName"))) }
+                // Per-app language pages exist from Android 13; older TVs get the system language page.
+                runCatching {
+                    if (android.os.Build.VERSION.SDK_INT < 33) throw android.content.ActivityNotFoundException()
+                    startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS)
+                        .setData(android.net.Uri.parse("package:$packageName")))
+                }
                     .recoverCatching { startActivity(Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)) }
                     .onFailure { choose("Language settings are unavailable on this TV.", listOf("OK")) {} }
             }

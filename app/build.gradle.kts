@@ -32,6 +32,13 @@ android {
         }
     }
 
+    lint {
+        // Media3's "unstable API" opt-in warnings and gesture-back advice don't apply to a remote-driven TV app on a
+        // pinned Media3 release; the rest of lint stays meaningful and fails the build on errors.
+        disable += listOf("UnsafeOptInUsageError", "GestureBackNavigation", "SetTextI18n", "ObsoleteSdkInt")
+        abortOnError = true
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

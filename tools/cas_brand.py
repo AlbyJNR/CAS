@@ -4,7 +4,6 @@ Run from anywhere: python3 tools/cas_brand.py
 
 - banner.webp (320x180): the Fire TV / Android TV launcher tile. A quiet charcoal gradient, not flat black, so the
   tile has depth beside the bright tiles around it, with the wordmark held well inside the edges.
-- logo.webp (512x512): legacy square icon, same treatment.
 - logo_transparent.png (512x512): the bare wordmark; the adaptive icon's foreground and the Watch Next mark.
 """
 from pathlib import Path
@@ -55,6 +54,5 @@ def mark(size, font_size, transparent=False):
 
 
 mark((320, 180), 58).convert('RGB').save(DEST / 'banner.webp', lossless=True)
-mark((512, 512), 150).convert('RGB').save(DEST / 'logo.webp', lossless=True)
 mark((512, 512), 150, transparent=True).save(DEST / 'logo_transparent.png')
-print('wrote', sorted(p.name for p in DEST.iterdir() if p.stem in ('banner', 'logo', 'logo_transparent')))
+print('wrote', sorted(p.name for p in DEST.iterdir() if p.stem in ('banner', 'logo_transparent')))
