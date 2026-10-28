@@ -148,6 +148,7 @@ class MainActivity : Screen() {
     // A chevron in the right margin while the row the remote is in has more cards past the screen's edge.
     private lateinit var moreHint: ImageView
     private lateinit var nextRowHint: TextView
+    private var homeEmptyNote: TextView? = null // Home's "Picks for you…" note; shown only while Home has no row at all
     private lateinit var cardCaption: TextView
     private var captionX = 0 // px from the left margin to the focused card, where its caption goes
     private var browseRowTop = 0
@@ -1054,6 +1055,7 @@ class MainActivity : Screen() {
                 slot.removeAllViews()
                 if (p == Page.HOME) {
                     val items = cw.map(::libraryItem)
+                    homeEmptyNote?.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
                     if (items.isNotEmpty()) {
                         slot.addView(row("Continue", items.take(START), later(items)).view)
                         android.util.Log.d("CAS", "page ${p.label}: Continue in ${android.os.SystemClock.uptimeMillis() - opened} ms")
@@ -1092,9 +1094,13 @@ class MainActivity : Screen() {
             if (catalogs.isEmpty()) {
                 val what = when (p) { Page.MOVIES -> "movie"; Page.LIVE -> "live"; else -> "show" }
                 // Home holds only Continue and Watchly's picks, so a new account sees nothing there without a word.
-                content.addView(text(if (p == Page.HOME) "Picks for you show here once Watchly is installed on this profile's Stremio account. Shows and Movies have more to browse."
-                    else "None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = TEXT_3)
-                    .apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
+                // Quiet, one line, and on Home hidden again as soon as a Continue row arrives: a two-line note under
+                // that row peeked into the caption band at the bottom of the screen.
+                val note = text(if (p == Page.HOME) "Picks for you appear here once Watchly is installed on this profile's Stremio account."
+                    else "None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", SMALL, color = TEXT_3)
+                    .apply { setPadding(dp(PAD), 0, dp(PAD), 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+                content.addView(note)
+                if (p == Page.HOME) homeEmptyNote = note
             }
             val genres = catalogGenres(catalogs.flatMap { it.genres })
             val sections = sections(p, shelves)

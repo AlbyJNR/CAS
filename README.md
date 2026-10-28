@@ -26,7 +26,7 @@ On Android TV or Google TV, download the same file with any sideloading tool, or
 
 CAS needs Android 8.0 or newer. Open CAS and sign in to Stremio. Configure your account and debrid-based add-ons in Stremio first.
 
-This is a test build: compilation and the unit tests pass, but TV layout, navigation and playback still need hardware testing. Preview builds use a CI debug signing key, so a later preview may ask you to uninstall the earlier one.
+This is a test build: compilation and the unit tests pass, but TV layout, navigation and playback still need hardware testing. Previews are release builds signed with the CAS key, so each one installs over the last as an update and keeps your profiles.
 
 ## Development
 
@@ -45,3 +45,13 @@ See [design notes](docs/CAS.md) for the hardware review checklist. Regenerate th
 ## Open-source notices
 
 CAS is distributed under [GPL-3.0](LICENSE). Copyright, project acknowledgements and third-party notices are in [NOTICE.md](NOTICE.md).
+
+## Releasing
+
+Previews publish themselves on every push. For a numbered release, set `versionName` and `versionCode` in `app/build.gradle.kts`, move the changelog entries under a matching `## x.y.z` heading, then push a tag:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+CI builds, signs and publishes `CAS.apk` as release `v1.0.0`. Installed TVs are offered it by CAS's own updater. Signing uses the repository secrets `CAS_KEYSTORE_BASE64`, `CAS_KEYSTORE_PASSWORD`, `CAS_KEY_ALIAS` and `CAS_KEY_PASSWORD`; without them a build falls back to a debug key.
