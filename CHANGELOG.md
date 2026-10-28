@@ -15,10 +15,13 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
-## 1.1.0
+## 1.2.0
 
 - **Trailers.** Select **Trailer** on a title. The trailer plays in a box over the title. Press OK to pause, Left or Right to skip 10 seconds, and Back to close.
-- **Cast on the title page.** The four main cast members show under the description. Select the information button to see all of them and the director.
+- **Cast on the title page.** The three leads show under the description. Select a name to find their other films and shows. Select the information button to see the full cast.
+- **Director on the title page.** Films show the director under the cast.
+- **Recap.** On a series, select **Recap** to search for the season's recap in the TV's YouTube app.
+- **Title page settings.** **Settings → Title page** turns the trailer button, the recap button, the cast, the director and the art behind the trailer on or off.
 
 ## 1.0.0
 

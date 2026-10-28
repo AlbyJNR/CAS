@@ -34,6 +34,8 @@ object Settings {
     /** "": no preference, "original": dubs last, "mine": the audio language first. */
     fun dub(c: Context) = prefs(c).getString(profileKey(c, "dub"), "").orEmpty()
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
+    /** Settings › Title page: each extra on a title's page is on unless turned off. Keys: TITLE_* in SettingsActivity. */
+    fun titlePage(c: Context, key: String) = prefs(c).getBoolean(key, true)
     /**
      * Titles this profile hid from Continue Watching on this TV: id to {name, timeOffset}, so Settings can put them
      * back. ponytail: this TV only; titles hidden in Stremio elsewhere aren't listed.
@@ -141,6 +143,7 @@ class SettingsActivity : Screen() {
         STREAMS("Streams", R.drawable.ic_play),
         PICTURE("Picture & Sound", R.drawable.ic_tv),
         SUBTITLES("Subtitles", R.drawable.ic_subtitles),
+        TITLE("Title page", glyph = "▭"),
         ADDONS("Add-ons", R.drawable.ic_layers),
         PROFILE("Profile", glyph = "♙"),
         LANGUAGE("Language", glyph = "◎"),
@@ -157,6 +160,14 @@ class SettingsActivity : Screen() {
             listOf(0 to "No limit", 40 to "40 GB", 20 to "20 GB", 10 to "10 GB", 5 to "5 GB")),
         Choice("release", "Release type", "Which kind of file is tried first for this profile. REMUX is the full Blu-ray.",
             listOf("" to "No preference", "remux" to "Full Blu-ray (REMUX)", "encode" to "Smaller encodes", "web" to "Web releases"), true),
+    )
+    private val onOff = listOf(true to "On", false to "Off")
+    private val titlePage = listOf(
+        Choice(TITLE_TRAILER, "Trailer button", "Plays the title's trailer in a box over the page, through the TV's own browser engine and YouTube.", onOff),
+        Choice(TITLE_RECAP, "Recap button", "For series: opens a search for the season's recap in the TV's YouTube app. YouTube may show its own adverts there.", onOff),
+        Choice(TITLE_CAST, "Cast", "The leads under the description. Select a name to find more of their films and shows.", onOff),
+        Choice(TITLE_DIRECTOR, "Director", "The director under the cast, for films.", onOff),
+        Choice(TRAILER_ART, "Art behind the trailer", "Keeps the title's art, dimmed, behind the trailer box. Off plays the trailer over black.", onOff),
     )
     private val pictureAndSound = listOf(
         Choice("hdrPref", "HDR and Dolby Vision", "Which goes first when a title has both. Off picks plain releases.",
@@ -343,6 +354,7 @@ class SettingsActivity : Screen() {
             Group.STREAMS -> "Choose how CAS finds and starts a source."
             Group.PICTURE -> "Choose the picture and sound this TV can play."
             Group.SUBTITLES -> "Set how subtitles start and appear."
+            Group.TITLE -> "Choose what a title's page shows."
             Group.ADDONS -> "Manage the add-ons connected to this profile."
             Group.PROFILE -> "Profile choices stay with the person watching."
             Group.LANGUAGE -> "CAS follows the TV's language."
@@ -385,6 +397,7 @@ class SettingsActivity : Screen() {
                 languageRow("subLang", "Subtitle language", "Which subtitles start with the video, and which come first in the list while watching.")
                 subtitleLooks.forEach(::choiceRow)
             }
+            Group.TITLE -> titlePage.forEach(::choiceRow)
             Group.ADDONS -> {
                 actionRow("My add-ons", "…", "Add by URL, reorder or remove this profile's add-ons.") {
                     if (authKey != null) startActivity(Intent(this, AddonsActivity::class.java))
@@ -617,7 +630,12 @@ class SettingsActivity : Screen() {
         draw()
     }
 
-    private companion object {
+    companion object {
+        const val TITLE_TRAILER = "titleTrailer"
+        const val TITLE_RECAP = "titleRecap"
+        const val TITLE_CAST = "titleCast"
+        const val TITLE_DIRECTOR = "titleDirector"
+        const val TRAILER_ART = "trailerArt"
         val PRESETS = listOf(
             "Add-on's order" to mapOf("release" to "", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 0),
             "Best picture" to mapOf("release" to "remux", "hdrPref" to "dv", "maxHeight" to 0, "maxSizeGb" to 0),

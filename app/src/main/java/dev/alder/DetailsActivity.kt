@@ -59,6 +59,7 @@ class DetailsActivity : Screen() {
     private lateinit var infoOverlay: FrameLayout
     private var trailerOverlay: FrameLayout? = null // the trailer, playing in a box over the title
     private var trailerWeb: WebView? = null
+    private var castNames = emptyList<View>() // the leads on the title page; Down from one goes to Play, not the episodes
     private var guideOpen = false
     private var similarOpen = false
     private var infoOpen = false
@@ -174,14 +175,39 @@ class DetailsActivity : Screen() {
                     maxLines = 3; ellipsize = TextUtils.TruncateAt.END
                 }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(8) })
             }
-            // The leads, one quiet line: the full list stays behind the information button.
-            if (m.cast.isNotEmpty()) stack.addView(LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(caps("Cast", TEXT_3).onArt())
-                addView(text(m.cast.take(4).joinToString("  ·  "), SMALL, color = TEXT_2).onArt().apply {
-                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
-            }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(10) })
+            // The leads, one quiet line, each a name the remote can select to find more of their work; the full
+            // list stays behind the information button. Then the director, for films.
+            castNames = emptyList()
+            if (m.cast.isNotEmpty() && Settings.titlePage(this, SettingsActivity.TITLE_CAST)) {
+                val names = m.cast.take(3).map { person ->
+                    text(person, SMALL, color = TEXT_2).onArt().apply {
+                        maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(150)
+                        setPadding(dp(6), dp(2), dp(6), dp(2))
+                        contentDescription = "Films and shows with $person"
+                        rowFocus(6, rest = { null }) { has -> setTextColor(if (has) TEXT else TEXT_2) }
+                        setOnClickListener { startActivity(Intent(this@DetailsActivity, SearchActivity::class.java).putExtra("query", person)) }
+                    }
+                }
+                castNames = names
+                stack.addView(LinearLayout(this).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    clipChildren = false
+                    addView(caps("Cast", TEXT_3).onArt(), wrap().apply { marginEnd = dp(4) })
+                    names.forEachIndexed { i, name ->
+                        if (i > 0) addView(text("·", SMALL, color = TEXT_3).onArt())
+                        addView(name, wrap())
+                    }
+                }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(8); marginStart = -dp(6) })
+            }
+            if (m.director.isNotEmpty() && type == "movie" && Settings.titlePage(this, SettingsActivity.TITLE_DIRECTOR)) {
+                stack.addView(LinearLayout(this).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(caps(if (m.director.size > 1) "Directors" else "Director", TEXT_3).onArt())
+                    addView(text(m.director.take(2).joinToString("  ·  "), SMALL, color = TEXT_2).onArt().apply {
+                        maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                    }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+                }, LinearLayout.LayoutParams(dp(470), -2).apply { topMargin = dp(4) })
+            }
             addWatch(m, stack)
         }
         hero.addView(stack, FrameLayout.LayoutParams(dp(HERO_W), -2, Gravity.BOTTOM or Gravity.START).apply {
@@ -223,11 +249,15 @@ class DetailsActivity : Screen() {
         } else null
         infoButton = iconButton("ⓘ", "More information") { showInfo() }
         listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }
-        val trailer = m.trailers.firstOrNull()?.let { id -> glassButton("Trailer") { showTrailer(id, m.name) } }
+        val trailer = m.trailers.firstOrNull()?.takeIf { Settings.titlePage(this, SettingsActivity.TITLE_TRAILER) }
+            ?.let { id -> glassButton("Trailer") { showTrailer(id, m.name) } }
+        val recap = if (type == "series" && Settings.titlePage(this, SettingsActivity.TITLE_RECAP))
+            glassButton("Recap") { openRecap(m, episode?.season ?: selectedSeason) } else null
         stack.addView(LinearLayout(this).apply {
             clipChildren = false
             addView(playButton, wrap().apply { marginEnd = dp(14) })
             trailer?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
+            recap?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
             startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }) }
             addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
             addView(infoButton)
@@ -294,7 +324,7 @@ class DetailsActivity : Screen() {
             addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
         }
         trailerOverlay = FrameLayout(this).apply {
-            setBackgroundColor(TRAILER_SCRIM)
+            setBackgroundColor(if (Settings.titlePage(this@DetailsActivity, SettingsActivity.TRAILER_ART)) TRAILER_SCRIM else TRAILER_BLACK)
             isFocusable = true // holds the remote while the box is up
             addView(column(Gravity.CENTER_HORIZONTAL,
                 caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
@@ -328,6 +358,17 @@ class DetailsActivity : Screen() {
     }
 
     private fun trailerJs(script: String) { trailerWeb?.evaluateJavascript(script, null) }
+
+    /**
+     * A season's recap: Stremio's data has none, so this is a search in the TV's YouTube app ("<show> season N recap"),
+     * where the show's own channel usually has one. YouTube's adverts there are YouTube's; CAS can't remove them.
+     */
+    private fun openRecap(m: Meta, season: Int) {
+        val query = Uri.encode("${m.name} season ${season.coerceAtLeast(1)} recap")
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$query"))
+        if (intent.resolveActivity(packageManager) != null) startActivity(intent)
+        else choose("Recap unavailable", listOf("OK"), "This TV has no YouTube app to search for a recap.") {}
+    }
 
     /** YouTube's IFrame player, bare: no controls or related videos, told to start, and reporting back to [CAS]. */
     private fun trailerPage(ytId: String) = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -763,6 +804,9 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
             } else if (similarOpen && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                 hideSimilar()
                 return true
+            } else if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && currentFocus in castNames) {
+                if (::playButton.isInitialized) playButton.requestFocus()
+                return true
             } else if (!infoOpen && !similarOpen && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
                 currentFocus?.let { isInside(it, hero) } == true &&
                 (if (type == "series") ::guide.isInitialized else ::similarOverlay.isInitialized)) {
@@ -793,6 +837,7 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
         const val STARTED = 60_000L // ms watched before a title counts as started
         const val TRAILER_W = 0.58f // share of the screen the trailer box takes: a box, not a page
-        const val TRAILER_SCRIM = 0xCC08090B.toInt()
+        const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
+        const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
     }
 }
