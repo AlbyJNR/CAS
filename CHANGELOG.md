@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.3.1
+
+- **Trailers show their picture.** Before, a trailer played its sound over a black box on some TVs.
+
 ## 1.3.0
 
 - **Focus with weight.** Posters, buttons and rows settle into focus with a small spring. Press OK and the control dips, then springs back.

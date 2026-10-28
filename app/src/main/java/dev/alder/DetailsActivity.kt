@@ -302,19 +302,25 @@ class DetailsActivity : Screen() {
             setBackgroundColor(android.graphics.Color.BLACK)
             isFocusable = false // the remote's keys stay with the screen (dispatchKeyEvent), not the page
             isFocusableInTouchMode = false
+            // HTML5 video draws only with a chrome client attached and a hardware layer: without them Android plays
+            // the sound over a black box (the 1.2.0 trailer).
+            webChromeClient = android.webkit.WebChromeClient()
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             addJavascriptInterface(object {
                 @JavascriptInterface fun ended() = main.post { hideTrailer() }
                 @JavascriptInterface fun failed(code: Int) = main.post { hideTrailer(); openTrailerOutside(ytId) }
             }, "CAS")
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS).toFloat())
-            }
-            clipToOutline = true
             loadDataWithBaseURL("https://cas.app/trailer", trailerPage(ytId), "text/html", "utf-8", null)
         }
+        // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
+        // is what some TVs' WebViews refuse to draw.
         val box = FrameLayout(this).apply {
             background = glass(TILE_RADIUS + 1)
             setPadding(dp(1), dp(1), dp(1), dp(1))
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
+            }
+            clipToOutline = true
             addView(web, FrameLayout.LayoutParams(-1, -1))
         }
         val hints = LinearLayout(this).apply {
