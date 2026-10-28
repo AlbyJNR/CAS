@@ -26,6 +26,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Lists in **Settings** are not transparent.
 - **Skip forward in more movies.** Alder finds the correct position in files that have no index, for example .ts files. Before, a skip forward on the progress bar started these movies again from the beginning.
 - Some sources cannot skip. In these sources, Alder shows a message, and the movie continues. To get a different source, select **Change stream**.
+- **Title details with all add-ons.** Alder gets title details from your add-ons in their order, as Stremio does. When an add-on gives no details, Alder uses the next add-on. Before, some users saw "Couldn't load this title's details" on all titles.
+- Alder shows a title when an add-on sends an episode that has no id.
 
 ## 1.1
 

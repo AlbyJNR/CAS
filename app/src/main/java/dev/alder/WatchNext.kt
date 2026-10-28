@@ -62,8 +62,7 @@ object WatchNext {
     private fun backdrop(authKey: String, item: JSONObject): String? = runCatching {
         val type = item.optString("type")
         val id = item.optString("_id")
-        Stremio.addons(authKey).firstOrNull { it.serves("meta", type, id) }
-            ?.let { it.savedMeta(type, id) ?: it.meta(type, id) }?.background
+        Stremio.addons(authKey).let { it.savedMeta(type, id) ?: it.meta(type, id) }?.background
     }.getOrNull()
 
     private fun lastWatched(state: JSONObject): Long = runCatching {
