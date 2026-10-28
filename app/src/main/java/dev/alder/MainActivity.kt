@@ -98,7 +98,7 @@ internal fun catalogAnswerKey(page: String, title: String, genre: String?, sourc
 //    where you are and Resume, moving on to the next every ADVANCE. OK resumes; any other key returns to where you were.
 //    The TV's own screensaver takes over later (10 min on the test TV), so nothing stays still for hours.
 class MainActivity : Screen() {
-    private enum class Page(val label: String) { HOME("Home"), SHOWS("Shows"), MOVIES("Movies"), LIVE("Live"), LIBRARY("My List") }
+    private enum class Page(val label: String) { HOME("Home"), SHOWS("Shows"), MOVIES("Movies"), LIVE("Live"), LIBRARY("Library") }
     private enum class Mode { CINEMA, BROWSE }
     private enum class ListFilter { ALL, MOVIES, SHOWS }
     private enum class ListSort { RECENT, NAME, UNWATCHED }
@@ -174,12 +174,12 @@ class MainActivity : Screen() {
         val bright = samplePixels(src, 16, 24)?.let { brightLeft(it, 16) } ?: false
         val shade = Paint().apply {
             shader = LinearGradient(0f, 0f, w * 0.55f, 0f,
-                if (bright) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+                if (bright) 0xF708090B.toInt() else 0xEB08090B.toInt(), 0x0008090B, Shader.TileMode.CLAMP)
         }
         canvas.drawRect(0f, 0f, w * 0.55f, h.toFloat(), shade)
-        shade.shader = LinearGradient(0f, h.toFloat(), 0f, h * 0.55f, 0xF70E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+        shade.shader = LinearGradient(0f, h.toFloat(), 0f, h * 0.55f, 0xF708090B.toInt(), 0x0008090B, Shader.TileMode.CLAMP)
         canvas.drawRect(0f, h * 0.55f, w.toFloat(), h.toFloat(), shade)
-        shade.shader = LinearGradient(0f, 0f, 0f, h * 0.14f, 0x8C0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
+        shade.shader = LinearGradient(0f, 0f, 0f, h * 0.14f, 0x8C08090B.toInt(), 0x0008090B, Shader.TileMode.CLAMP)
         canvas.drawRect(0f, 0f, w.toFloat(), h * 0.14f, shade)
         for (edge in listOf(GradientDrawable.Orientation.LEFT_RIGHT, GradientDrawable.Orientation.RIGHT_LEFT,
             GradientDrawable.Orientation.TOP_BOTTOM, GradientDrawable.Orientation.BOTTOM_TOP)) {
@@ -418,7 +418,7 @@ class MainActivity : Screen() {
         refreshAddons?.invoke()
     }
 
-    private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to Alder
+    private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to CAS
 
     private var refreshLibrary: (() -> Unit)? = null // the open page's library rows (Home, Library), asked again
     private var last: View? = null // where the remote last was in the rows
@@ -428,7 +428,7 @@ class MainActivity : Screen() {
         // ponytail: idle dim and the cinema screensaver are off (2026-10-26, not wanted yet); post `idle` here to bring the cinema back.
         if (Updates.due(this)) background({ Updates.latest(applicationContext) }) { r ->
             val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) } ?: return@background
-            if (Updates.offerOnce(this, release.version)) choose("Alder ${release.version} is ready", listOf("Later", "Install"),
+            if (Updates.offerOnce(this, release.version)) choose("CAS ${release.version} is ready", listOf("Later", "Install"),
                 "Install it now? It takes a minute, and your profiles and settings stay.") { if (it == 1) installUpdate(release) }
         }
     }
@@ -589,7 +589,7 @@ class MainActivity : Screen() {
             navItems[p] = text(p.label, BODY).apply {
                 gravity = Gravity.CENTER
                 compoundDrawablePadding = dp(2)
-                setPadding(dp(12), dp(4), dp(12), dp(2))
+                setPadding(dp(14), dp(7), dp(14), dp(7))
                 setOnFocusChangeListener { _, has ->
                     styleNav()
                     main.removeCallbacks(switchPage)
@@ -606,16 +606,10 @@ class MainActivity : Screen() {
                 }
             }.inNav()
         }
-        nav.background = glassOver(nav, NAV_R + 4)
-        header.addView(avatar, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.START or Gravity.CENTER_VERTICAL))
+        nav.background = rounded(0xCC18191D.toInt(), NAV_R + 4)
+        header.addView(brand(), FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        header.addView(TextClock(this).apply {
-            format12Hour = "h:mm a"
-            format24Hour = "HH:mm"
-            typeface = text("", SMALL).typeface
-            textSize = SMALL
-            setTextColor(TEXT_2)
-        }, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+        header.addView(avatar, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
     }
@@ -636,19 +630,18 @@ class MainActivity : Screen() {
     private fun styleNav() {
         navItems.forEach { (p, item) ->
             val focused = item.isFocused
-            item.background = if (focused) glass(NAV_R, true) else null
-            item.setTextColor(if (p == page || focused) TEXT else TEXT_2)
+            item.background = when {
+                focused -> rounded(TEXT, NAV_R)
+                p == page -> rounded(0x33FFFFFF, NAV_R)
+                else -> null
+            }
+            item.setTextColor(if (focused) BASE else if (p == page) TEXT else TEXT_2)
             item.text = p.label
-            // The open page's dot hangs under its name; the others keep an empty one, so every name sits on one line.
-            item.setCompoundDrawablesRelative(null, null, null, GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(if (p == page) TUNGSTEN else Color.TRANSPARENT)
-                setBounds(0, 0, dp(4), dp(4))
-            })
+            item.setCompoundDrawablesRelative(null, null, null, null)
         }
         search?.let {
-            it.background = if (it.isFocused) glass(NAV_R, true) else null
-            it.setColorFilter(if (it.isFocused) TEXT else TEXT_2)
+            it.background = if (it.isFocused) rounded(TEXT, NAV_R) else null
+            it.setColorFilter(if (it.isFocused) BASE else TEXT_2)
         }
     }
 
@@ -1063,7 +1056,7 @@ class MainActivity : Screen() {
                     val items = cw.map(::libraryItem)
                     if (items.isNotEmpty()) {
                         slot.addView(row("Continue", items.take(START), later(items)).view)
-                        android.util.Log.d("Alder", "page ${p.label}: Continue in ${android.os.SystemClock.uptimeMillis() - opened} ms")
+                        android.util.Log.d("CAS", "page ${p.label}: Continue in ${android.os.SystemClock.uptimeMillis() - opened} ms")
                         startCinema(items.take(CINEMA_MAX))
                     }
                 } else {
@@ -1186,7 +1179,7 @@ class MainActivity : Screen() {
                         old?.let { it.cards.forEach { card -> card.unload() }; rows.remove(it); slot.removeAllViews() }
                         val made = row(title, items.take(maxOf(START, old?.items?.size ?: START)), more)
                         slot.addView(made.view)
-                        if (i == 0) android.util.Log.d("Alder", "page ${p.label}: first row in ${android.os.SystemClock.uptimeMillis() - opened} ms")
+                        if (i == 0) android.util.Log.d("CAS", "page ${p.label}: first row in ${android.os.SystemClock.uptimeMillis() - opened} ms")
                         updateNextRow()
                         if (jumpTo == title) { jumpTo = null; made.view.post { made.focusFirst() } }
                     }
@@ -1225,7 +1218,7 @@ class MainActivity : Screen() {
                             (if (quick) catalog.addon.savedCatalog(catalog, picked) else null)?.let { it to true }
                                 ?: (catalog.addon.catalog(catalog, picked, CATALOG_WAIT) to false)
                         }.getOrElse { e ->
-                            android.util.Log.w("Alder", "row $title (${catalog.id}, genre $picked) failed: $e")
+                            android.util.Log.w("CAS", "row $title (${catalog.id}, genre $picked) failed: $e")
                             emptyList<Meta>() to false
                         }
                     }) { answer ->
@@ -1253,7 +1246,7 @@ class MainActivity : Screen() {
             }
         }
         if (quick) background({ Stremio.savedAddons(key) }) { r -> r.getOrNull()?.let(::build) }
-        // Every page asks Stremio for the add-on list once as it opens (and again when Alder comes back to the front), and
+        // Every page asks Stremio for the add-on list once as it opens (and again when CAS comes back to the front), and
         // redraws only when the list differs from the one its rows came from: add-ons added or removed elsewhere.
         fun checkAddons(drawn: (List<Addon>) -> Unit) = background({ Stremio.addons(key, refresh = true) }) { r -> r.fold({ fresh ->
             if (built && g == generation && builtFrom != fresh.map { it.id }) showPage(p, quick = false) else drawn(fresh)
@@ -2011,7 +2004,7 @@ class MainActivity : Screen() {
         const val SWITCH_WAIT = 300L // ms the remote rests on a page's name before it opens: passing over names opens nothing
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
-        const val RADIUS = 6
+        const val RADIUS = 10
         const val ROW_TOP_ROOM = HEADING_GAP + 9 // dp between the row title and its cards, plus the focused card's growth (5% of 180 dp a side)
         const val ROW_BOTTOM_ROOM = 38 // room for the focused caption below the poster
         const val SAFE_BOTTOM = 27

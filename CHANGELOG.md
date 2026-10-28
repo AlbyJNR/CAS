@@ -1,3 +1,12 @@
+# CAS changelog
+
+## 1.1.1
+
+- **CAS identity.** New wordmark, TV banner, launcher icon and welcome screens.
+- **A quieter interface.** Charcoal surfaces, Inter headings, white focus controls and more space between cards.
+- **Simpler navigation.** CAS at left, destinations in the centre and profile at right.
+- **Separate installation.** CAS has its own package identity and checks this fork for updates.
+
 # Changelog
 
 Write every entry in ASD-STE100 Simplified Technical English (STE):

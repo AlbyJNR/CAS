@@ -124,7 +124,7 @@ class PlayerActivity : Screen() {
     }
     private val startTimeout = Runnable {
         if (started) return@Runnable
-        android.util.Log.w("Alder", "source ${at + 1}/${sources.size} timed out, state ${player.playbackState}")
+        android.util.Log.w("CAS", "source ${at + 1}/${sources.size} timed out, state ${player.playbackState}")
         next()
     }
 
@@ -221,7 +221,7 @@ class PlayerActivity : Screen() {
                         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                             .setOverrideForType(TrackSelectionOverride(next.mediaTrackGroup, (0 until next.length).toList())).build()
                         player.prepare()
-                        android.util.Log.i("Alder", "Audio track changed after decoder error")
+                        android.util.Log.i("CAS", "Audio track changed after decoder error")
                         return
                     }
                 }
@@ -239,7 +239,7 @@ class PlayerActivity : Screen() {
                     main.postDelayed({ if (!isFinishing) player.prepare() }, RETRY_WAIT)
                     return
                 }
-                android.util.Log.w("Alder", "source ${at + 1}/${sources.size} failed: ${e.errorCodeName}", e)
+                android.util.Log.w("CAS", "source ${at + 1}/${sources.size} failed: ${e.errorCodeName}", e)
                 next(e.errorCodeName)
             }
 
@@ -345,13 +345,13 @@ class PlayerActivity : Screen() {
             // then one file for each other language by name, so the list stays short enough for a remote.
             val all = Stremio.addons(key).filter { it.serves("subtitles", type, videoId) }
                 .flatMap { a -> runCatching { a.subtitles(type, videoId) }
-                    .onFailure { android.util.Log.w("Alder", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
+                    .onFailure { android.util.Log.w("CAS", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
             all.groupBy { Languages.code(it.lang) ?: it.lang }.entries
                 .sortedWith(compareBy({ it.key != wantSub }, { it.key != "en" }, { Languages.name(it.key) }))
                 .flatMap { (code, files) -> files.take(if (code == wantSub || code == "en") 3 else 1) }
         }) { r ->
             addonSubs = r.getOrDefault(emptyList())
-            android.util.Log.i("Alder", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
+            android.util.Log.i("CAS", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
             if (subsAnswered) return@background // too late: playing already, offered in the list
             main.removeCallbacks(stopWaiting)
             if (chosenSub == null) chosenSub = addonSubs.firstOrNull { Languages.same(it.lang, wantSub) } // attached, picked above
@@ -381,7 +381,7 @@ class PlayerActivity : Screen() {
 
     private fun buildLoading() = FrameLayout(this).apply {
         visibility = View.GONE
-        addView(View(context).apply { setBackgroundColor(0x800E0C0A.toInt()) }, FrameLayout.LayoutParams(-1, -1))
+        addView(View(context).apply { setBackgroundColor(0x8008090B.toInt()) }, FrameLayout.LayoutParams(-1, -1))
         val center = column(Gravity.CENTER_HORIZONTAL).apply {
             addView(ring(), LinearLayout.LayoutParams(dp(40), dp(40)))
             addView(status, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) })
@@ -470,7 +470,7 @@ class PlayerActivity : Screen() {
             audioPicked = false
             subsPicked = false
             failedAudio.clear()
-            android.util.Log.w("Alder", "Source failed: $reason; trying another")
+            android.util.Log.w("CAS", "Source failed: $reason; trying another")
             return load(position, "That source failed · trying the next one")
         }
         if (intent.getBooleanExtra("picked", false)) {
@@ -908,11 +908,11 @@ class PlayerActivity : Screen() {
             alpha = 0f
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(0x990E0C0A.toInt(), 0x000E0C0A))
+                    intArrayOf(0x9908090B.toInt(), 0x0008090B))
             }, FrameLayout.LayoutParams(-1, dp(120), Gravity.TOP))
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                    intArrayOf(0xE60E0C0A.toInt(), 0xA60E0C0A.toInt(), 0x000E0C0A))
+                    intArrayOf(0xE608090B.toInt(), 0xA608090B.toInt(), 0x0008090B))
             }, FrameLayout.LayoutParams(-1, dp(220), Gravity.BOTTOM))
             addView(playerLogo, FrameLayout.LayoutParams(dp(150), dp(50)).apply {
                 leftMargin = dp(PAD); topMargin = dp(26)
@@ -1158,7 +1158,7 @@ class PlayerActivity : Screen() {
             addView(list)
             setPadding(dp(22), dp(20), dp(22), dp(22))
             clipToPadding = false
-            background = android.graphics.drawable.LayerDrawable(arrayOf(rounded(0xF00E0C0A.toInt(), 14), glass(14)))
+            background = android.graphics.drawable.LayerDrawable(arrayOf(rounded(0xF008090B.toInt(), 14), glass(14)))
         }, FrameLayout.LayoutParams(dp(310), resources.displayMetrics.heightPixels - dp(54)).apply {
             leftMargin = dp(27); topMargin = dp(27)
         })
@@ -1349,8 +1349,8 @@ private class SeekBar(context: Context) : View(context) {
             canvas.drawRoundRect(knob, y - line / 2, to, y + line / 2, line / 2, line / 2, paint)
         }
         // A light track: the dark one vanished over a dark picture.
-        stretch(width - knob, 0x40F3EEE6)
-        stretch(x(buffered), 0x73F3EEE6)
+        stretch(width - knob, 0x40F5F5F7)
+        stretch(x(buffered), 0x73F5F5F7)
         paint.setShadowLayer(4 * d, 0f, 0f, Screen.TUNGSTEN_GLOW)
         stretch(x(position), Screen.TUNGSTEN)
         paint.clearShadowLayer()

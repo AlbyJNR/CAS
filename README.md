@@ -1,3 +1,37 @@
+# CAS
+
+A personal Android TV experience, built on [Alder](https://github.com/aradhyas8/Alder) by aradhyas8.
+
+CAS pairs cinematic artwork with neutral charcoal surfaces, crisp Inter typography, a spaced wordmark and white focus controls. The home header puts CAS on the left, destinations in the centre and your profile on the right. Playback and Stremio integration are inherited from Alder.
+
+## Development build
+
+The CAS Android build workflow runs the existing unit tests and creates a debug APK under its **CAS-test-apk** artifact. Download and unzip it, then sideload the APK on an Android TV 8.0+ device. These are test builds, not signed production releases; CI debug keys may change between builds.
+
+CAS installs separately as `uk.albyjnr.cas`. Sign in to Stremio again on first launch; local Alder profiles do not migrate automatically. Updates check this fork's releases, not upstream Alder. No CAS production release has been published yet.
+
+Build locally with Android Studio, JDK 17 and Android SDK 36:
+
+```sh
+bash gradlew testDebugUnitTest assembleDebug
+```
+
+Before distribution, configure your own stable release signing key using the existing `keystore.properties` support and build `assembleRelease`. Keep the key and passwords out of Git. Version codes must increase for subsequent APKs.
+
+## Design and device review
+
+See [CAS design notes](docs/CAS.md) for the changes and remote-navigation checklist. Branding assets can be regenerated with `python tools/cas_brand.py` (Pillow required).
+
+## Credits and licence
+
+CAS is a modified version of Alder, copyright (C) 2026 aradhyas8. The GPL-3.0 licence and upstream credits are retained below. CAS uses original wordmark assets and the bundled open-source Inter typeface; it is not affiliated with Apple or Stremio.
+
+---
+
+## Upstream Alder documentation
+
+The following describes the original Alder app; screenshots and upstream installation links are retained for reference.
+
 <h1 align="center">Alder</h1>
 
 <p align="center">

@@ -106,7 +106,7 @@ abstract class Screen : Activity() {
         // Disk cache for pictures (and anything else whose server allows caching), and last time's answers.
         android.net.http.HttpResponseCache.install(java.io.File(cacheDir, "http"), 250L * 1024 * 1024)
         Http.saved = java.io.File(cacheDir, "answers")
-        Http.userAgent = "Alder/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
+        Http.userAgent = "CAS/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
     }
 
     override fun onDestroy() {
@@ -115,7 +115,7 @@ abstract class Screen : Activity() {
     }
 
     /**
-     * Downloads [release] and hands it to Android's installer. Alder closes to be replaced and doesn't open again by
+     * Downloads [release] and hands it to Android's installer. CAS closes to be replaced and doesn't open again by
      * itself, so the viewer is told first. Without permission to install apps, Android's page for it opens, and the
      * install goes on when the viewer comes back with it allowed; a TV without that page gets the steps instead.
      */
@@ -124,14 +124,14 @@ abstract class Screen : Activity() {
             pendingInstall = release
             if (!Updates.askToInstall(this)) {
                 pendingInstall = null
-                choose("Allow Alder to install updates", listOf("OK"),
-                    "On Fire TV: Settings › My Fire TV › Developer options › Install unknown apps, then turn on Alder. " +
-                        "On Google TV: Settings › Apps › Security & restrictions › Unknown sources, then turn on Alder. " +
+                choose("Allow CAS to install updates", listOf("OK"),
+                    "On Fire TV: Settings › My Fire TV › Developer options › Install unknown apps, then turn on CAS. " +
+                        "On Google TV: Settings › Apps › Security & restrictions › Unknown sources, then turn on CAS. " +
                         "Then select Install again.") {}
             }
             return
         }
-        android.widget.Toast.makeText(this, "Downloading Alder ${release.version}… Alder closes to update. Open it again after.",
+        android.widget.Toast.makeText(this, "Downloading CAS ${release.version}… CAS closes to update. Open it again after.",
             android.widget.Toast.LENGTH_LONG).show()
         background({ Updates.install(applicationContext, release) }) { r ->
             if (r.isFailure) choose("Couldn't download the update", listOf("OK"), "Check the TV's connection and try again from Settings › About.") {}
@@ -159,13 +159,13 @@ abstract class Screen : Activity() {
     // Read once for the whole app, not per screen: Inter alone is 870 KB, read twice, on the main thread.
     private val fonts get() = loadedFonts ?: Fonts(applicationContext.assets).also { loadedFonts = it }
 
-    /** Shared House Lights typography. */
+    /** Shared CAS typography. The legacy serif flag now selects a display weight. */
     protected fun text(value: String, sp: Float, bold: Boolean = false, color: Int = TEXT, serif: Boolean = false) =
         TextView(this).apply {
             text = value
             textSize = sp
             setTextColor(color)
-            typeface = if (serif) fonts.serif else if (bold) fonts.semiBold else fonts.medium
+            typeface = if (serif || bold) fonts.semiBold else fonts.medium
             LEADING[sp]?.let { lead ->
                 val want = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, lead, resources.displayMetrics)
                 setLineSpacing(want - paint.getFontMetricsInt(null), 1f)
@@ -209,8 +209,8 @@ abstract class Screen : Activity() {
             if (art !== shadeSource) return@background
             // A bright film keeps the shade dark across the whole text column, not just at the screen's edge.
             windowShade?.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                if (bright) intArrayOf(0xF70E0C0A.toInt(), 0xE00E0C0A.toInt(), 0x800E0C0A.toInt(), 0x000E0C0A)
-                else intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+                if (bright) intArrayOf(0xF708090B.toInt(), 0xE008090B.toInt(), 0x8008090B.toInt(), 0x0008090B)
+                else intArrayOf(0xEB08090B.toInt(), 0x0008090B, 0x0008090B))
         }
     }
 
@@ -222,14 +222,14 @@ abstract class Screen : Activity() {
         setContentView(FrameLayout(this).apply {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
             windowShade = View(context).apply {
-                background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xEB0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+                background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xEB08090B.toInt(), 0x0008090B, 0x0008090B))
             }.also { addView(it, FrameLayout.LayoutParams(-1, -1)) }
             addView(View(context).apply {
-                background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF70E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A))
+                background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF708090B.toInt(), 0x0008090B, 0x0008090B))
             }, FrameLayout.LayoutParams(-1, -1))
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(0x8C0E0C0A.toInt(), 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A, 0x000E0C0A))
+                    intArrayOf(0x8C08090B.toInt(), 0x0008090B, 0x0008090B, 0x0008090B, 0x0008090B, 0x0008090B, 0x0008090B))
             }, FrameLayout.LayoutParams(-1, -1))
             for (edge in listOf(GradientDrawable.Orientation.LEFT_RIGHT, GradientDrawable.Orientation.RIGHT_LEFT,
                 GradientDrawable.Orientation.TOP_BOTTOM, GradientDrawable.Orientation.BOTTOM_TOP)) {
@@ -292,7 +292,7 @@ abstract class Screen : Activity() {
         fun style(focused: Boolean) {
             background = GradientDrawable().apply {
                 setColor(TEXT)
-                cornerRadius = dp(BUTTON_H / 2).toFloat()
+                cornerRadius = dp(10).toFloat()
             }
             setTextColor(BASE)
             compoundDrawablesRelative[0]?.setTint(BASE)
@@ -366,12 +366,14 @@ abstract class Screen : Activity() {
     /** A hairline under a list row. */
     protected fun divider() = View(this).apply { setBackgroundColor(GLASS_EDGE) }
 
-    /** Alder's mark beside the serif "Alder": top left of the picker and sign-in, and Settings › About. */
+    /** CAS wordmark: a single, quiet signature on every entry screen. */
     protected fun brand(size: Float = WORDMARK) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
-        val mark = (size * 1.3f).toInt() // the mark's art fills about two thirds of its square
-        addView(ImageView(context).apply { setImageResource(R.drawable.logo_transparent) }, LinearLayout.LayoutParams(dp(mark), dp(mark)))
-        addView(text("Alder", size, serif = true).onArt(), wrap().apply { marginStart = dp(4) })
+        addView(text("CAS", size, bold = true).apply {
+            letterSpacing = 0.16f
+            includeFontPadding = false
+            contentDescription = "CAS"
+        }, wrap())
     }
 
     /** The IMDb tag beside a rating, as tall as the letters. */
@@ -595,7 +597,7 @@ abstract class Screen : Activity() {
         val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
         val list = column(Gravity.START).apply { setPadding(dp(22), dp(20), dp(22), dp(18)) }
         list.addView(caps("What's new", TUNGSTEN))
-        list.addView(text("Alder $version", SERIF_TITLE, serif = true).marginTop(4))
+        list.addView(text("CAS $version", SERIF_TITLE, serif = true).marginTop(4))
         val entries = column(Gravity.START)
         list.addView(entries, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         fun entry(change: String) = text("", BODY, color = TEXT).apply {
@@ -641,30 +643,30 @@ abstract class Screen : Activity() {
         background = glassOver(this, 14)
     }
 
-    // House Lights' shared values. Screens keep their layout and content; the helpers above own component styling.
+    // CAS shared values. Screens keep their layout and content; the helpers above own component styling.
     private class Fonts(assets: android.content.res.AssetManager) {
         val medium: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 500").setWeight(500).build()
         val semiBold: Typeface = Typeface.Builder(assets, "fonts/inter.ttf").setFontVariationSettings("'wght' 600").setWeight(600).build()
-        val serif: Typeface = Typeface.createFromAsset(assets, "fonts/instrument_serif.ttf")
+        // CAS uses Inter throughout, including display headings.
     }
 
     companion object {
         private var loadedFonts: Fonts? = null // main thread only
         const val PAD = 48
-        const val TILE_RADIUS = 8
+        const val TILE_RADIUS = 10
         const val GLASS_INSET = 28 // dp a glass panel sits in from the screen's edges
         const val FROST_W = 360 // px the art is shrunk to before the blur: wider is less blur (240 read as fog, 480 as smeared)
-        const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
+        const val HERO_W = 480 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 34
         const val SHORT_LIST = 5 // "What's new" entries shown before See all changes
         const val WHATS_NEW_W = 480 // dp
         const val CHIP_H = 24 // the mocks' 46–48 px chips
-        const val CARD_GROW = 1.08f
+        const val CARD_GROW = 1.06f
         const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
         const val CARD_LIFT = 8
         // Spacing, everywhere rows of pictures appear: between cards, from a row's heading to its cards (plus room for
         // the focused card to grow), and above a heading, so each heading belongs to the row under it.
-        const val CARD_GAP = 14
+        const val CARD_GAP = 18
         const val POSTER_W = 88
         const val POSTER_H = 132
         const val HEADING_GAP = 24
@@ -674,7 +676,7 @@ abstract class Screen : Activity() {
         const val PANEL_W = 0.573f // share of the screen a list panel takes, beside its side note
         const val DOT = "  ·  "
 
-        const val WORDMARK = 22f // sp, "Alder" beside its mark
+        const val WORDMARK = 22f // sp, "CAS" beside its mark
         const val SERIF_HERO = 38f
         const val SERIF_TITLE = 28.5f
         const val SERIF_NAME = 19f
@@ -684,18 +686,18 @@ abstract class Screen : Activity() {
         const val CODE = 36f
         val LEADING = mapOf(SERIF_HERO to 40f, SERIF_TITLE to 30f, SERIF_NAME to 21f, BODY to 20f, SMALL to 17f, CODE to 40f)
 
-        const val BASE = 0xFF0E0C0A.toInt()
-        const val TEXT = 0xFFF3EEE6.toInt()
-        const val TEXT_2 = 0xB8F3EEE6.toInt()
-        const val TEXT_3 = 0x73F3EEE6
-        const val TUNGSTEN = 0xFFF3D9B1.toInt()
-        const val TUNGSTEN_RIM = 0x99F3D9B1.toInt()
-        const val TUNGSTEN_GLOW = 0x59F3D9B1
-        const val GLASS = 0x4D28221C
-        const val GLASS_FOCUSED = 0x3DF3EEE6 // a lit face: with no rim, the fill alone carries focus
-        const val GLASS_EDGE = 0x24FFF0DC
-        const val GLASS_HIGHLIGHT = 0x4DFFF5E6
-        const val ROW_FOCUSED = 0x29F3EEE6
+        const val BASE = 0xFF08090B.toInt()
+        const val TEXT = 0xFFF5F5F7.toInt()
+        const val TEXT_2 = 0xB8F5F5F7.toInt()
+        const val TEXT_3 = 0x73F5F5F7
+        const val TUNGSTEN = 0xFFFFFFFF.toInt()
+        const val TUNGSTEN_RIM = 0x99FFFFFF.toInt()
+        const val TUNGSTEN_GLOW = 0x59FFFFFF
+        const val GLASS = 0x99202226.toInt()
+        const val GLASS_FOCUSED = 0x3DF5F5F7 // a lit face: with no rim, the fill alone carries focus
+        const val GLASS_EDGE = 0x1FFFFFFF
+        const val GLASS_HIGHLIGHT = 0x4DFFFFFF
+        const val ROW_FOCUSED = 0x29F5F5F7
         const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
         private val pool = Executors.newFixedThreadPool(6)
     }

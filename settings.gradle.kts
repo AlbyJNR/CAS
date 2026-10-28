@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "alder"
+rootProject.name = "CAS"
 include(":app")
