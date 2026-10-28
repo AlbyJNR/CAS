@@ -14,11 +14,19 @@ CAS is a minimalist Android TV and Fire TV app for your Stremio account. Cinemat
 
 ## Install the preview
 
-Open this repository's **Releases** page, select **CAS preview**, then download **CAS.apk** under **Assets**.
+On a Fire TV, open the **Downloader** app and enter this address exactly:
 
-Install the APK on a compatible Android TV or Fire TV device running Android 8.0 or newer. Open CAS and sign in to Stremio. Configure your account and debrid-based add-ons in Stremio first.
+```
+https://github.com/AlbyJNR/CAS/releases/download/cas-preview/CAS.apk
+```
 
-This is a test build: compilation and the existing unit tests pass, but TV layout, navigation and playback still need hardware testing. CI debug signing keys can change between builds; a later preview may require reinstalling.
+Choose **Go**, then **Install**, then open CAS. The address never changes: every push to the build branches replaces CAS.apk with the newest tested build, so entering it again updates CAS.
+
+On Android TV or Google TV, download the same file with any sideloading tool, or open this repository's **Releases** page and pick **CAS.apk** under **CAS preview**.
+
+CAS needs Android 8.0 or newer. Open CAS and sign in to Stremio. Configure your account and debrid-based add-ons in Stremio first.
+
+This is a test build: compilation and the unit tests pass, but TV layout, navigation and playback still need hardware testing. Preview builds use a CI debug signing key, so a later preview may ask you to uninstall the earlier one.
 
 ## Development
 

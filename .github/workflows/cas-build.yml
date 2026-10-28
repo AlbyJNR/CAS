@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write # to refresh the cas-preview release asset after a push
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,3 +32,19 @@ jobs:
         with:
           name: CAS-test-results
           path: app/build/reports/tests/
+      # Every push to a build branch refreshes the one preview download, so the Fire TV Downloader address never
+      # changes: https://github.com/<owner>/<repo>/releases/download/cas-preview/CAS.apk
+      - name: Publish preview download
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/CAS.apk
+          notes="CAS preview for Android TV and Fire TV (Android 8.0+). Download CAS.apk directly. Debug build from ${GITHUB_SHA} (${GITHUB_REF_NAME}): compilation and unit tests passed in CI; TV layout, navigation and playback still need hardware testing. Preview signing keys may change, so a later test build can require uninstalling this one first."
+          if gh release view cas-preview >/dev/null 2>&1; then
+            gh release edit cas-preview --target "$GITHUB_SHA" --prerelease --title "CAS preview — Fire TV test build" --notes "$notes"
+          else
+            gh release create cas-preview --target "$GITHUB_SHA" --prerelease --title "CAS preview — Fire TV test build" --notes "$notes"
+          fi
+          gh release upload cas-preview dist/CAS.apk --clobber

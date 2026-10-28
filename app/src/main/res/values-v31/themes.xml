@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: the same charcoal as every CAS screen, the adaptive icon centred on it, and no
+         brand strip, so the launch reads as one quiet fade rather than a black card with a boxed logo. -->
+    <style name="CAS" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:spotShadowAlpha">0.9</item>
+        <item name="android:ambientShadowAlpha">0</item>
+        <item name="android:windowSplashScreenBackground">@color/cas_base</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/cas_base</item>
+    </style>
+</resources>
