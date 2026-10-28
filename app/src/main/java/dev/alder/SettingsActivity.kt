@@ -35,8 +35,28 @@ object Settings {
     fun dub(c: Context) = prefs(c).getString(profileKey(c, "dub"), "").orEmpty()
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
     /** A removed profile's taste goes with it, so a new profile in its place starts with none. */
-    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId")
-        .remove("audioLang@$profileId").remove("subLang@$profileId").apply()
+    fun forget(c: Context, profileId: String) = prefs(c).edit().apply {
+        listOf("release", "dub", "audioLang", "subLang").forEach { remove("$it@$profileId") }
+        prefs(c).all.keys.filter { it.startsWith("title:") && it.endsWith("@$profileId") }.forEach(::remove)
+    }.apply()
+
+    /**
+     * What the viewer picked in the player's Audio & subtitles for one title (a series' episodes share it), so the next
+     * episode and a resume start the same way. Language codes; subtitles "" is Off; null where nothing was picked.
+     */
+    class TitleChoice(val audio: String?, val subtitles: String?)
+
+    fun titleChoice(c: Context, metaId: String): TitleChoice? = prefs(c).getString(profileKey(c, "title:$metaId"), null)
+        ?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+        ?.let { TitleChoice(it.text("audio"), if (it.has("subtitles")) it.optString("subtitles") else null) }
+
+    fun pickedInPlayer(c: Context, metaId: String, audio: String? = null, subtitles: String? = null) {
+        val key = profileKey(c, "title:$metaId")
+        val json = prefs(c).getString(key, null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } ?: org.json.JSONObject()
+        audio?.let { json.put("audio", it) }
+        subtitles?.let { json.put("subtitles", it) }
+        prefs(c).edit().putString(key, json.toString()).apply()
+    }
     fun alwaysList(c: Context) = prefs(c).getBoolean("alwaysList", false)
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)

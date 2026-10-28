@@ -92,7 +92,13 @@ class PlayerActivity : Screen() {
     private var addonSubs: List<Subtitle> = emptyList()
     private var chosenSub: Subtitle? = null
     private var selectAddonSub = false
-    private val wantSub by lazy { Settings.subtitleLanguage(this) }
+    // The languages to start with: what was picked in Audio & subtitles for this title before (the next episode, a
+    // resume), else the profile's Settings. Picks in the menu change them, are kept for the title, and hold when the
+    // player moves to another source.
+    private var wantAudio = ""
+    private var wantSub = ""
+    private var subsOn = true
+    private var viewerAddonSub = false // the viewer chose the addon file, over the file's own in the same language
     // Timing for an addon subtitle file that runs early or late: the file is fetched, its times moved, and attached
     // from the app's cache instead of its URL. ponytail: SRT and VTT only; ASS and the file's own subtitles can't move.
     private var subDelay = 0L
@@ -138,9 +144,13 @@ class PlayerActivity : Screen() {
                 }
         }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON) // ffmpeg after the TV's own decoders
         player = ExoPlayer.Builder(this, renderers).build()
+        val remembered = Settings.titleChoice(this, metaId)
+        wantAudio = remembered?.audio ?: Settings.audioLanguage(this)
+        subsOn = remembered?.subtitles?.isNotEmpty() ?: Settings.subtitles(this)
+        wantSub = remembered?.subtitles?.ifEmpty { null } ?: Settings.subtitleLanguage(this)
         // Release files carry many dubs; start in the chosen language (the TV's unless Settings says) instead of the first.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredAudioLanguage(Settings.audioLanguage(this)).setPreferredTextLanguage(Settings.subtitleLanguage(this)).build()
+            .setPreferredAudioLanguage(wantAudio).setPreferredTextLanguage(wantSub).build()
         view = PlayerView(this).apply {
             player = this@PlayerActivity.player
             keepScreenOn = true
@@ -295,8 +305,9 @@ class PlayerActivity : Screen() {
                     val texts = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0) }
                     fun inFile(score: Int) = texts.filterNot(::isAddonSub).filter { Languages.match(it.getTrackFormat(0).language, wantSub) == score }
                         .maxByOrNull { it.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_FORCED == 0 } // full, not forced-only
-                    val pick = if (!Settings.subtitles(this@PlayerActivity)) null
-                        else inFile(2) ?: texts.firstOrNull { isAddonSub(it) && Languages.same(chosenSub?.lang, wantSub) } ?: inFile(1)
+                    val addon = texts.firstOrNull { isAddonSub(it) && Languages.same(chosenSub?.lang, wantSub) }
+                    val pick = if (!subsOn) null
+                        else (if (viewerAddonSub) addon else null) ?: inFile(2) ?: addon ?: inFile(1)
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
                         if (pick == null) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                         else setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(TrackSelectionOverride(pick.mediaTrackGroup, 0))
@@ -313,7 +324,7 @@ class PlayerActivity : Screen() {
         val known = if (intent.getBooleanExtra("startOver", false)) 0L else intent.getLongExtra("resumeAt", -1L).takeIf { it >= 0 }
         // The addon's subtitles are waited for (SUB_WAIT at most) so a file in the profile's language is attached from
         // the start: attaching one later means loading the source again. The latest resume point asked for wins.
-        var subsAnswered = !Settings.subtitles(this)
+        var subsAnswered = !subsOn
         var waiting: Long? = null
         fun begin(resume: Long) {
             if (prepared) return
@@ -407,6 +418,16 @@ class PlayerActivity : Screen() {
         status.text = ""
     }
 
+    /** A subtitle pick in the menu: the language ("" for Off) for this title's next episode and resume, and for the
+     *  next source if this one fails. A track with no language turns subtitles on without naming one. */
+    private fun remember(language: String?, addonFile: Boolean) {
+        subsOn = language != ""
+        viewerAddonSub = addonFile
+        val code = if (language == "") "" else Languages.code(language) ?: return
+        if (code.isNotEmpty()) wantSub = code
+        Settings.pickedInPlayer(this, metaId, subtitles = code)
+    }
+
     /** Plays the current source from [position], with its own request headers (debrid proxies need them). */
     private fun load(position: Long, message: String? = null) {
         val s = sources[at]
@@ -473,7 +494,7 @@ class PlayerActivity : Screen() {
      * the TV decodes in hardware, which on The Raid was a stereo commentary.
      */
     private fun bestAudio(groups: List<Tracks.Group>): Tracks.Group? {
-        val language = Settings.audioLanguage(this)
+        val language = wantAudio
         return groups
             .filter { it.isTrackSupported(0) && (it.getTrackFormat(0).id ?: "") !in failedAudio }
             .filter { it.getTrackFormat(0).label?.contains("commentary", ignoreCase = true) != true }
@@ -1062,6 +1083,7 @@ class PlayerActivity : Screen() {
             audioPicked = true
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setOverrideForType(TrackSelectionOverride(audio[i].mediaTrackGroup, (0 until audio[i].length).toList())).build()
+            Languages.code(audio[i].getTrackFormat(0).language)?.let { wantAudio = it; Settings.pickedInPlayer(this, metaId, audio = it) }
         }
         val texts = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0) }
         val subs = texts.filterNot(::isAddonSub)
@@ -1075,6 +1097,7 @@ class PlayerActivity : Screen() {
             addonSubs.map { "${it.language}  ·  ${it.addon}" }, chosen) { i ->
             val p = player.trackSelectionParameters.buildUpon()
             val sub = addonSubs.getOrNull(i - 1 - subs.size)
+            remember(if (i == 0) "" else sub?.lang ?: subs[i - 1].getTrackFormat(0).language, addonFile = sub != null)
             player.trackSelectionParameters = when {
                 i == 0 -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
                 sub == null -> p.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
