@@ -24,6 +24,13 @@ class ScreenDesignTest {
         assertEquals("Find the remaining Horcruxes…", synopsisAtSentence("Find the remaining Horcruxes, and return.", 30))
     }
 
+    @Test fun whatsNewReadsOneVersionsEntries() {
+        val log = "# Changelog\n\n- a rule, not a change\n\n## Unreleased\n\n- Next\n\n## 1.2\n\n- **One.** First\n- Two\n\n## 1.1\n\n- Old\n"
+        assertEquals(listOf("**One.** First", "Two"), changesFor(log, "1.2"))
+        assertEquals(listOf("Next"), changesFor(log, "Unreleased"))
+        assertEquals(emptyList<String>(), changesFor(log, "1.3"))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))

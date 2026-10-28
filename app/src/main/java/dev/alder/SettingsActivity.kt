@@ -342,6 +342,7 @@ class SettingsActivity : Screen() {
                     "Alder is a TV interface for your Stremio account.") {
                     choose("Alder", listOf("OK"), "A TV interface for your Stremio account.") {}
                 }
+                actionRow("What's new", "Version " + Updates.mine(this), "The changes in the version on this TV.") { whatsNew() }
                 var found: Updates.Release? = null
                 val value = actionRow("Updates", "Checking…", "New versions come from Alder's releases on GitHub.") {
                     found?.let(::installUpdate) ?: showGroup(Group.ABOUT)

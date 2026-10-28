@@ -553,6 +553,57 @@ abstract class Screen : Activity() {
         rows.getOrNull(focus)?.requestFocus()
     }
 
+    /**
+     * "What's new" for [version]: its entries from CHANGELOG.md (packaged with the app), the first [SHORT_LIST] on glass
+     * with Got it, and See all changes to open the rest in a taller panel that the remote steps through line by line.
+     * [quiet]: nothing at all when there are no notes (the pop-up after an update), else a short message (Settings).
+     */
+    protected fun whatsNew(version: String = Updates.mine(this), quiet: Boolean = false) {
+        val changes = runCatching { assets.open("CHANGELOG.md").bufferedReader().use { it.readText() } }.getOrNull()
+            ?.let { changesFor(it, version) }.orEmpty()
+        if (changes.isEmpty()) {
+            if (!quiet) choose("What's new", listOf("OK"), "There are no notes for version $version.") {}
+            return
+        }
+        val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
+        val list = column(Gravity.START).apply { setPadding(dp(22), dp(20), dp(22), dp(18)) }
+        list.addView(caps("What's new", TUNGSTEN))
+        list.addView(text("Alder $version", SERIF_TITLE, serif = true).marginTop(4))
+        val entries = column(Gravity.START)
+        list.addView(entries, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        fun entry(change: String) = text("", BODY, color = TEXT).apply {
+            text = changeLine(change)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            entries.addView(this, LinearLayout.LayoutParams(-1, -2))
+        }
+        changes.take(SHORT_LIST).forEach(::entry)
+        val gotIt = pill("Got it").apply { setOnClickListener { dialog.dismiss() } }
+        val buttons = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; addView(gotIt) }
+        list.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
+        if (changes.size > SHORT_LIST) buttons.addView(chip("See all changes").apply {
+            setOnClickListener {
+                // Taller, every entry, each one a stop for the remote so Down moves through them; Got it at the end.
+                changes.drop(SHORT_LIST).forEach(::entry)
+                (0 until entries.childCount).forEach { entries.getChildAt(it).rowFocus() }
+                buttons.removeView(this)
+                dialog.window?.setLayout(dp(WHATS_NEW_W), resources.displayMetrics.heightPixels * 82 / 100)
+                entries.getChildAt(SHORT_LIST).requestFocus()
+            }
+        }, LinearLayout.LayoutParams(-2, dp(CHIP_H + 6)).apply { marginStart = dp(8) })
+        dialog.setContentView(android.widget.ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            background = glassOver(this, 16)
+            addView(list)
+        })
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            setLayout(dp(WHATS_NEW_W), -2)
+            setDimAmount(0.6f)
+        }
+        dialog.show()
+        gotIt.requestFocus()
+    }
+
     /** One glass error card with a plain message and a next action. */
     protected fun failed(message: String, retry: () -> Unit) = column(Gravity.START,
         text("!", SERIF_NAME, color = TUNGSTEN, serif = true),
@@ -578,6 +629,8 @@ abstract class Screen : Activity() {
         const val FROST_W = 360 // px the art is shrunk to before the blur: wider is less blur (240 read as fog, 480 as smeared)
         const val HERO_W = 520 // dp: a title's block on Home and its page, half the screen so the story reads in full lines
         const val BUTTON_H = 34
+        const val SHORT_LIST = 5 // "What's new" entries shown before See all changes
+        const val WHATS_NEW_W = 480 // dp
         const val CHIP_H = 24 // the mocks' 46–48 px chips
         const val CARD_GROW = 1.08f
         const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
@@ -619,4 +672,32 @@ abstract class Screen : Activity() {
         const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
         private val pool = Executors.newFixedThreadPool(6)
     }
+}
+
+/** The entries under "## [version]" in CHANGELOG.md, without their "- "; empty when that version has no section. */
+internal fun changesFor(changelog: String, version: String): List<String> {
+    val lines = changelog.lines()
+    val start = lines.indexOfFirst { it.trim() == "## $version" }.takeIf { it >= 0 } ?: return emptyList()
+    return lines.drop(start + 1).takeWhile { !it.startsWith("## ") }
+        .filter { it.startsWith("- ") }.map { it.removePrefix("- ").trim() }
+}
+
+/** A changelog entry as it reads on screen: **bold** in bold, `code` and the other marks left out. */
+internal fun changeLine(change: String): CharSequence {
+    val out = android.text.SpannableStringBuilder()
+    Regex("""\*\*(.+?)\*\*|`(.+?)`""").let { marks ->
+        var at = 0
+        marks.findAll(change).forEach { m ->
+            out.append(change, at, m.range.first)
+            val bold = m.groupValues[1]
+            if (bold.isNotEmpty()) {
+                val start = out.length
+                out.append(bold)
+                out.setSpan(android.text.style.StyleSpan(Typeface.BOLD), start, out.length, 0)
+            } else out.append(m.groupValues[2])
+            at = m.range.last + 1
+        }
+        out.append(change, at, change.length)
+    }
+    return out
 }
