@@ -34,6 +34,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - When you remove a profile, Alder does not sign out a Stremio account that another profile uses.
 - Alder tells you when you add a Stremio account that another profile already uses.
 - The sign-in page tells you how to connect 2 accounts with 1 phone.
+- **Add-ons with an http:// address work.** Alder connects to add-ons and sources with an http:// address, for example add-ons on your home network. Before, all of these failed.
+- **Alder tells you why there is no source.** For example, an add-on did not answer, or an add-on found only torrents.
+- Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
+- Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
 
 ## 1.1
 

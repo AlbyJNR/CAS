@@ -125,8 +125,13 @@ class Addon(val descriptor: JSONObject) {
     }
 
     /** Playable streams only: torrent-only results (no url) need a streaming server, which this app doesn't have. */
-    fun streams(type: String, videoId: String): List<Stream> =
-        get(false, "stream", type, videoId).optJSONArray("streams").objects().mapNotNull { Stream.from(it) }
+    fun streams(type: String, videoId: String): Streams {
+        val all = get(false, "stream", type, videoId).optJSONArray("streams").objects()
+        return Streams(all.mapNotNull { Stream.from(it) }, all.count { it.text("url") == null && it.text("infoHash") != null })
+    }
+
+    /** [torrents]: results Alder can't play, a torrent with no debrid link (an infoHash, no url); counted to say why. */
+    class Streams(val playable: List<Stream>, val torrents: Int)
 
     /** Subtitle files for one video (OpenSubtitles and co. through Stremio's `subtitles` resource). */
     fun subtitles(type: String, videoId: String): List<Subtitle> =
@@ -233,6 +238,8 @@ class Stream(
         else -> 0
     }
     val isHdr get() = hdr || dolbyVision
+    /** Dolby Vision with no HDR10 base (profile 5, common on web releases): only a profile 5 decoder shows it right. */
+    val dolbyVisionOnly get() = dolbyVision && !hdr
     val dolbyVision = Regex("\\b(dv|dovi|dolby.?vision)\\b").containsMatchIn(words)
     val hdr = Regex("\\bhdr|\\bp8\\b|hybrid").containsMatchIn(words) // P8 and hybrid DV carry an HDR10 base
     private val hevc = Regex("hevc|[xh].?265").containsMatchIn(words)
@@ -265,11 +272,10 @@ class Stream(
     )
 
     /**
-     * Whether this TV can decode it at all. Dolby Vision without an HDR10 base named (profile 5, common on web
-     * releases) shows purple and green without a Dolby Vision decoder, so it's left out; DV with HDR10 plays as HDR10.
+     * Whether this TV can decode it at all. Dolby Vision without an HDR10 base isn't left out here: many TVs report
+     * their Dolby Vision decoders in ways the check misses, so it's listed last instead (StreamsActivity.rank).
      */
-    fun playableOn(tv: Device): Boolean =
-        (!hevc || tv.hevc) && (!av1 || tv.av1) && (!dolbyVision || hdr || tv.dolbyVision)
+    fun playableOn(tv: Device): Boolean = (!hevc || tv.hevc) && (!av1 || tv.av1)
 
     /** How well it suits this TV, higher first: nothing above the screen's resolution, HDR only on an HDR screen. */
     fun fit(tv: Device): Int = (if (height > tv.height) 0 else 2) + (if (hdr || dolbyVision) (if (tv.hdr) 0 else -1) else 0)

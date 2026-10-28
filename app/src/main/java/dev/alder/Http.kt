@@ -19,6 +19,9 @@ object Http {
             trim()
         }
 
+    /** Set once at start with the app's version. */
+    var userAgent = "Alder"
+
     fun get(url: String, keep: Boolean = false, timeoutMs: Int = 20_000): String = text(url, null, keep, timeoutMs)
 
     fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
@@ -27,7 +30,10 @@ object Http {
 
     private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000): String {
         val (code, body) = request(url, json, cache = false, timeoutMs)
-        return String(body, Charsets.UTF_8).also { if (keep && code < 400) keep(url, json, it) }
+        val text = String(body, Charsets.UTF_8)
+        // Stremio's API answers errors as JSON (read by the caller); anything else failed is an error page: say the code.
+        if (code >= 400 && !text.trimStart().startsWith("{")) throw IOException("HTTP $code")
+        return text.also { if (keep && code < 400) keep(url, json, it) }
     }
 
     /** The last answer kept for this request, or null. Never touches the network. */
@@ -73,6 +79,8 @@ object Http {
     private fun request(url: String, json: String?, cache: Boolean, timeoutMs: Int = 20_000): Pair<Int, ByteArray> {
         val c = URL(url).openConnection() as HttpURLConnection
         c.useCaches = cache
+        // Not Android's "Dalvik/2.1.0": some add-ons behind Cloudflare answer that with a challenge page.
+        c.setRequestProperty("User-Agent", userAgent)
         c.connectTimeout = minOf(10_000, timeoutMs)
         c.readTimeout = timeoutMs
         if (json != null) {

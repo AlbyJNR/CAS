@@ -152,6 +152,9 @@ class StreamsActivity : Screen() {
             val addons = result.getOrElse { status.text = "Couldn't load sources. Check your connection and try again."; return@background }
             if (addons.isEmpty()) { status.text = "No stream add-ons are connected. Add one in Stremio to find sources."; return@background }
             val answers = arrayOfNulls<List<Stream>>(addons.size)
+            // Why an add-on gave nothing to play, so an empty list can say so instead of blaming the TV.
+            val failures = arrayOfNulls<Throwable>(addons.size)
+            val torrents = IntArray(addons.size)
             var started = false
             var listed = false
             var waitingForEarlier = false
@@ -164,9 +167,14 @@ class StreamsActivity : Screen() {
                 count.text = "${shown.size} " + if (shown.size == 1) "source" else "sources"
                 rows.removeAllViews()
                 if (shown.isEmpty()) {
-                    rows.addView(text("No playable sources found for this TV.", BODY, color = TEXT_2).onArt().apply {
+                    rows.addView(text("No playable sources found.", BODY, color = TEXT_2).onArt().apply {
                         setPadding(dp(12), dp(12), 0, 0)
                     })
+                    val unplayable = answers.sumOf { a -> a.orEmpty().count { it.isVideo && !it.playableOn(tv) } }
+                    emptyReasons(addons.map { it.name }, failures, torrents, unplayable).forEach { line ->
+                        rows.addView(text(line, SMALL, color = TEXT_2).onArt().apply { setPadding(dp(12), dp(8), dp(12), 0) },
+                            LinearLayout.LayoutParams(-1, -2))
+                    }
                 } else {
                     val best = eligible.firstOrNull { it in shown }
                     shown.forEach { stream -> rows.addView(streamRow(stream, providers[stream].orEmpty(), stream === best),
@@ -201,7 +209,12 @@ class StreamsActivity : Screen() {
 
             addons.forEachIndexed { i, addon ->
                 background({ addon.streams(type, videoId) }) { streams ->
-                    answers[i] = streams.getOrDefault(emptyList())
+                    streams.exceptionOrNull()?.let { e ->
+                        failures[i] = e
+                        android.util.Log.w("Alder", "streams from ${addon.name} failed", e)
+                    }
+                    torrents[i] = streams.getOrNull()?.torrents ?: 0
+                    answers[i] = streams.getOrNull()?.playable.orEmpty()
                     if (answers.all { it != null }) {
                         if (pick || listed) showList() else tryStart()
                     } else if (!pick) {
@@ -258,6 +271,33 @@ class StreamsActivity : Screen() {
         Locale(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     /**
+     * What went wrong when nothing is playable: add-ons that failed (and how), add-ons that only found torrents (they
+     * need a debrid service), and sources in a format this TV can't decode. Plain words, one line each.
+     */
+    private fun emptyReasons(names: List<String>, failures: Array<Throwable?>, torrents: IntArray, unplayable: Int): List<String> {
+        val failed = names.indices.filter { failures[it] != null }.map { "${names[it]} (${reason(failures[it]!!)})" }
+        val torrentOnly = names.indices.filter { failures[it] == null && torrents[it] > 0 }.map { names[it] }
+        return listOfNotNull(
+            failed.takeIf { it.isNotEmpty() }?.let {
+                "Couldn't get sources from ${it.joinToString(", ")}. Check the add-on in Stremio, or try again later."
+            },
+            torrentOnly.takeIf { it.isNotEmpty() }?.let {
+                "${it.joinToString(", ")} found only torrents. Alder plays them through a debrid service: connect one in the add-on's settings."
+            },
+            unplayable.takeIf { it > 0 }?.let { "$it ${if (it == 1) "source needs" else "sources need"} a video format this TV can't decode." },
+        ).ifEmpty { listOf("Your add-ons have no sources for this title.") }
+    }
+
+    private fun reason(e: Throwable): String = when (e) {
+        is java.net.SocketTimeoutException -> "timed out"
+        is java.net.UnknownHostException -> "address not found"
+        is java.net.ConnectException -> "connection refused"
+        is javax.net.ssl.SSLException -> "secure connection failed"
+        is org.json.JSONException -> "not a source list"
+        else -> e.message?.takeIf { it.length <= 40 } ?: "error"
+    }
+
+    /**
      * The order to try sources in: when the player asked for a lower quality, the tallest that's left first; then the
      * file played last time for this video (debrid links expire, so the link is fresh but the release is the same), then
      * the release the previous episode used (AIOStreams' bingeGroup), then the addon's own order, with releases above the
@@ -275,6 +315,7 @@ class StreamsActivity : Screen() {
             .thenByDescending { file != null && it.filename == file }
             .thenByDescending { binge != null && it.bingeGroup == binge }
             .thenBy { it.awkward }
+            .thenBy { it.dolbyVisionOnly && !tv.dolbyVision } // may show no picture (or purple and green) here: last
             .thenByDescending { it.fit(tv) }
             .thenByDescending(prefer))
     }
