@@ -182,7 +182,7 @@ class PlayerActivity : Screen() {
         }
         setContentView(screen)
         background({
-            Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.let { it.savedMeta(type, metaId) ?: it.meta(type, metaId) }
+            Stremio.addons(key).let { it.savedMeta(type, metaId) ?: it.meta(type, metaId) }
         }) { r ->
             meta = r.getOrNull()
             val m = meta ?: return@background

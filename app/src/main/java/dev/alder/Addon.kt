@@ -105,9 +105,12 @@ class Addon(val descriptor: JSONObject) {
         return answers.sortedBy { it.first }.flatMap { it.second }
     }
 
-    fun meta(type: String, id: String): Meta? = get(true, "meta", type, id).optJSONObject("meta")?.let(::Meta)
+    fun meta(type: String, id: String): Meta? = get(true, "meta", type, id).optJSONObject("meta")?.let { meta(it, id) }
 
-    fun savedMeta(type: String, id: String): Meta? = saved("meta", type, id)?.optJSONObject("meta")?.let(::Meta)
+    fun savedMeta(type: String, id: String): Meta? = saved("meta", type, id)?.optJSONObject("meta")?.let { meta(it, id) }
+
+    /** Some add-ons leave the title's own id out of its details: it's the one asked for. */
+    private fun meta(json: JSONObject, id: String) = Meta(if (json.text("id") == null) json.put("id", id) else json)
 
     /** A title-specific catalog, when an installed addon advertises the protocol's required `similar` extra. */
     fun similar(type: String, id: String): List<Meta>? {
@@ -141,6 +144,28 @@ class Addon(val descriptor: JSONObject) {
     private companion object { val catalogSearchPool = Images.newestFirst(8) }
 }
 
+/**
+ * A title's details from the first add-on, in the account's order, that has them, as Stremio's apps do: one that fails
+ * or doesn't know the title (a metadata add-on without its API key, a catalog add-on that claims details) passes to the
+ * next, instead of "Couldn't load this title's details" on every title. [together] asks them all at once, for a screen
+ * that waits on the answer: a dead add-on then costs no more than its own wait. Otherwise one at a time, so Home's
+ * cards don't ask every add-on for every title.
+ */
+fun List<Addon>.meta(type: String, id: String, together: Boolean = false): Meta? {
+    val serving = filter { it.serves("meta", type, id) }
+    fun ask(a: Addon) = runCatching { a.meta(type, id) }
+        .onFailure { android.util.Log.w("Alder", "details from ${a.name} failed", it) }.getOrNull()
+        .also { if (it == null) android.util.Log.i("Alder", "no details for $type $id from ${a.name}") }
+    if (!together || serving.size < 2) return serving.firstNotNullOfOrNull(::ask)
+    return serving.map { a -> metaPool.submit<Meta?> { ask(a) } }.firstNotNullOfOrNull { it.get() }
+}
+
+/** Last time's details from disk, from the first add-on in the account's order that kept some; no network. */
+fun List<Addon>.savedMeta(type: String, id: String): Meta? =
+    filter { it.serves("meta", type, id) }.firstNotNullOfOrNull { runCatching { it.savedMeta(type, id) }.getOrNull() }
+
+private val metaPool = java.util.concurrent.Executors.newCachedThreadPool()
+
 class Meta(json: JSONObject) {
     val id: String = json.getString("id")
     val type: String = json.optString("type")
@@ -159,6 +184,7 @@ class Meta(json: JSONObject) {
 
     /** Episodes in play order: by season then episode, specials (season 0) last. */
     val videos: List<Video> = json.optJSONArray("videos").objects()
+        .filter { it.text("id") != null } // one episode without an id shouldn't lose the whole title
         .map {
             Video(it.getString("id"), it.text("title") ?: it.text("name") ?: "", it.optInt("season"), it.optInt("episode"),
                 it.text("thumbnail"), it.text("overview") ?: it.text("description"),

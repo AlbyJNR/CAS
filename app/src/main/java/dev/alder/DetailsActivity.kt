@@ -99,16 +99,14 @@ class DetailsActivity : Screen() {
             if (type == "movie" && !similarRequested) { similarRequested = true; loadSimilar() }
         }
         background({
-            val addon = (Stremio.savedAddons(key) ?: Stremio.addons(key))
-                .firstOrNull { it.serves("meta", type, metaId) }
-            addon?.savedMeta(type, metaId) to Stremio.savedLibrary(key)?.firstOrNull { it.optString("_id") == metaId }
+            (Stremio.savedAddons(key) ?: Stremio.addons(key)).savedMeta(type, metaId) to Stremio.savedLibrary(key)?.firstOrNull { it.optString("_id") == metaId }
         }) { result ->
             result.getOrNull()?.let { (saved, libraryItem) ->
                 if (!itemChangedHere && item == null) item = libraryItem
                 if (meta == null) saved?.let(::show)
             }
         }
-        background({ Stremio.addons(key).firstOrNull { it.serves("meta", type, metaId) }?.meta(type, metaId) }) { result ->
+        background({ Stremio.addons(key).meta(type, metaId, together = true) }) { result ->
             val fresh = result.getOrNull()
             if (fresh != null) show(fresh)
             else if (meta == null) showHero(null)
