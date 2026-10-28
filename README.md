@@ -88,8 +88,8 @@ Alder has no add-on store. Setting up add-ons means typing and web forms, which 
 ## Install
 
 1. On your phone or computer, sign in to [Stremio](https://web.stremio.com) and install your add-ons.
-1. Download `Alder-<version>.apk` from the [latest release](https://github.com/aradhyas8/Alder/releases/latest).
-1. Install it on your TV with Downloader, a USB drive and a file manager, or `adb install Alder-<version>.apk`.
+1. Download `Alder.apk` from the [latest release](https://github.com/aradhyas8/Alder/releases/latest).
+1. Install it on your TV with Downloader, a USB drive and a file manager, or `adb install Alder.apk`.
 1. Open **Alder**, name your profile and sign in to Stremio with the code on screen. Your add-ons, library and Continue Watching come with it.
 
 The first 1.0 release needs a manual APK update. Later builds can offer new versions in the app; Android may ask you to allow Alder to install apps.

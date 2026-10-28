@@ -593,7 +593,7 @@ class SearchActivity : Screen() {
             val row = LinearLayout(this).apply {
                 clipChildren = false
                 clipToPadding = false
-                setPadding(dp(6), 0, dp(48), 0) // the last card rests at the screen's margin
+                setPadding(dp(6), dp(8), dp(48), dp(8)) // the last card rests at the screen's margin; 8 dp above and below leave room for the focused card to grow
             }
             // Slides like Home's rows (below, on focus) instead of scrolling just far enough, which left cards cut at both edges.
             val scroller = object : HorizontalScrollView(this) {
@@ -614,7 +614,7 @@ class SearchActivity : Screen() {
                     if (index > 0) marginStart = dp(14)
                 })
             }
-            group.addView(scroller, LinearLayout.LayoutParams(-1, dp(140)))
+            group.addView(scroller, LinearLayout.LayoutParams(-1, dp(148)))
             group.addView(caption, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) })
             results.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(28) })
         }
