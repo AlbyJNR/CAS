@@ -1943,12 +1943,13 @@ class MainActivity : Screen() {
         return y
     }
 
-    // Signed out elsewhere (or the session expired): this TV forgets the profile, which can then sign in again.
+    // Signed out elsewhere (or the session expired): the profile stays, with its settings, and signs in again.
     private fun forgetIfSessionGone(error: Throwable) {
-        if ((error as? Stremio.ApiException)?.code == Stremio.NO_SESSION) {
-            Profiles.remove(this, profile.id)
-            switchProfile()
-        }
+        if ((error as? Stremio.ApiException)?.code != Stremio.NO_SESSION || isFinishing) return
+        Profiles.markSignedOut(this, profile.id)
+        startActivity(Intent(this, ProfilesActivity::class.java).putExtra("signIn", profile.id)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        finish()
     }
 
     private companion object {

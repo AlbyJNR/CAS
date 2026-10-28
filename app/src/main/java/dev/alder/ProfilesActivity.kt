@@ -38,7 +38,10 @@ class ProfilesActivity : Screen() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val profiles = Profiles.all(this)
+        // Home found this profile signed out: straight to its sign-in, the profile and its settings kept.
+        val again = intent.getStringExtra("signIn")?.let { id -> profiles.firstOrNull { it.id == id } }
         when {
+            again != null -> showSignIn(again.name, again)
             profiles.isEmpty() -> showName()
             profiles.size == 1 && !intent.getBooleanExtra("pick", false) -> enter(profiles[0])
             else -> showPicker()
@@ -69,8 +72,8 @@ class ProfilesActivity : Screen() {
         return super.dispatchKeyEvent(event)
     }
 
-    /** Opens a profile, asking for its PIN first when it has one. */
-    private fun enter(p: Profile) = withPin(p) { openHome(p) }
+    /** Opens a profile, asking for its PIN first when it has one; a signed-out one signs in again first. */
+    private fun enter(p: Profile) = withPin(p) { if (Profiles.signedOut(this, p.id)) showSignIn(p.name, p) else openHome(p) }
 
     private fun openHome(profile: Profile) {
         Profiles.setActive(this, profile.id)
@@ -117,7 +120,9 @@ class ProfilesActivity : Screen() {
             else showArt(p, recent[p.id])
         }
         profiles.forEach { p ->
-            tiles.addView(tile(p, null) { focus(p) }.apply {
+            val signedOut = Profiles.signedOut(this, p.id).takeIf { it }
+                ?.let { text("Sign in again", SMALL, color = TUNGSTEN).apply { gravity = Gravity.CENTER } }
+            tiles.addView(tile(p, signedOut) { focus(p) }.apply {
                 setOnClickListener { enter(p) }
                 setOnLongClickListener { showMenu(p); true }
             }, LinearLayout.LayoutParams(dp(124), -2).apply { marginStart = dp(10); marginEnd = dp(10) })
@@ -340,7 +345,8 @@ class ProfilesActivity : Screen() {
             if (i == 0) return@choose
             Profiles.remove(this, p.id)
             background({ Http.forget() }) {}
-            background({ Stremio.logout(p.authKey) }) {} // best effort; the TV forgets the profile either way
+            // Best effort; the TV forgets the profile either way. A sign-in another profile still uses stays signed in.
+            if (Profiles.all(this).none { it.authKey == p.authKey }) background({ Stremio.logout(p.authKey) }) {}
             if (Profiles.all(this).isEmpty()) showName() else showPicker()
         }
     }
@@ -483,10 +489,11 @@ class ProfilesActivity : Screen() {
         return Triple(name, keyboard, keys.first())
     }
 
-    private fun showSignIn(name: String) {
+    /** Sign-in with a code: for a new profile called [name], or for [again], a profile Stremio signed out. */
+    private fun showSignIn(name: String, again: Profile? = null) {
         ++pickerGeneration
         nameInput = null
-        backTo = ::showName
+        backTo = if (again != null) ::showPicker else ::showName
         signingIn = true
         val request = ++signInGeneration
         val qr = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
@@ -504,7 +511,7 @@ class ProfilesActivity : Screen() {
             }) }
         }
         val back = chip("← Back")
-        back.setOnClickListener { waitingCode = null; showName() }
+        back.setOnClickListener { waitingCode = null; if (again != null) showPicker() else showName() }
         val left = column(Gravity.CENTER,
             FrameLayout(this).apply {
                 setPadding(dp(18), dp(18), dp(18), dp(18))
@@ -513,7 +520,7 @@ class ProfilesActivity : Screen() {
             }.apply { layoutParams = LinearLayout.LayoutParams(dp(236), dp(236)) },
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(onboardingAvatar(name.take(1).uppercase(), 26, draftColor))
+                addView(onboardingAvatar(name.take(1).uppercase(), 26, again?.color ?: draftColor))
                 addView(text(name.replaceFirstChar { it.titlecase() }, BODY, bold = true).apply { setPadding(dp(8), 0, 0, 0) })
             }.marginTop(14),
         ).apply {
@@ -522,8 +529,9 @@ class ProfilesActivity : Screen() {
             background = glass(14)
         }
         val steps = column(Gravity.START,
-            text("Connect Stremio", 40f, serif = true).onArt(),
-            text("Scan with $name's phone. Stremio opens and asks to sign in this TV.", BODY).onArt().marginTop(10),
+            text(if (again != null) "Sign in again" else "Connect Stremio", 40f, serif = true).onArt(),
+            text(if (again != null) "Stremio signed $name out of this TV. Scan with $name's phone to connect again. $name's settings and PIN stay."
+                else "Scan with $name's phone. Stremio opens and asks to sign in this TV.", BODY).onArt().marginTop(10),
             text("", BODY, color = TEXT_2).onArt().apply {
                 val line = "Or go to link.stremio.com and enter"
                 val at = line.indexOf("link.stremio.com")
@@ -538,11 +546,14 @@ class ProfilesActivity : Screen() {
                 addView(countdown, LinearLayout.LayoutParams(dp(20), dp(20)))
                 addView(status, wrap().apply { marginStart = dp(9) })
             }.marginTop(17),
+            // Two people approving on one phone sign each other out: switching accounts there can end the other's sign-in.
+            text("Sharing a phone? Approve each person's code on their own phone or in a private browser window. Signing out of Stremio there can sign this TV out too.",
+                SMALL, color = TEXT_2).onArt().marginTop(24),
             text("New to Stremio? Make an account and add your add-ons in the Stremio app or at web.stremio.com. Alder brings them to the TV.",
-                SMALL, color = TEXT_3).onArt().marginTop(24),
+                SMALL, color = TEXT_3).onArt().marginTop(10),
         ).apply { gravity = Gravity.CENTER_VERTICAL }
         val first = Profiles.all(this).isEmpty()
-        val content = onboardingFrame(if (first) "step 2 of 2" else "step 2 of 3", left, steps, dp(55), 0f, 1f, dp(300))
+        val content = onboardingFrame(if (again != null) "sign in again" else if (first) "step 2 of 2" else "step 2 of 3", left, steps, dp(55), 0f, 1f, dp(300))
         content.addView(back, FrameLayout.LayoutParams(-2, dp(32), Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = dp(PAD); bottomMargin = dp(40)
         })
@@ -565,10 +576,10 @@ class ProfilesActivity : Screen() {
                 }
                 waitingCode = link.code
                 tick()
-                poll(name, link.code, started)
+                poll(name, link.code, started, again)
             }.onFailure {
                 status.text = "Can't reach Stremio. Trying again…"
-                main.postDelayed({ if (signingIn && request == signInGeneration) showSignIn(name) }, 5_000)
+                main.postDelayed({ if (signingIn && request == signInGeneration) showSignIn(name, again) }, 5_000)
             }
         }
     }
@@ -626,7 +637,7 @@ class ProfilesActivity : Screen() {
         layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
     }
 
-    private fun poll(name: String, code: String, startedAt: Long) {
+    private fun poll(name: String, code: String, startedAt: Long, again: Profile?) {
         main.postDelayed({
             if (waitingCode != code) return@postDelayed
             background({ Stremio.readLink(code) }) { result ->
@@ -636,24 +647,52 @@ class ProfilesActivity : Screen() {
                     key != null -> {
                         waitingCode = null
                         signingIn = false
-                        val others = Profiles.all(this)
-                        val profile = Profiles.add(this, name, key, draftColor)
-                        draftName = ""
-                        draftColor = Profiles.COLORS[0]
-                        // Each profile brings its own add-ons (stream add-ons are shared in Settings, never copied);
-                        // the others' lists only tell where Watchly lives, so the new profile can set up its own.
-                        if (others.isEmpty()) openHome(profile)
-                        else background({ others.flatMap { runCatching { Stremio.addons(it.authKey) }.getOrDefault(emptyList()) } }) {
-                            showWatchly(profile, it.getOrDefault(emptyList()))
-                        }
+                        approved(name, key, again)
                     }
                     // ponytail: Stremio doesn't say when a code expires (waiting and expired look the same),
                     // so a fresh code every 5 minutes. Read the expiry if their API ever exposes it.
-                    SystemClock.elapsedRealtime() - startedAt > 5 * 60_000 -> showSignIn(name)
-                    else -> poll(name, code, startedAt) // not approved yet, or a network blip
+                    SystemClock.elapsedRealtime() - startedAt > 5 * 60_000 -> showSignIn(name, again)
+                    else -> poll(name, code, startedAt, again) // not approved yet, or a network blip
                 }
             }
         }, 3_000)
+    }
+
+    /**
+     * A code was approved. When that account is already another profile here (approved on a phone still signed in to
+     * the other person), say so before going on. Each sign-in has its own key, so the accounts are compared by user id.
+     */
+    private fun approved(name: String, key: String, again: Profile?) {
+        val others = Profiles.all(this).filter { it.id != again?.id }
+        background({
+            others.firstOrNull { it.authKey == key } ?: Stremio.userId(key).let { account ->
+                others.firstOrNull { runCatching { Stremio.userId(it.authKey) }.getOrNull() == account }
+            }
+        }) { result ->
+            val same = result.getOrNull() ?: return@background signedIn(name, key, again) // unknown: don't hold anyone up
+            choose("This is ${same.name}'s Stremio account", listOf("Use another account", "Continue anyway"),
+                "Approve the code with $name's own account: on $name's phone, or in a private browser window. " +
+                    "Signing out of Stremio on the phone can sign ${same.name} out of this TV.") { i ->
+                if (i == 0) showSignIn(name, again) else signedIn(name, key, again)
+            }
+        }
+    }
+
+    private fun signedIn(name: String, key: String, again: Profile?) {
+        if (again != null) {
+            Profiles.signIn(this, again.id, key)
+            return openHome(Profiles.all(this).first { it.id == again.id })
+        }
+        val others = Profiles.all(this)
+        val profile = Profiles.add(this, name, key, draftColor)
+        draftName = ""
+        draftColor = Profiles.COLORS[0]
+        // Each profile brings its own add-ons (stream add-ons are shared in Settings, never copied);
+        // the others' lists only tell where Watchly lives, so the new profile can set up its own.
+        if (others.isEmpty()) openHome(profile)
+        else background({ others.flatMap { runCatching { Stremio.addons(it.authKey) }.getOrDefault(emptyList()) } }) {
+            showWatchly(profile, it.getOrDefault(emptyList()))
+        }
     }
 
     // ---------- recommendations ----------
