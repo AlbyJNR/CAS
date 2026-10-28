@@ -447,7 +447,8 @@ abstract class Screen : Activity() {
     /** [shade]: how much of the screen's own shade lies over the art there (0..1), so glass over a shaded part of the art
      *  is as dark as the art around it instead of a milky patch of the unshaded picture. */
     protected fun glassOver(host: View, radiusDp: Int, shade: Float = 0f): Drawable {
-        val behind = backdrop ?: return glass(radiusDp)
+        // No art to frost (Settings): the glass sits on the base colour, so a dialog doesn't show the rows under it.
+        val behind = backdrop ?: return LayerDrawable(arrayOf(rounded(BASE, radiusDp), glass(radiusDp)))
         frostHosts += host
         return Frost(host, behind, dp(radiusDp).toFloat(), shade)
     }

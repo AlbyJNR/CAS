@@ -92,6 +92,8 @@ class PlayerActivity : Screen() {
     private var addonSubs: List<Subtitle> = emptyList()
     private var chosenSub: Subtitle? = null
     private var selectAddonSub = false
+    private val wantSub by lazy { Settings.subtitleLanguage(this) }
+    private var wantAddonSub = false // the file has no subtitles in the profile's language: attach an addon's
     // Timing for an addon subtitle file that runs early or late: the file is fetched, its times moved, and attached
     // from the app's cache instead of its URL. ponytail: SRT and VTT only; ASS and the file's own subtitles can't move.
     private var subDelay = 0L
@@ -139,7 +141,7 @@ class PlayerActivity : Screen() {
         player = ExoPlayer.Builder(this, renderers).build()
         // Release files carry many dubs; start in the chosen language (the TV's unless Settings says) instead of the first.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredAudioLanguage(Settings.audioLanguage(this)).build()
+            .setPreferredAudioLanguage(Settings.audioLanguage(this)).setPreferredTextLanguage(Settings.subtitleLanguage(this)).build()
         view = PlayerView(this).apply {
             player = this@PlayerActivity.player
             keepScreenOn = true
@@ -282,34 +284,43 @@ class PlayerActivity : Screen() {
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                         .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, 0)).build()
                 }
-                // Releases flag foreign subtitles as forced or default (Lanterns came up with Russian "Forced" under
-                // English audio): start with subtitles only in the TV's language, else none. Once per video, like audio.
-                val shownSubs = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)
-                if (!subsPicked && tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
-                    subsPicked = true
-                    if (!Settings.subtitles(this@PlayerActivity) ||
-                        (shownSubs != null && shownSubs.language?.startsWith(Locale.getDefault().language) != true))
-                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-                }
                 val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
                 if (audio.isNotEmpty()) audioGroups = audio
-                if (audioPicked || audio.isEmpty()) return
+                val best = bestAudio(audio)
+                // Releases flag foreign subtitles as forced or default (Lanterns came up with Russian "Forced" under
+                // English audio): start with subtitles only in the profile's subtitle language, else none; and none when
+                // the sound is already in it. With none in the file, an addon's file in that language is attached once
+                // it arrives (wantAddonSub). Once per video, like audio.
+                if (!subsPicked && best != null) {
+                    subsPicked = true
+                    val want = wantSub
+                    val shownSubs = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)
+                    val needed = Settings.subtitles(this@PlayerActivity) && !Languages.same(best.getTrackFormat(0).language, want)
+                    if (!needed || (shownSubs != null && !Languages.same(shownSubs.language, want)))
+                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                    wantAddonSub = needed && (shownSubs == null || !Languages.same(shownSubs.language, want))
+                    attachWantedSub()
+                }
+                if (audioPicked || best == null) return
                 audioPicked = true // once per video; picks made later in the settings menu stand
-                val best = bestAudio(audio) ?: return
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setOverrideForType(TrackSelectionOverride(best.mediaTrackGroup, (0 until best.length).toList())).build()
             }
         })
 
         background({
-            // ponytail: the TV's language and English, three files each in the addon's order; a language picker if asked
+            // Every language: the profile's subtitle language and English first, three files each in the addon's order,
+            // then one file for each other language by name, so the list stays short enough for a remote.
             val all = Stremio.addons(key).filter { it.serves("subtitles", type, videoId) }
                 .flatMap { a -> runCatching { a.subtitles(type, videoId) }
                     .onFailure { android.util.Log.w("Alder", "subtitles from ${a.name} failed", it) }.getOrDefault(emptyList()) }
-            all.filter { it.local }.take(3) + all.filter { !it.local && Locale(it.lang).language == "en" }.take(3)
+            all.groupBy { Languages.code(it.lang) ?: it.lang }.entries
+                .sortedWith(compareBy({ it.key != wantSub }, { it.key != "en" }, { Languages.name(it.key) }))
+                .flatMap { (code, files) -> files.take(if (code == wantSub || code == "en") 3 else 1) }
         }) { r ->
             addonSubs = r.getOrDefault(emptyList())
             android.util.Log.i("Alder", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
+            attachWantedSub()
         }
 
         // "Start Over" plays from the beginning; a switch to a lower quality carries its own second.
@@ -386,6 +397,16 @@ class PlayerActivity : Screen() {
         status.text = ""
     }
 
+    /** Attaches an addon's file in the profile's subtitle language when the video needs one and the list has it. */
+    private fun attachWantedSub() {
+        if (!wantAddonSub || chosenSub != null) return
+        val sub = addonSubs.firstOrNull { Languages.same(it.lang, wantSub) } ?: return
+        wantAddonSub = false
+        chosenSub = sub
+        selectAddonSub = true
+        load(position())
+    }
+
     /** Plays the current source from [position], with its own request headers (debrid proxies need them). */
     private fun load(position: Long, message: String? = null) {
         val s = sources[at]
@@ -457,7 +478,7 @@ class PlayerActivity : Screen() {
             .filter { it.isTrackSupported(0) && (it.getTrackFormat(0).id ?: "") !in failedAudio }
             .filter { it.getTrackFormat(0).label?.contains("commentary", ignoreCase = true) != true }
             .maxWithOrNull(compareBy<Tracks.Group>(
-                { it.getTrackFormat(0).language?.startsWith(language) == true },
+                { Languages.same(it.getTrackFormat(0).language, language) },
                 { it.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_DEFAULT != 0 },
                 { it.getTrackFormat(0).channelCount },
             ))

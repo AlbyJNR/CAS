@@ -35,16 +35,54 @@ object Settings {
     fun dub(c: Context) = prefs(c).getString(profileKey(c, "dub"), "").orEmpty()
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
     /** A removed profile's taste goes with it, so a new profile in its place starts with none. */
-    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId").remove("audioLang@$profileId").apply()
+    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId")
+        .remove("audioLang@$profileId").remove("subLang@$profileId").apply()
     fun alwaysList(c: Context) = prefs(c).getBoolean("alwaysList", false)
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)
     fun subtitles(c: Context) = prefs(c).getBoolean("subtitles", true)
     /** Two-letter code of the dub to start with: the TV's language unless one is picked. */
     fun audioLanguage(c: Context): String = prefs(c).getString(profileKey(c, "audioLang"), prefs(c).getString("audioLang", ""))
-        .orEmpty().ifEmpty { Locale.getDefault().language }
+        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().language) ?: "en" }
+    /** Two-letter code of the subtitles to start with: the TV's language unless one is picked. */
+    fun subtitleLanguage(c: Context): String = prefs(c).getString(profileKey(c, "subLang"), "")
+        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().language) ?: "en" }
     fun subtitleSize(c: Context) = prefs(c).getInt("subSize", 100) // percent of Media3's default size
     fun subtitleBackground(c: Context) = prefs(c).getBoolean("subBackground", true)
+}
+
+/**
+ * Every source writes languages its own way: the TV "es", a file's track "spa" or "es-MX", OpenSubtitles "spa", "ger"
+ * or "pob", some add-ons "Spanish". [code] turns any of them into one two-letter code, so all comparisons go through it.
+ */
+object Languages {
+    // ISO 639-2/B codes (OpenSubtitles sends these) where they differ from 639-2/T, OpenSubtitles' own, and Java's old ones.
+    private val aliases = mapOf("alb" to "sq", "arm" to "hy", "baq" to "eu", "bur" to "my", "chi" to "zh", "cze" to "cs",
+        "dut" to "nl", "fre" to "fr", "geo" to "ka", "ger" to "de", "gre" to "el", "ice" to "is", "mac" to "mk", "mao" to "mi",
+        "may" to "ms", "per" to "fa", "rum" to "ro", "slo" to "sk", "tib" to "bo", "wel" to "cy", "pob" to "pt", "pom" to "pt",
+        "scc" to "sr", "scr" to "hr", "ze" to "zh", "zht" to "zh", "zhe" to "zh", "iw" to "he", "in" to "id", "ji" to "yi")
+    private val iso by lazy { Locale.getISOLanguages().map { aliases[it] ?: it }.distinct() }
+    private val threeLetter by lazy { iso.associateBy { runCatching { Locale(it).isO3Language }.getOrDefault(it) } }
+    private val englishNames by lazy { iso.associateBy { Locale(it).getDisplayLanguage(Locale.ENGLISH).lowercase() } }
+    private val common = listOf("en", "es", "fr", "de", "pt", "it", "hi", "ar", "ja", "ko", "zh", "ru")
+
+    /** The two-letter code, or null for none or unknown ("und"). */
+    fun code(raw: String?): String? {
+        val s = raw?.trim()?.lowercase()?.split('-', '_')?.first()?.ifEmpty { null } ?: return null
+        aliases[s]?.let { return it }
+        return when (s.length) {
+            2 -> s.takeIf { it in iso }
+            3 -> threeLetter[s]
+            else -> englishNames[s]
+        }
+    }
+    fun same(a: String?, b: String?) = code(a).let { it != null && it == code(b) }
+    /** "Spanish", in the TV's language. */
+    fun name(raw: String): String = (code(raw) ?: raw).let { c ->
+        Locale(c).getDisplayLanguage(Locale.getDefault()).ifBlank { c }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+    }
+    /** Every language, the common ones first, the rest by name. */
+    val all: List<String> by lazy { common + iso.filter { it !in common && name(it) != it }.sortedBy(::name) }
 }
 
 internal fun nextSettingIndex(current: Int, size: Int, direction: Int): Int {
@@ -84,15 +122,16 @@ class SettingsActivity : Screen() {
             listOf(true to "On", false to "Off")),
         Choice("passthrough", "Audio output", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes the sound here, which always works.",
             listOf(false to "TV speakers", true to "Receiver")),
-        Choice("audioLang", "Audio language", "The dub to start with when a file has several. Changeable while watching.",
-            listOf("" to "TV language", "en" to "English", "hi" to "Hindi", "es" to "Spanish", "fr" to "French",
-                "de" to "German", "ja" to "Japanese", "ko" to "Korean"), true),
+    )
+    private val dubbed = listOf(
         Choice("dub", "Dubbed releases", "Original first puts dubbed releases last; My language first uses this profile's audio language.",
             listOf("" to "No preference", "original" to "Original first", "mine" to "My language first"), true),
     )
     private val subtitles = listOf(
-        Choice("subtitles", "Subtitles by default", "Subtitles in the TV's language start with the video when available.",
+        Choice("subtitles", "Subtitles by default", "Subtitles in your subtitle language start with the video when available, unless the sound is already in it.",
             listOf(true to "On", false to "Off")),
+    )
+    private val subtitleLooks = listOf(
         Choice("subSize", "Subtitle size", "How big subtitles are on screen.",
             listOf(100 to "Medium", 130 to "Large", 160 to "Extra large", 80 to "Small")),
         Choice("subBackground", "Subtitle background", "A dark box behind subtitles keeps them readable in bright scenes.",
@@ -293,8 +332,16 @@ class SettingsActivity : Screen() {
                         "Release groups, codecs, languages and more are set in your streaming add-on on your phone or at web.stremio.com. This TV follows its order.") {}
                 }
             }
-            Group.PICTURE -> pictureAndSound.forEach(::choiceRow)
-            Group.SUBTITLES -> subtitles.forEach(::choiceRow)
+            Group.PICTURE -> {
+                pictureAndSound.forEach(::choiceRow)
+                languageRow("audioLang", "Audio language", "The dub to start with when a file has several. Changeable while watching.")
+                dubbed.forEach(::choiceRow)
+            }
+            Group.SUBTITLES -> {
+                subtitles.forEach(::choiceRow)
+                languageRow("subLang", "Subtitle language", "Which subtitles start with the video, and which come first in the list while watching.")
+                subtitleLooks.forEach(::choiceRow)
+            }
             Group.ADDONS -> {
                 actionRow("My add-ons", "…", "Add by URL, reorder or remove this profile's add-ons.") {
                     if (authKey != null) startActivity(Intent(this, AddonsActivity::class.java))
@@ -396,7 +443,7 @@ class SettingsActivity : Screen() {
     private fun key(c: Choice) = if (c.perProfile) Settings.profileKey(this, c.key) else c.key
     private fun stored(c: Choice): Any = when (val default = c.values[0].first) {
         is Boolean -> prefs.getBoolean(key(c), default)
-        is String -> prefs.getString(key(c), if (c.key == "audioLang") prefs.getString("audioLang", default) else default).orEmpty()
+        is String -> prefs.getString(key(c), default).orEmpty()
         else -> prefs.getInt(key(c), default as Int)
     }
     private fun store(c: Choice, value: Any) = prefs.edit().apply {
@@ -450,6 +497,24 @@ class SettingsActivity : Screen() {
                 shift(if (code == android.view.KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
                 true
             } else false
+        }
+        refresh += ::draw
+        draw()
+    }
+
+    /** A language for this profile, picked from a list (too many to step through with Left and Right). */
+    private fun languageRow(key: String, label: String, help: String) {
+        val codes = listOf("") + Languages.all
+        // Audio language was once shared by every profile: that pick stands until this profile makes its own.
+        fun current() = prefs.getString(Settings.profileKey(this, key), if (key == "audioLang") prefs.getString(key, "") else "").orEmpty()
+        fun name(code: String) = if (code.isEmpty()) "TV language" else Languages.name(code)
+        val value = text("", BODY, color = TEXT_2)
+        fun draw() { value.text = name(current()) + "  ›" }
+        settingRow(label, value, help, perProfile = true, focus = { value.setTextColor(if (it) TUNGSTEN else TEXT_2) }) {
+            choose(label, codes.map(::name), checked = codes.indexOf(current()).coerceAtLeast(0)) { i ->
+                prefs.edit().putString(Settings.profileKey(this, key), codes[i]).apply()
+                refresh.forEach { it() }
+            }
         }
         refresh += ::draw
         draw()

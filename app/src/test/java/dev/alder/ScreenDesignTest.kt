@@ -24,6 +24,19 @@ class ScreenDesignTest {
         assertEquals("Find the remaining Horcruxes…", synopsisAtSentence("Find the remaining Horcruxes, and return.", 30))
     }
 
+    @Test fun languageCodesFromEverySourceMatch() {
+        listOf("es", "spa", "es-MX", "Spanish").forEach { assertEquals("es", Languages.code(it)) }
+        assertEquals("de", Languages.code("ger"))
+        assertEquals("fr", Languages.code("fre"))
+        assertEquals("nl", Languages.code("dut"))
+        assertEquals("pt", Languages.code("pob"))
+        assertEquals("he", Languages.code("heb"))
+        assertEquals(null, Languages.code("und"))
+        assertEquals(true, Languages.same("eng", "en"))
+        assertEquals(false, Languages.same("und", "und"))
+        assertEquals(listOf("en", "es"), Languages.all.take(2))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))

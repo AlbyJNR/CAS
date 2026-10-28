@@ -169,7 +169,7 @@ class Meta(json: JSONObject) {
 
 /** [lang] is what the addon sends: ISO 639-2 ("eng") from OpenSubtitles, sometimes a two-letter code. */
 class Subtitle(val url: String, val lang: String, val addon: String) {
-    val language: String get() = Locale(lang).displayLanguage.ifBlank { lang }
+    val language: String get() = Languages.name(lang)
     val mimeType: String get() = url.substringBefore('?').lowercase().let {
         when {
             it.endsWith(".vtt") -> MimeTypes.TEXT_VTT
@@ -177,8 +177,6 @@ class Subtitle(val url: String, val lang: String, val addon: String) {
             else -> MimeTypes.APPLICATION_SUBRIP
         }
     }
-    /** Whether it's in the TV's language (either code style). */
-    val local: Boolean get() = Locale.getDefault().let { lang == it.language || runCatching { lang == it.isO3Language }.getOrDefault(false) }
 }
 
 class Video(val id: String, val title: String, val season: Int, val episode: Int, val thumbnail: String?,
