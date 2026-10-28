@@ -37,6 +37,10 @@ class ProfilesActivity : Screen() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Debug builds only: `adb shell am start -n uk.albyjnr.cas/dev.alder.ProfilesActivity --es trailer <youtube id>`
+        // opens the trailer box here, so it can be checked on an emulator with no Stremio account.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+            intent.getStringExtra("trailer")?.let { id -> main.postDelayed({ showTrailer(id, "Trailer test") }, 1500) }
         val profiles = Profiles.all(this)
         // Home found this profile signed out: straight to its sign-in, the profile and its settings kept.
         val again = intent.getStringExtra("signIn")?.let { id -> profiles.firstOrNull { it.id == id } }

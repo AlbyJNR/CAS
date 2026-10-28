@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.3.3
+
+- **Trailers, again.** The box now shows YouTube's own player page, which draws its picture where the earlier page did not. A small grey line under the box reports what the TV's browser engine does with the video, for this test build.
+
 ## 1.3.2
 
 - **Series pages stay visible.** Before, a series page could go blank when its details arrived while the episode list was open.

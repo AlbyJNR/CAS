@@ -2,8 +2,6 @@ package dev.alder
 
 import android.content.Intent
 import android.net.Uri
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.TextUtils
@@ -57,8 +55,6 @@ class DetailsActivity : Screen() {
     private lateinit var playButton: TextView
     private lateinit var infoButton: TextView
     private lateinit var infoOverlay: FrameLayout
-    private var trailerOverlay: FrameLayout? = null // the trailer, playing in a box over the title
-    private var trailerWeb: WebView? = null
     private var castNames = emptyList<View>() // the leads on the title page; Down from one goes to Play, not the episodes
     private var guideOpen = false
     private var similarOpen = false
@@ -302,103 +298,6 @@ class DetailsActivity : Screen() {
         setOnClickListener { action() }
     }
 
-    // ---------- trailer ----------
-
-    /**
-     * The trailer in a box over the title, not a page of its own: YouTube's player in the TV's own WebView, which adds
-     * nothing to CAS. OK pauses, Left and Right skip ten seconds, Back closes; a trailer that can't be embedded opens in
-     * the YouTube app instead. The art stays behind, dimmed, so Back lands you where you were.
-     */
-    private fun showTrailer(ytId: String, title: String) {
-        if (!ytId.matches(YT_ID)) return // an add-on's data goes into a script below: only a real YouTube id does
-        hideTrailer()
-        val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
-        trailerWeb = web
-        val screenW = resources.displayMetrics.widthPixels
-        val boxW = (screenW * TRAILER_W).toInt()
-        val boxH = boxW * 9 / 16
-        web.apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            setBackgroundColor(android.graphics.Color.BLACK)
-            isFocusable = false // the remote's keys stay with the screen (dispatchKeyEvent), not the page
-            isFocusableInTouchMode = false
-            // HTML5 video draws only with a chrome client attached and a hardware layer: without them Android plays
-            // the sound over a black box (the 1.2.0 trailer).
-            webChromeClient = android.webkit.WebChromeClient()
-            // The page is CAS's own and loads only YouTube's player: it never navigates anywhere else.
-            webViewClient = object : android.webkit.WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = request.isForMainFrame
-            }
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            addJavascriptInterface(object {
-                @JavascriptInterface fun ended() = main.post { hideTrailer() }
-                @JavascriptInterface fun failed(code: Int) = main.post { hideTrailer(); openTrailerOutside(ytId) }
-            }, "CAS")
-            loadDataWithBaseURL(TRAILER_ORIGIN, trailerPage(ytId), "text/html", "utf-8", null)
-        }
-        // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
-        // is what some TVs' WebViews refuse to draw.
-        val box = FrameLayout(this).apply {
-            background = glass(TILE_RADIUS + 1)
-            setPadding(dp(1), dp(1), dp(1), dp(1))
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
-            }
-            clipToOutline = true
-            addView(web, FrameLayout.LayoutParams(-1, -1))
-        }
-        val hints = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(keyHint("OK", "Play / pause"))
-            addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
-            addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
-        }
-        trailerOverlay = FrameLayout(this).apply {
-            setBackgroundColor(if (Settings.titlePage(this@DetailsActivity, SettingsActivity.TRAILER_ART)) TRAILER_SCRIM else TRAILER_BLACK)
-            isFocusable = true // holds the remote while the box is up
-            addView(column(Gravity.CENTER_HORIZONTAL,
-                caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
-                text(title, SMALL, color = TEXT_3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = boxW }.marginTop(4),
-                box.apply { layoutParams = LinearLayout.LayoutParams(boxW, boxH).apply { topMargin = dp(14) } },
-                hints.marginTop(14),
-            ), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            alpha = 0f
-        }
-        root.addView(trailerOverlay, FrameLayout.LayoutParams(-1, -1))
-        trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
-        trailerOverlay?.requestFocus()
-    }
-
-    private fun hideTrailer() {
-        val overlay = trailerOverlay ?: return
-        trailerOverlay = null
-        root.removeView(overlay) // off the screen first: destroying an attached WebView has crashed some TVs
-        trailerWeb?.let { web ->
-            runCatching { web.loadUrl("about:blank"); web.stopLoading(); web.destroy() }
-        }
-        trailerWeb = null
-        if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
-    }
-
-    /** The TV's YouTube app, for a trailer YouTube won't let a page embed; failing that, a word. */
-    private fun openTrailerOutside(ytId: String) {
-        if (!ytId.matches(YT_ID)) return
-        if (!openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
-            choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
-    }
-
-    /** Hands [uri] to whatever app takes it (the YouTube app, a browser). False when nothing on this TV does. */
-    private fun openOutside(uri: Uri): Boolean = try {
-        // startActivity, not resolveActivity: on Android 11+ the latter can't see other apps and says "none".
-        startActivity(Intent(Intent.ACTION_VIEW, uri)); true
-    } catch (e: android.content.ActivityNotFoundException) { false }
-
-    private fun trailerJs(script: String) { trailerWeb?.evaluateJavascript(script, null) }
-
     /**
      * A season's recap: Stremio's data has none, so this is a search in the TV's YouTube app ("<show> season N recap"),
      * where the show's own channel usually has one. YouTube's adverts there are YouTube's; CAS can't remove them.
@@ -408,16 +307,6 @@ class DetailsActivity : Screen() {
         if (!openOutside(Uri.parse("https://www.youtube.com/results?search_query=$query")))
             choose("Recap unavailable", listOf("OK"), "This TV has no YouTube app to search for a recap.") {}
     }
-
-    /** YouTube's IFrame player, bare: no controls or related videos, told to start, and reporting back to [CAS]. */
-    private fun trailerPage(ytId: String) = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#p{width:100%;height:100%}</style></head><body><div id="p"></div>
-<script>var player;var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);
-function onYouTubeIframeAPIReady(){player=new YT.Player('p',{videoId:'$ytId',playerVars:{autoplay:1,controls:0,rel:0,modestbranding:1,playsinline:1,fs:0,iv_load_policy:3,disablekb:1},
-events:{onReady:function(e){try{e.target.unloadModule('captions');e.target.unloadModule('cc')}catch(x){}e.target.playVideo()},onStateChange:function(e){if(e.data==0)CAS.ended()},onError:function(e){CAS.failed(e.data)}}})}
-function toggle(){if(!player||!player.getPlayerState)return;player.getPlayerState()==1?player.pauseVideo():player.playVideo()}
-function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.max(0,player.getCurrentTime()+d),true)}
-</script></body></html>"""
 
     /** What Play opens: the episode Continue Watching points at, or the first episode, or the movie itself. */
     private fun playTarget(m: Meta?): Pair<String, Video?>? {
@@ -687,6 +576,10 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         story.requestFocus()
     }
 
+    override fun onTrailerClosed() {
+        if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
+    }
+
     private fun hideInfo() {
         infoOpen = false
         root.removeView(infoOverlay)
@@ -817,16 +710,6 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (trailerOverlay != null) {
-            if (event.action == KeyEvent.ACTION_DOWN) when (event.keyCode) {
-                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MEDIA_STOP -> hideTrailer()
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> trailerJs("toggle()")
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> trailerJs("seek(-10)")
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> trailerJs("seek(10)")
-            }
-            return true
-        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (guideOpen) {
                 val focused = currentFocus
@@ -856,14 +739,8 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         return super.dispatchKeyEvent(event)
     }
 
-    override fun onPause() {
-        hideTrailer()
-        super.onPause()
-    }
-
     override fun onBackPressed() {
         when {
-            trailerOverlay != null -> hideTrailer()
             infoOpen -> hideInfo()
             guideOpen -> hideGuide()
             similarOpen -> hideSimilar()
@@ -875,10 +752,5 @@ function seek(d){if(!player||!player.getCurrentTime)return;player.seekTo(Math.ma
         const val PANE_SHADE = 0.55f // the episode panel's frost, darkened to the mock's smoked glass
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
         const val STARTED = 60_000L // ms watched before a title counts as started
-        const val TRAILER_W = 0.58f // share of the screen the trailer box takes: a box, not a page
-        const val TRAILER_ORIGIN = "https://albyjnr.github.io/cas/trailer" // the page's origin: ours, not an invented domain
-        val YT_ID = Regex("^[A-Za-z0-9_-]{11}$")
-        const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
-        const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
     }
 }

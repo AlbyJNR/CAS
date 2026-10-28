@@ -23,6 +23,13 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.content.Intent
+import android.net.Uri
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -110,6 +117,11 @@ abstract class Screen : Activity() {
         // ASCII only: a model name with other characters would make every request throw before it was sent.
         Http.userAgent = "CAS/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
             .filter { it.code in 0x20..0x7E }
+    }
+
+    override fun onPause() {
+        hideTrailer() // no trailer plays on behind another app
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -328,6 +340,151 @@ abstract class Screen : Activity() {
     // mid-animation value it happened to have when OK went down.
     private val focusScale = java.util.WeakHashMap<View, Float>()
 
+    // ---------- trailer box ----------
+
+    private var trailerOverlay: FrameLayout? = null
+    private var trailerWeb: WebView? = null
+    private var trailerInfo: TextView? = null
+    private val trailerProbe = Runnable { probeTrailer() }
+
+    /** Called once the trailer box has gone, so the screen can put the remote back where it was. */
+    protected open fun onTrailerClosed() {}
+
+    /**
+     * A YouTube trailer in a box over the screen, not a page of its own. The TV's own WebView loads YouTube's embed
+     * page directly (the way TV apps do; CAS gains no weight), and the remote drives the page's video element: OK
+     * pauses, Left and Right skip ten seconds, Back closes. The box closes itself when the trailer ends or CAS goes to
+     * the background. A trailer YouTube won't embed opens in the YouTube app instead.
+     */
+    protected fun showTrailer(ytId: String, title: String) {
+        if (!ytId.matches(YT_ID)) return // an add-on's data goes into a URL: only a real YouTube id does
+        hideTrailer()
+        val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
+        trailerWeb = web
+        val boxW = (resources.displayMetrics.widthPixels * TRAILER_W).toInt()
+        val boxH = boxW * 9 / 16
+        web.apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            setBackgroundColor(Color.BLACK)
+            isFocusable = false // the remote's keys stay with the screen (dispatchKeyEvent), not the page
+            isFocusableInTouchMode = false
+            webChromeClient = WebChromeClient() // without one, Android plays a video's sound over a black box
+            webViewClient = object : WebViewClient() {
+                // The page is YouTube's player and nothing else: no navigating away from it.
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = request.isForMainFrame
+                override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(TRAILER_HOOK, null) }
+            }
+            addJavascriptInterface(object {
+                @JavascriptInterface fun ended() = main.post { hideTrailer() }
+                @JavascriptInterface fun failed(code: Int) = main.post { hideTrailer(); openTrailerOutside(ytId) }
+            }, "CAS")
+            // YouTube's player refuses to run without a Referer ("configuration error 153"): the app's own page stands in.
+            loadUrl("https://www.youtube.com/embed/$ytId?autoplay=1&controls=0&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1&cc_load_policy=0",
+                mapOf("Referer" to TRAILER_REFERER))
+        }
+        // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
+        // is what some TVs' WebViews refuse to draw.
+        val box = FrameLayout(this).apply {
+            background = glass(TILE_RADIUS + 1)
+            setPadding(dp(1), dp(1), dp(1), dp(1))
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
+            }
+            clipToOutline = true
+            addView(web, FrameLayout.LayoutParams(-1, -1))
+        }
+        val hints = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(keyHint("OK", "Play / pause"))
+            addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+            addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+        }
+        val info = text("", SMALL, color = TEXT_3).apply { maxLines = 1; alpha = 0.8f }
+        trailerInfo = info
+        val artBehind = Settings.titlePage(this, SettingsActivity.TRAILER_ART)
+        trailerOverlay = FrameLayout(this).apply {
+            setBackgroundColor(if (artBehind) TRAILER_SCRIM else TRAILER_BLACK)
+            isFocusable = true // holds the remote while the box is up
+            addView(column(Gravity.CENTER_HORIZONTAL,
+                caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
+                text(title, SMALL, color = TEXT_3).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = boxW }.marginTop(4),
+                box.apply { layoutParams = LinearLayout.LayoutParams(boxW, boxH).apply { topMargin = dp(14) } },
+                hints.marginTop(14),
+                info.marginTop(10),
+            ), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            alpha = 0f
+        }
+        findViewById<FrameLayout>(android.R.id.content).addView(trailerOverlay, FrameLayout.LayoutParams(-1, -1))
+        trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
+        trailerOverlay?.requestFocus()
+        trailerProbes = 0
+        main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
+    }
+
+    protected fun hideTrailer() {
+        main.removeCallbacks(trailerProbe)
+        val overlay = trailerOverlay ?: return
+        trailerOverlay = null
+        trailerInfo = null
+        findViewById<FrameLayout>(android.R.id.content).removeView(overlay) // off the screen before destroy(): attached, it has crashed TVs
+        trailerWeb?.let { web -> runCatching { web.loadUrl("about:blank"); web.stopLoading(); web.destroy() } }
+        trailerWeb = null
+        onTrailerClosed()
+    }
+
+    /** The TV's YouTube app, for a trailer YouTube won't let a page embed; failing that, a word. */
+    private fun openTrailerOutside(ytId: String) {
+        if (!ytId.matches(YT_ID)) return
+        if (!openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
+            choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
+    }
+
+    /** Hands [uri] to whatever app takes it (the YouTube app, a browser). False when nothing on this TV does. */
+    protected fun openOutside(uri: Uri): Boolean = try {
+        // startActivity, not resolveActivity: on Android 11+ the latter can't see other apps and says "none".
+        startActivity(Intent(Intent.ACTION_VIEW, uri)); true
+    } catch (e: android.content.ActivityNotFoundException) { false }
+
+    private fun trailerJs(script: String) { trailerWeb?.evaluateJavascript(script, null) }
+
+    /**
+     * A few seconds in, asks the page what it has: whether a video element exists and is producing frames, and which
+     * codecs this TV's WebView says it can decode. Shown in the small line under the box while trailers are being
+     * proven on real TVs; a page with no video at all (YouTube refused to embed) opens outside instead.
+     */
+    private var trailerProbes = 0
+
+    private fun probeTrailer() {
+        val web = trailerWeb ?: return
+        trailerProbes++
+        web.evaluateJavascript(TRAILER_PROBE) { value ->
+            val json = runCatching { org.json.JSONObject(value) }.getOrNull() ?: return@evaluateJavascript
+            if (trailerWeb !== web) return@evaluateJavascript
+            val hasVideo = json.optBoolean("video")
+            val line = listOfNotNull(
+                json.optString("chrome").ifEmpty { "WebView ?" },
+                "H.264 " + json.optString("h264").ifEmpty { "no" },
+                "VP9 " + json.optString("vp9").ifEmpty { "no" },
+                if (hasVideo) "${json.optInt("w")}×${json.optInt("h")} · ready ${json.optInt("rs")}" +
+                    (if (json.optBoolean("paused")) " · paused" else " · playing") +
+                    (json.optInt("err").takeIf { it != 0 }?.let { " · error $it" } ?: "")
+                else "no video element",
+            ).joinToString("  ·  ")
+            android.util.Log.i("CAS", "trailer probe $trailerProbes: $line · page says: ${json.optString("txt").replace('\n', ' ').take(160)}")
+            trailerInfo?.text = line
+            // A slow TV may still be loading the first time; a page with no video the second time has refused. While
+            // frames haven't arrived yet the line is read again, so it ends up saying what the TV actually drew.
+            when {
+                !hasVideo && trailerProbes >= 2 -> { hideTrailer(); openTrailerOutside(json.optString("id")) }
+                (!hasVideo || json.optInt("w") == 0) && trailerProbes < 4 -> main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
+            }
+        }
+    }
+
     // ---------- press feedback ----------
 
     // OK on a control dips it, and letting go springs it back: the remote feels joined to the screen. Done once here
@@ -335,6 +492,16 @@ abstract class Screen : Activity() {
     private var pressedView: View? = null
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (trailerOverlay != null) {
+            if (event.action == KeyEvent.ACTION_DOWN) when (event.keyCode) {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MEDIA_STOP -> hideTrailer()
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> trailerJs(TRAILER_TOGGLE)
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> trailerJs(trailerSeek(-10))
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> trailerJs(trailerSeek(10))
+            }
+            return true
+        }
         if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER ||
             event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
             val v = currentFocus
@@ -703,6 +870,23 @@ abstract class Screen : Activity() {
         const val FOCUS_IN_MS = 220L
         const val FOCUS_OUT_MS = 170L
         const val PRESS_DIP = 0.96f // OK held: the control's scale, relative to where focus left it
+        // The trailer box.
+        const val TRAILER_W = 0.58f // share of the screen the box takes: a box, not a page
+        const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
+        const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
+        const val TRAILER_PROBE_MS = 7_000L
+        const val TRAILER_REFERER = "https://albyjnr.github.io/cas/"
+        val YT_ID = Regex("^[A-Za-z0-9_-]{11}$")
+        /** Finds the embed page's video once it exists, reports its end and errors back, and makes sure it's playing. */
+        const val TRAILER_HOOK = "(function(){var s=document.createElement('style');s.textContent='.ytp-caption-window-container,.ytp-watermark,.ytp-pause-overlay,.ytp-gradient-top,.ytp-chrome-top{display:none!important}';document.head.appendChild(s);" +
+            "var t=0;function hook(){var v=document.querySelector('video');if(!v){if(++t<60)setTimeout(hook,250);return;}" +
+            "v.addEventListener('ended',function(){CAS.ended()});v.addEventListener('error',function(){CAS.failed(v.error?v.error.code:0)});" +
+            "if(v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){})}}hook();})()"
+        const val TRAILER_TOGGLE = "(function(){var v=document.querySelector('video');if(v){if(v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){})}else v.pause()}})()"
+        fun trailerSeek(seconds: Int) = "(function(){var v=document.querySelector('video');if(v){v.currentTime=Math.max(0,v.currentTime+($seconds))}})()"
+        const val TRAILER_PROBE = "(function(){var v=document.querySelector('video');var c=document.createElement('video');var m=navigator.userAgent.match(/Chrome\\/(\\d+)/);" +
+            "return {chrome:m?'Chrome '+m[1]:'',h264:c.canPlayType('video/mp4; codecs=\"avc1.42E01E\"'),vp9:c.canPlayType('video/webm; codecs=\"vp9\"')," +
+            "video:!!v,w:v?v.videoWidth:0,h:v?v.videoHeight:0,rs:v?v.readyState:0,paused:v?v.paused:true,err:(v&&v.error)?v.error.code:0,id:(location.pathname.split('/').pop()||''),txt:(document.body?document.body.innerText:'').slice(0,200)}})()"
         const val CARD_GROW = 1.06f
         const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
         const val CARD_LIFT = 8
