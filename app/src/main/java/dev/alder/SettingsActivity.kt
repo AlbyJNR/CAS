@@ -435,7 +435,7 @@ class SettingsActivity : Screen() {
                     marginStart = dp(12); bottomMargin = dp(14)
                 })
                 actionRow("CAS", "Version " + Updates.mine(this),
-                    "CAS is a customised fork of Alder by aradhyas8, licensed under GPL-3.0.") {
+                    "A quieter way to watch. CAS connects your Stremio account to your TV.") {
                     choose("CAS", listOf("OK"), "A TV interface for your Stremio account.") {}
                 }
                 actionRow("What's new", "Version " + Updates.mine(this), "The changes in the version on this TV.") { whatsNew() }
