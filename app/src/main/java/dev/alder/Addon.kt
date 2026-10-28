@@ -227,6 +227,8 @@ class Stream(
     val bigAudio = Regex("atmos|truehd|dts.?hd|dts.?x\\b").containsMatchIn(words) // what a receiver gains from
     val multiAudio = Regex("\\b(multi|dual)\\b").containsMatchIn(words)
     val dubbed = Regex("\\bdub(bed)?\\b").containsMatchIn(words)
+    /** The audio languages the names give, as two-letter codes; empty when they give none (see [audioLanguagesIn]). */
+    val audioLanguages = audioLanguagesIn(words)
     /** Whether the names mention this language ("hindi" for "hi"). */
     fun mentions(language: String) = Locale(language).getDisplayLanguage(Locale.ENGLISH).lowercase().let { it.length > 2 && it in words }
 
@@ -285,6 +287,45 @@ fun JSONArray?.strings(): List<String> = items().filterIsInstance<String>()
 
 /** The string at [key], or null when it's missing, JSON null or blank (optString would return "null" for JSON null). */
 /** "147 min" reads "2h 27m" as on the mock; under an hour, and anything not in minutes, stays as the addon wrote it. */
+/**
+ * Audio languages, as two-letter codes, from a stream's names: Torrentio's flags (🇮🇹), AIOStreams' "English | Hindi",
+ * and file-name tags (ITA, HINDI, TRUEFRENCH). ponytail: names only, not the file's real tracks; most English releases
+ * name no language at all, so an empty set usually means English.
+ */
+internal fun audioLanguagesIn(text: String): Set<String> {
+    val found = mutableSetOf<String>()
+    // Regional indicators: two in a row make a country's flag, read in pairs so 🇺🇸🇪🇸 isn't also "SE".
+    val letters = text.codePoints().toArray().map { it - 0x1F1E6 }
+    var i = 0
+    while (i < letters.size - 1) {
+        if (letters[i] in 0..25 && letters[i + 1] in 0..25) {
+            flagLanguages["${'a' + letters[i]}${'a' + letters[i + 1]}"]?.let(found::add)
+            i += 2
+        } else i++
+    }
+    Regex("[a-z]+").findAll(text.lowercase()).forEach { m -> languageWords[m.value]?.let(found::add) }
+    return found
+}
+
+private val flagLanguages = mapOf("gb" to "en", "us" to "en", "au" to "en", "it" to "it", "in" to "hi", "es" to "es",
+    "mx" to "es", "fr" to "fr", "de" to "de", "pt" to "pt", "br" to "pt", "ru" to "ru", "jp" to "ja", "kr" to "ko",
+    "cn" to "zh", "tw" to "zh", "hk" to "zh", "nl" to "nl", "pl" to "pl", "tr" to "tr", "se" to "sv", "dk" to "da",
+    "no" to "no", "fi" to "fi", "gr" to "el", "il" to "he", "sa" to "ar", "ae" to "ar", "eg" to "ar", "th" to "th",
+    "vn" to "vi", "id" to "id", "ua" to "uk", "cz" to "cs", "hu" to "hu", "ro" to "ro", "ir" to "fa", "pk" to "ur", "bd" to "bn")
+
+// English names and the release tags that stand for a language. Short tags that are also common words ("por", "mal")
+// are left out.
+private val languageWords = mapOf("english" to "en", "eng" to "en", "hindi" to "hi", "hin" to "hi", "italian" to "it",
+    "ita" to "it", "spanish" to "es", "spa" to "es", "esp" to "es", "latino" to "es", "castellano" to "es",
+    "french" to "fr", "fre" to "fr", "fra" to "fr", "vff" to "fr", "truefrench" to "fr", "german" to "de", "ger" to "de",
+    "deu" to "de", "portuguese" to "pt", "russian" to "ru", "rus" to "ru", "japanese" to "ja", "jpn" to "ja",
+    "korean" to "ko", "kor" to "ko", "chinese" to "zh", "mandarin" to "zh", "cantonese" to "zh", "dutch" to "nl",
+    "polish" to "pl", "turkish" to "tr", "swedish" to "sv", "danish" to "da", "norwegian" to "no", "finnish" to "fi",
+    "greek" to "el", "hebrew" to "he", "arabic" to "ar", "thai" to "th", "vietnamese" to "vi", "indonesian" to "id",
+    "ukrainian" to "uk", "czech" to "cs", "hungarian" to "hu", "romanian" to "ro", "persian" to "fa", "urdu" to "ur",
+    "bengali" to "bn", "tamil" to "ta", "tam" to "ta", "telugu" to "te", "tel" to "te", "malayalam" to "ml",
+    "kannada" to "kn", "marathi" to "mr")
+
 internal fun runtime(text: String): String {
     // "147 min", or "2h35min" / "2h 35m" as some addons write it.
     val hm = Regex("""^(\d+)\s*h\s*(\d+)\s*m(in)?$""").find(text.trim())?.groupValues
