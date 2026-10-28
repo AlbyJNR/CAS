@@ -65,7 +65,7 @@ Alder can also show Continue Watching on the Google TV home screen, skip intros 
 | Stream preferences | **Plain words: Best picture, Balanced, Fast start** | Set inside each add-on |
 | Skip intro | ✅ | ❌ |
 | Continue Watching on the Google TV home | ✅ | ❌ |
-| Finding and configuring add-ons | In Stremio on your phone or computer | On the TV |
+| Finding and configuring add-ons | In Stremio on your phone or computer, synced to the TV | On the TV, or on your phone or computer, synced to the TV |
 | Torrent streaming | ❌ Debrid only | ✅ |
 | App size | **About 5 MB** | Much larger, with a streaming server |
 | Built for | **A TV and a remote** | Shared with desktop and web |
@@ -89,10 +89,10 @@ Alder has no add-on store. Setting up add-ons means typing and web forms, which 
 
 1. On your phone or computer, sign in to [Stremio](https://web.stremio.com) and install your add-ons.
 1. Download `Alder.apk` from the [latest release](https://github.com/aradhyas8/Alder/releases/latest).
-1. Install it on your TV with Downloader, a USB drive and a file manager, or `adb install Alder.apk`.
+1. Install it on your TV. Easiest: install the free **Downloader** app by AFTVnews from the Google Play Store on your TV, open it, enter code **9638679** and press Go, then Install. Or use a USB drive and a file manager, or `adb install Alder.apk`.
 1. Open **Alder**, name your profile and sign in to Stremio with the code on screen. Your add-ons, library and Continue Watching come with it.
 
-The first 1.0 release needs a manual APK update. Later builds can offer new versions in the app; Android may ask you to allow Alder to install apps.
+After that, Alder offers new versions itself: press Install when it asks, or use Settings › About › Updates. Android may ask you to allow Alder to install apps the first time. (Version 1.0 needs one manual update with the code above.)
 
 ## Privacy
 
