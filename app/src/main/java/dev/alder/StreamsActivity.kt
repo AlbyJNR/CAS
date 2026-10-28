@@ -263,7 +263,8 @@ class StreamsActivity : Screen() {
         detail.addView(text(sourceSummary(s), BODY, bold = true, color = TEXT_2).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END; maxWidth = dp(if (best) 145 else 170)
         }, wrap().apply { marginEnd = dp(6) })
-        s.tags.filter { it !in listOf("BluRay", "WEB") }.take(if (best) 1 else 2).forEach { tag ->
+        // The debrid service first ("RD ⚡": cached on Real-Debrid, starts at once), then the release's own tags.
+        (listOfNotNull(s.debrid?.tag) + s.tags.filter { it !in listOf("BluRay", "WEB") }.take(if (best) 1 else 2)).forEach { tag ->
             detail.addView(text(tag.uppercase(), 9f, bold = true, color = TUNGSTEN).apply {
                 letterSpacing = 0.03f
                 background = GradientDrawable().apply {

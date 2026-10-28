@@ -194,8 +194,15 @@ class Stream(
      */
     val isVideo get() = size == 0L || size >= 50L * 1024 * 1024
 
-    /** The addon's name for it on one line: "Torrentio (2160p)" becomes "Torrentio  ·  2160p". */
-    val label get() = title.lines().joinToString(" ") { it.trim() }.replace(Regex("\\s*\\((.+?)\\)\\s*$"), "  ·  $1")
+    /**
+     * The addon's name for it on one line: "Torrentio (2160p)" becomes "Torrentio  ·  2160p". A debrid tag ("[RD+]")
+     * becomes the service's name at the end, as the player shows it: "Torrentio  ·  2160p  ·  Real-Debrid".
+     */
+    val label get() = title.lines().joinToString(" ") { it.trim() }.replace(debridTag, "").trim()
+        .replace(Regex("\\s*\\((.+?)\\)\\s*$"), "  ·  $1") + (debrid?.let { "  ·  ${it.name}" } ?: "")
+
+    /** The debrid service it comes through, null for a direct link. */
+    val debrid: Debrid? = debridOf(title, url)
 
     // What the release is, read from its file name and the addon's labels (AIOStreams writes "2160p", "DV", "HEVC"
     // into them; the file name says it for every addon). ponytail: name matching, not the file's real tracks.
@@ -285,6 +292,45 @@ fun JSONArray?.strings(): List<String> = items().filterIsInstance<String>()
 
 /** The string at [key], or null when it's missing, JSON null or blank (optString would return "null" for JSON null). */
 /** "147 min" reads "2h 27m" as on the mock; under an hour, and anything not in minutes, stays as the addon wrote it. */
+/** A debrid service ([short] as add-ons tag it, "RD"); [cached]: ready to start at once, null when the add-on doesn't say. */
+class Debrid(val name: String, val short: String, val cached: Boolean?) {
+    /** The source list's tag: "RD ⚡" when cached. */
+    val tag get() = if (cached == true) "$short ⚡" else short
+}
+
+private val debridServices = listOf(
+    Triple("RD", "Real-Debrid", listOf("real-debrid", "realdebrid", "rdeb.io")),
+    Triple("AD", "AllDebrid", listOf("alldebrid", "debrid.it")),
+    Triple("PM", "Premiumize", listOf("premiumize", "energycdn")),
+    Triple("TB", "TorBox", listOf("torbox", "tb-cdn")),
+    Triple("DL", "Debrid-Link", listOf("debrid-link", "debridlink")),
+    Triple("ED", "EasyDebrid", listOf("easydebrid")),
+    Triple("OC", "Offcloud", listOf("offcloud")),
+    Triple("PIO", "Put.io", listOf("put.io", "putio")),
+)
+
+// Add-ons' tags: Torrentio "[RD+]" (cached) and "[RD download]", AIOStreams and Comet "[RD⚡]" and "[RD⏳]",
+// MediaFusion "⚡RD". The code must stand alone, so "[RDX]" or "HDR" isn't one.
+private val debridCodes = debridServices.joinToString("|") { it.first }
+private val debridTag = Regex("\\[($debridCodes)\\s*(\\+|⚡️?|⏳|download)?]\\s*", RegexOption.IGNORE_CASE)
+private val debridFlash = Regex("(⚡️?)\\s*($debridCodes)\\b")
+
+/**
+ * The debrid service from a source's name, else from its link (Torrentio's /resolve/realdebrid/…, or the service's
+ * own download host). Null for a direct link or a service it doesn't know.
+ */
+internal fun debridOf(name: String, url: String): Debrid? {
+    fun service(code: String) = debridServices.first { it.first.equals(code, ignoreCase = true) }
+    debridTag.find(name)?.let { m ->
+        val mark = m.groupValues[2].lowercase()
+        val cached = when { mark == "+" || mark.startsWith("⚡") -> true; mark == "⏳" || mark == "download" -> false; else -> null }
+        return service(m.groupValues[1]).let { Debrid(it.second, it.first, cached) }
+    }
+    debridFlash.find(name)?.let { m -> return service(m.groupValues[2]).let { Debrid(it.second, it.first, true) } }
+    val link = url.lowercase()
+    return debridServices.firstOrNull { (_, _, hosts) -> hosts.any { it in link } }?.let { Debrid(it.second, it.first, null) }
+}
+
 internal fun runtime(text: String): String {
     // "147 min", or "2h35min" / "2h 35m" as some addons write it.
     val hm = Regex("""^(\d+)\s*h\s*(\d+)\s*m(in)?$""").find(text.trim())?.groupValues
