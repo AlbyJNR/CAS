@@ -58,6 +58,19 @@ class ScreenDesignTest {
         assertEquals(emptyList<String>(), changesFor(log, "1.3"))
     }
 
+    @Test fun debridServiceFromTagsAndLinks() {
+        fun of(name: String, url: String = "https://example.com/v.mkv") = debridOf(name, url)?.let { "${it.short} ${it.cached}" }
+        assertEquals("RD true", of("[RD+] Torrentio\n4k"))
+        assertEquals("RD false", of("[RD download] Torrentio\n1080p"))
+        assertEquals("TB true", of("[TB⚡] Comet 2160p"))
+        assertEquals("AD false", of("[AD⏳] AIOStreams"))
+        assertEquals("RD true", of("MediaFusion ⚡RD 4K"))
+        assertEquals("PM null", of("Torrentio\n4k", "https://torrentio.strem.fun/resolve/premiumize/key/hash/null/0/v.mkv"))
+        assertEquals("RD null", of("Direct", "https://abc.download.real-debrid.com/d/X/v.mkv"))
+        assertEquals(null, of("Movie.2024.1080p.WEB-DL.DDP5.1")) // DL and DD aren't services without a tag
+        assertEquals(null, of("[HDR] 4K"))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))

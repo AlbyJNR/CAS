@@ -45,6 +45,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Before an update, Alder tells you that it closes. Open Alder again after the update.
 - **Remove titles from Continue Watching.** Hold OK on a title in **Continue**. Then select **Remove from Continue Watching**. Stremio also removes it on your other devices. When you watch the title again, it comes back.
 - Hold OK on a title in **Continue** now opens a menu. To see all sources, select **Choose a source**.
+- **See the debrid service of each source.** The source list shows the service of each source, for example **RD** for Real-Debrid. **⚡** shows that the file is ready and starts immediately.
+- The player shows the debrid service of the source that plays, for example "Torrentio · 2160p · Real-Debrid".
 
 ## 1.1
 
