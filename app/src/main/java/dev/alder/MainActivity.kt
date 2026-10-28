@@ -414,7 +414,10 @@ class MainActivity : Screen() {
     override fun onRestart() {
         super.onRestart()
         refreshLibrary?.invoke()
+        refreshAddons?.invoke()
     }
+
+    private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to Alder
 
     private var refreshLibrary: (() -> Unit)? = null // the open page's library rows (Home, Library), asked again
     private var last: View? = null // where the remote last was in the rows
@@ -1083,16 +1086,20 @@ class MainActivity : Screen() {
         if (p == Page.LIBRARY) return
 
         var built = false
+        var builtFrom: List<String>? = null // the add-ons the rows came from, to tell when Stremio's fresh list differs
         fun build(addons: List<Addon>) {
             if (built || g != generation) return
             built = true
+            builtFrom = addons.map { it.id }
             // Each catalog on its page under a plain name, personal rows first; the sort keeps the addons' order within a rank.
             val shelves = addons.flatMap { it.catalogs }.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it } }
                 .sortedBy { it.second.rank }
             val catalogs = shelves.map { it.first }
-            if (catalogs.isEmpty() && p != Page.HOME) {
+            if (catalogs.isEmpty()) {
                 val what = when (p) { Page.MOVIES -> "movie"; Page.LIVE -> "live"; else -> "show" }
-                content.addView(text("None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = TEXT_3)
+                // Home holds only Continue and Watchly's picks, so a new account sees nothing there without a word.
+                content.addView(text(if (p == Page.HOME) "Picks for you show here once Watchly is installed on this profile's Stremio account. Shows and Movies have more to browse."
+                    else "None of your addons has $what catalogs. Add one (AIOMetadata, Cinemeta) in Stremio.", BODY, color = TEXT_3)
                     .apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
             }
             val genres = catalogGenres(catalogs.flatMap { it.genres })
@@ -1245,7 +1252,13 @@ class MainActivity : Screen() {
             }
         }
         if (quick) background({ Stremio.savedAddons(key) }) { r -> r.getOrNull()?.let(::build) }
-        background({ Stremio.addons(key, refresh = p == Page.HOME) }) { r -> r.fold(::build) { if (!built && g == generation) failedToLoad(it) } }
+        // Every page asks Stremio for the add-on list once as it opens (and again when Alder comes back to the front), and
+        // redraws only when the list differs from the one its rows came from: add-ons added or removed elsewhere.
+        fun checkAddons(drawn: (List<Addon>) -> Unit) = background({ Stremio.addons(key, refresh = true) }) { r -> r.fold({ fresh ->
+            if (built && g == generation && builtFrom != fresh.map { it.id }) showPage(p, quick = false) else drawn(fresh)
+        }) { if (!built && g == generation) failedToLoad(it) } }
+        checkAddons(::build)
+        refreshAddons = { checkAddons {} }
     }
 
     private class Shelf(val page: Page, val title: String, val rank: Int)

@@ -44,30 +44,21 @@ object Profiles {
         val prefs = prefs(context)
         save(prefs, all(context).filterNot { it.id == id })
         if (prefs.getString("active", null) == id) prefs.edit().remove("active").apply()
-        val edit = prefs.edit().remove("streamSource:$id").remove("streamAddon:$id")
-        all(context).filter { prefs.getString("streamSource:${it.id}", null) == id }.forEach {
-            edit.remove("streamSource:${it.id}").remove("streamAddon:${it.id}")
-        }
-        edit.apply()
+        prefs.edit().remove("shareStreams:$id").apply()
         Settings.forget(context, id)
         context.getSharedPreferences("search", Context.MODE_PRIVATE).edit().remove("recent:$id").apply()
     }
 
-    /** One owner's configured stream add-on, used only on this TV; watch progress still uses the active account. */
-    fun sharedStream(context: Context): Pair<Profile, String>? {
-        val current = active(context) ?: return null
-        val prefs = prefs(context)
-        val source = all(context).firstOrNull { it.id == prefs.getString("streamSource:${current.id}", null) } ?: return null
-        return prefs.getString("streamAddon:${current.id}", null)?.let { source to it }
-    }
+    /** Whether [id] lends its stream add-ons (`Addon.shareable`) to the other profiles on this TV. */
+    fun sharesStreams(context: Context, id: String) = prefs(context).getBoolean("shareStreams:$id", false)
 
-    fun shareStream(context: Context, targetId: String, sourceId: String, addonId: String) {
-        require(targetId != sourceId && all(context).any { it.id == targetId } && all(context).any { it.id == sourceId })
-        prefs(context).edit().putString("streamSource:$targetId", sourceId).putString("streamAddon:$targetId", addonId).apply()
-    }
+    fun setSharesStreams(context: Context, id: String, on: Boolean) = prefs(context).edit().putBoolean("shareStreams:$id", on).apply()
 
-    fun clearSharedStream(context: Context, targetId: String) = prefs(context).edit()
-        .remove("streamSource:$targetId").remove("streamAddon:$targetId").apply()
+    /** The other profiles lending their stream add-ons to the active one; watch progress still uses the active account. */
+    fun streamLenders(context: Context): List<Profile> {
+        val current = active(context) ?: return emptyList()
+        return all(context).filter { it.id != current.id && sharesStreams(context, it.id) }
+    }
 
     /** Rename or set the PIN of a profile (clearPin removes it), keeping its place in the list. */
     fun update(context: Context, id: String, name: String? = null, pin: String? = null, clearPin: Boolean = false, color: Int? = null) {
@@ -86,6 +77,15 @@ object Profiles {
 
     // Before profiles there was one sign-in; it becomes the first profile.
     private fun migrate(prefs: SharedPreferences) {
+        // Sharing used to lend one add-on to one profile (2026-10-26); an owner who lent one now shares with everyone.
+        prefs.all.keys.filter { it.startsWith("streamSource:") || it.startsWith("streamAddon:") }.takeIf { it.isNotEmpty() }?.let { old ->
+            val edit = prefs.edit()
+            old.forEach { key ->
+                if (key.startsWith("streamSource:")) prefs.getString(key, null)?.let { edit.putBoolean("shareStreams:$it", true) }
+                edit.remove(key)
+            }
+            edit.apply()
+        }
         val key = prefs.getString("authKey", null) ?: return
         if (!prefs.contains("profiles")) save(prefs, listOf(Profile("1", "Me", COLORS[0], key)))
         prefs.edit().remove("authKey").putString("active", "1").apply()
