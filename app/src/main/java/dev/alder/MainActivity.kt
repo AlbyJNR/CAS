@@ -1464,9 +1464,12 @@ class MainActivity : Screen() {
         choose(item.name, listOf("Choose a source", "Remove from Continue Watching")) { selected ->
             if (selected == 0) return@choose play(item, pick = true)
             val original = library.firstOrNull { it.optString("_id") == item.id } ?: return@choose
-            val updated = JSONObject(original.toString()).also(Library::hideFromContinueWatching)
+            val updated = JSONObject(original.toString())
+            val offset = Library.hideFromContinueWatching(updated)
             background({ Stremio.saveLibrary(profile.authKey, listOf(updated)) }) { result ->
                 result.fold({
+                    Settings.setHidden(this, Settings.hidden(this)
+                        .put(item.id, JSONObject().put("name", item.name).put("timeOffset", offset)))
                     library = library.map { if (it.optString("_id") == item.id) updated else it }
                     refreshLibrary?.invoke() // the row (and Google TV's) is drawn again without it
                 }) { error ->
