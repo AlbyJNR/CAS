@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/home.jpg" alt="Alder home screen with Continue Watching" width="100%">
+  <img src="docs/home.png" alt="Alder home screen with Continue Watching" width="100%">
 </p>
 
 Alder is an Android TV app for your Stremio account. Your account, add-ons, library and watch progress stay exactly where they are, and everything you watch syncs back to Stremio on your phone and computer. What changes is the app on the TV: built for a remote, simple enough for anyone in the family, and quiet enough that the film is the main thing on screen.
@@ -34,7 +34,7 @@ Alder makes that choice for them:
 <table>
   <tr>
     <td width="50%"><img src="docs/picker.jpg" alt="Profile picker"><br><b>Who's watching.</b> One profile per person, each its own Stremio account.</td>
-    <td width="50%"><img src="docs/details.jpg" alt="Title page"><br><b>Title page.</b> Full-screen art, how much is left, and one button to Resume.</td>
+    <td width="50%"><img src="docs/title.png" alt="Title page"><br><b>Title page.</b> Full-screen art, details and one clear button to Play or Resume.</td>
   </tr>
   <tr>
     <td><img src="docs/sources.jpg" alt="Sources list"><br><b>Sources, when you want them.</b> Hold OK to see every source in plain columns: quality, release, size. Best match is marked.</td>
@@ -46,18 +46,11 @@ Alder makes that choice for them:
   </tr>
   <tr>
     <td><img src="docs/settings.jpg" alt="Stream settings"><br><b>Preferences in plain words.</b> Best picture, Balanced or Fast start; no release jargon needed.</td>
-    <td valign="top"><br><b>Also in the box</b>
-      <ul>
-        <li>Continue Watching on the Google TV home screen</li>
-        <li>Skip intro, and the next episode in the same release</li>
-        <li>Resume fetches a fresh link and finds the same file</li>
-        <li>"Switch to a lower quality" when a stream keeps buffering</li>
-        <li>Frame-rate matching for smooth 24 fps films</li>
-        <li>Updates itself from GitHub releases</li>
-      </ul>
-    </td>
+    <td><img src="docs/library.png" alt="My List"><br><b>Your Stremio library.</b> Find saved films and shows, sort them and pick up where you left off.</td>
   </tr>
 </table>
+
+Alder can also show Continue Watching on the Google TV home screen, skip intros when timings are available, move to the next episode and match the TV's frame rate to the video. If a stream keeps buffering, it can offer a lower-quality source at the same playback position.
 
 ## Alder vs. Stremio on the TV
 
@@ -99,7 +92,7 @@ Alder has no add-on store. Setting up add-ons means typing and web forms, which 
 1. Install it on your TV with Downloader, a USB drive and a file manager, or `adb install Alder-<version>.apk`.
 1. Open **Alder**, name your profile and sign in to Stremio with the code on screen. Your add-ons, library and Continue Watching come with it.
 
-After that, Alder offers new versions itself. The first time, Android asks you to allow Alder to install apps.
+The first 1.0 release needs a manual APK update. Later builds can offer new versions in the app; Android may ask you to allow Alder to install apps.
 
 ## Privacy
 
