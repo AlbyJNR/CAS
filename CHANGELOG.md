@@ -24,6 +24,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **Portuguese (Brazil)** and **Portuguese** are 2 different languages.
 - An add-on subtitle in your language does not start the video again.
 - Lists in **Settings** are not transparent.
+- **Skip forward in more movies.** Alder finds the correct position in files that have no index, for example .ts files. Before, a skip forward on the progress bar started these movies again from the beginning.
+- Some sources cannot skip. In these sources, Alder shows a message, and the movie continues. To get a different source, select **Change stream**.
 
 ## 1.1
 

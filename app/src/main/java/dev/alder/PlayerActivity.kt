@@ -37,6 +37,8 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mp3.Mp3Extractor
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
@@ -433,6 +435,7 @@ class PlayerActivity : Screen() {
         val s = sources[at]
         startAt = position
         started = false
+        toldUnseekable = false
         startMessage = message ?: "Starting · ${s.label}"
         showLoading(startMessage!!)
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(s.headers)
@@ -441,7 +444,11 @@ class PlayerActivity : Screen() {
                 MediaItem.SubtitleConfiguration.Builder(subFile?.let(android.net.Uri::fromFile) ?: android.net.Uri.parse(it.url)).setMimeType(it.mimeType)
                     .setLanguage(it.lang).setLabel(it.addon).setId(ADDON_SUB).build()
             })).build()
-        player.setMediaSource(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)).createMediaSource(item), position) // files too: shifted subtitles
+        // Files with no index (.ts, raw audio, some .avi) seek by their bitrate instead of not at all: ExoPlayer turns
+        // every seek in a file it can't seek into a jump to 0:00, so scrubbing restarted the movie.
+        val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true).setConstantBitrateSeekingAlwaysEnabled(true)
+            .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING)
+        player.setMediaSource(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http), extractors).createMediaSource(item), position) // files too: shifted subtitles
         player.prepare()
         player.playWhenReady = true
         main.removeCallbacks(startTimeout)
@@ -730,7 +737,7 @@ class PlayerActivity : Screen() {
         // The OK that woke the controls: its repeats and release would otherwise press the button it focused.
         // Skip intro: OK jumps past it while the pill shows over the picture (the controls down).
         if (skip.visibility == View.VISIBLE && !shown && down && event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)) {
-            (skip.tag as? Segment)?.let { player.seekTo(it.end) }
+            (skip.tag as? Segment)?.takeIf { canSeek() }?.let { player.seekTo(it.end) }
             skip.visibility = View.GONE
             wakeKey = event.keyCode
             return true
@@ -1044,12 +1051,24 @@ class PlayerActivity : Screen() {
     /** Moves the playing point by [by] ms; the seek itself waits until the presses stop (SEEK_SETTLE). */
     private fun scrub(by: Long) {
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
-        if (player.isCurrentMediaItemLive) return
+        if (player.isCurrentMediaItemLive || !canSeek()) return
         scrubTo = ((if (scrubTo >= 0) scrubTo else player.currentPosition) + by).coerceIn(0, maxOf(0, duration - 1_000))
         updateProgress()
         main.removeCallbacks(seekTask)
         main.postDelayed(seekTask, SEEK_SETTLE)
     }
+
+    /** Whether this file can jump to another second. A seek in one that can't (no index, even by bitrate) lands on
+     *  0:00, so it's refused with a word instead; once per source. */
+    private fun canSeek(): Boolean {
+        if (player.isCurrentMediaItemSeekable) return true
+        if (!toldUnseekable) {
+            toldUnseekable = true
+            android.widget.Toast.makeText(this, "This source can't skip ahead · Change stream to try another", android.widget.Toast.LENGTH_LONG).show()
+        }
+        return false
+    }
+    private var toldUnseekable = false
 
     /** The source list for this video, from this second; the player closes, and a pick starts a new one. */
     private fun changeStream() {
