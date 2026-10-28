@@ -23,6 +23,7 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -316,7 +317,32 @@ abstract class Screen : Activity() {
         if (on) generateSequence(parent as? android.view.ViewGroup) { it.parent as? android.view.ViewGroup }
             .takeWhile { it !is android.widget.ScrollView && it !is android.widget.HorizontalScrollView && it !is android.widget.AbsListView }
             .forEach { it.clipChildren = false; it.clipToPadding = false }
-        return animate().scaleX(if (on) by else 1f).scaleY(if (on) by else 1f).setDuration(150)
+        return animate().scaleX(if (on) by else 1f).scaleY(if (on) by else 1f)
+            .setInterpolator(if (on) FOCUS_IN else FOCUS_OUT).setDuration(if (on) FOCUS_IN_MS else FOCUS_OUT_MS)
+    }
+
+    // ---------- press feedback ----------
+
+    // OK on a control dips it, and letting go springs it back: the remote feels joined to the screen. Done once here
+    // for every screen rather than per view, so no view's own key listener is displaced.
+    private var pressedView: View? = null
+    private var pressedScale = 1f
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER ||
+            event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            val v = currentFocus
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && v != null && v.isClickable &&
+                v !is android.widget.EditText && v !is android.widget.ScrollView) {
+                pressedView = v
+                pressedScale = v.scaleX
+                v.animate().scaleX(pressedScale * PRESS_DIP).scaleY(pressedScale * PRESS_DIP).setInterpolator(FOCUS_OUT).setDuration(80).start()
+            } else if (event.action == KeyEvent.ACTION_UP) pressedView?.let { p ->
+                pressedView = null
+                if (p.isAttachedToWindow) p.animate().scaleX(pressedScale).scaleY(pressedScale).setInterpolator(FOCUS_IN).setDuration(FOCUS_IN_MS).start()
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     /** A persistent choice: its dot remains after remote focus moves. */
@@ -661,6 +687,12 @@ abstract class Screen : Activity() {
         const val SHORT_LIST = 5 // "What's new" entries shown before See all changes
         const val WHATS_NEW_W = 480 // dp
         const val CHIP_H = 24 // the mocks' 46–48 px chips
+        // Focus motion: a little overshoot on the way in, settling over 220 ms, is most of what makes focus feel weighted.
+        val FOCUS_IN: android.view.animation.Interpolator = android.view.animation.OvershootInterpolator(1.2f)
+        val FOCUS_OUT: android.view.animation.Interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+        const val FOCUS_IN_MS = 220L
+        const val FOCUS_OUT_MS = 170L
+        const val PRESS_DIP = 0.96f // OK held: the control's scale, relative to where focus left it
         const val CARD_GROW = 1.06f
         const val CHIP_GROW = 1.04f // a wide chip grown as much as a card filled the gap to its neighbour
         const val CARD_LIFT = 8

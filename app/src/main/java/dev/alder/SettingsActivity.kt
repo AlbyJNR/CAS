@@ -143,11 +143,11 @@ class SettingsActivity : Screen() {
         STREAMS("Streams", R.drawable.ic_play),
         PICTURE("Picture & Sound", R.drawable.ic_tv),
         SUBTITLES("Subtitles", R.drawable.ic_subtitles),
-        TITLE("Title page", glyph = "▭"),
+        TITLE("Title page", R.drawable.ic_article),
         ADDONS("Add-ons", R.drawable.ic_layers),
-        PROFILE("Profile", glyph = "♙"),
-        LANGUAGE("Language", glyph = "◎"),
-        STORAGE("Storage", glyph = "▤"),
+        PROFILE("Profile", R.drawable.ic_person),
+        LANGUAGE("Language", R.drawable.ic_language),
+        STORAGE("Storage", R.drawable.ic_storage),
         ABOUT("About", R.drawable.ic_info),
     }
 

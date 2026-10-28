@@ -868,6 +868,12 @@ class MainActivity : Screen() {
 
     /** The focused title: its art across the screen, and logo, facts (and time left) and description top left. */
     private fun showHero(item: Item) {
+        // A new title's words fade up with its art instead of snapping.
+        if (heroItem !== item && heroItem != null && mode != Mode.CINEMA) {
+            browseInfo.animate().cancel()
+            browseInfo.alpha = 0.4f
+            browseInfo.animate().alpha(1f).setInterpolator(FOCUS_OUT).setDuration(280).start()
+        }
         heroItem = item
         heroName.text = item.name
         heroName.visibility = View.VISIBLE
@@ -973,6 +979,7 @@ class MainActivity : Screen() {
             genreStrip.removeAllViews()
             genreChips.clear()
         }
+        val switched = p != page
         page = p
         val grid = p == Page.LIBRARY
         scroller.layoutParams = (scroller.layoutParams as FrameLayout.LayoutParams).apply {
@@ -995,6 +1002,11 @@ class MainActivity : Screen() {
         content.removeAllViews()
         rows.forEach { r -> r.cards.forEach { it.unload() } }
         rows.clear()
+        if (switched) { // the new page's rows fade in rather than appearing mid-draw
+            scroller.animate().cancel()
+            scroller.alpha = 0f
+            scroller.animate().alpha(1f).setStartDelay(60).setDuration(260).withEndAction { scroller.animate().setStartDelay(0) }.start()
+        }
         genreStrip.animate().cancel()
         genreStrip.alpha = 1f
         genreStrip.visibility = if (p.isCatalog) View.INVISIBLE else if (grid) View.VISIBLE else View.GONE
@@ -1286,7 +1298,8 @@ class MainActivity : Screen() {
                 if (listFilter != value) { listFilter = value; styleListChips(); redrawLibrary() }
             }
         }
-        line.addView(text("Sort", SMALL, color = TEXT_3), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(20) })
+        // The two groups, what to show and how to order it, part at a hairline rather than a stray word.
+        line.addView(divider(), LinearLayout.LayoutParams(dp(1), dp(14)).apply { marginStart = dp(14); marginEnd = dp(8) })
         listOf(ListSort.RECENT to "Recently added", ListSort.NAME to "A–Z", ListSort.UNWATCHED to "Unwatched first")
             .forEach { (value, label) ->
                 listSortChips[value] = add(label, value == listSort) {

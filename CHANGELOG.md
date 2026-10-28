@@ -15,6 +15,13 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.3.0
+
+- **Focus with weight.** Posters, buttons and rows settle into focus with a small spring. Press OK and the control dips, then springs back.
+- **Softer changes.** A new title's name and facts fade in with its art. A new page's rows fade in.
+- **Settings icons.** Title page, Profile, Language and Storage have icons that match the other sections.
+- **Library filters.** A hairline parts the filter chips from the sort chips.
+
 ## 1.2.0
 
 - **Trailers.** Select **Trailer** on a title. The trailer plays in a box over the title. Press OK to pause, Left or Right to skip 10 seconds, and Back to close.
