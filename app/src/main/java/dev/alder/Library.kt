@@ -51,10 +51,19 @@ object Library {
     /**
      * Off Continue Watching, as Stremio's own dismiss does (stremio-core's RewindLibraryItem): the resume point goes;
      * watch history, the episode reached and My List stay, and watching it again brings it back. It syncs, so the
-     * phone and the web hide it too.
+     * phone and the web hide it too. Returns the resume point it had, so [unhide] can put it back.
      */
-    fun hideFromContinueWatching(item: JSONObject) {
+    fun hideFromContinueWatching(item: JSONObject): Long {
+        val offset = item.state.optLong("timeOffset")
         item.state.put("timeOffset", 0)
+        item.put("_mtime", now())
+        return offset
+    }
+
+    /** Back on Continue Watching at [offset]; left alone when it was watched again since (it's back already). */
+    fun unhide(item: JSONObject, offset: Long) {
+        if (item.state.optLong("timeOffset") > 0) return
+        item.state.put("timeOffset", offset)
         item.put("_mtime", now())
     }
 

@@ -16,6 +16,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 ## Unreleased
 
 - **Remove titles from Continue Watching.** Hold OK on a title in **Continue**. Then select **Remove from Continue Watching**. Stremio also removes it on your other devices. When you watch the title again, it comes back.
+- **Put back removed titles.** Select **Settings → Profile → Hidden from Continue Watching**. Then select a title. The title goes back to **Continue** at the position where you stopped. The list shows only titles that you removed on this TV.
 - Hold OK on a title in **Continue** now opens a menu. To see all sources, select **Choose a source**.
 
 ## 1.1

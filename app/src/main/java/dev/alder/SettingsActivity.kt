@@ -34,8 +34,15 @@ object Settings {
     /** "": no preference, "original": dubs last, "mine": the audio language first. */
     fun dub(c: Context) = prefs(c).getString(profileKey(c, "dub"), "").orEmpty()
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
+    /**
+     * Titles this profile hid from Continue Watching on this TV: id to {name, timeOffset}, so Settings can put them
+     * back. ponytail: this TV only; titles hidden in Stremio elsewhere aren't listed.
+     */
+    fun hidden(c: Context) = runCatching { org.json.JSONObject(prefs(c).getString(profileKey(c, "hidden"), null)!!) }
+        .getOrDefault(org.json.JSONObject())
+    fun setHidden(c: Context, all: org.json.JSONObject) = prefs(c).edit().putString(profileKey(c, "hidden"), all.toString()).apply()
     /** A removed profile's taste goes with it, so a new profile in its place starts with none. */
-    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId").remove("audioLang@$profileId").apply()
+    fun forget(c: Context, profileId: String) = prefs(c).edit().remove("release@$profileId").remove("dub@$profileId").remove("audioLang@$profileId").remove("hidden@$profileId").apply()
     fun alwaysList(c: Context) = prefs(c).getBoolean("alwaysList", false)
     fun matchFrameRate(c: Context) = prefs(c).getBoolean("matchFrameRate", true)
     fun passthrough(c: Context) = prefs(c).getBoolean("passthrough", false)
@@ -320,6 +327,12 @@ class SettingsActivity : Screen() {
                     startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                 }
+                var hiddenValue: TextView? = null
+                fun count() { hiddenValue?.text = "${Settings.hidden(this).length()}  ›" }
+                hiddenValue = actionRow("Hidden from Continue Watching", "", "Put back a title you removed from Continue Watching.") {
+                    unhideMenu(::count)
+                }
+                count()
             }
             Group.LANGUAGE -> actionRow("App language", Locale.getDefault().displayLanguage,
                 "The app follows this TV's language setting.") {
@@ -385,6 +398,28 @@ class SettingsActivity : Screen() {
         detailRows.addView(row, LinearLayout.LayoutParams(-1, dp(42)))
         if (firstDetail == null) firstDetail = row
         return row
+    }
+
+    /** The titles hidden from Continue Watching; OK on one puts it back with its resume point, here and in Stremio. */
+    private fun unhideMenu(done: () -> Unit) {
+        val all = Settings.hidden(this)
+        val ids = all.keys().asSequence().toList()
+        if (ids.isEmpty()) return choose("Nothing is hidden", listOf("OK"), "Titles you remove from Continue Watching show here.") {}
+        val key = authKey ?: return
+        choose("Hidden from Continue Watching", ids.map { all.getJSONObject(it).optString("name", it) }, "Select a title to put it back.") { i ->
+            val id = ids[i]
+            background({
+                val item = Stremio.library(key, listOf(id)).firstOrNull() ?: error("not in the library")
+                Library.unhide(item, all.getJSONObject(id).optLong("timeOffset"))
+                Stremio.saveLibrary(key, listOf(item))
+            }) { result ->
+                result.fold({
+                    all.remove(id)
+                    Settings.setHidden(this, all)
+                    done()
+                }) { choose("Couldn't put it back", listOf("OK"), "Check the connection and try again.") {} }
+            }
+        }
     }
 
     private fun actionRow(label: String, value: String, help: String, click: () -> Unit): TextView {
