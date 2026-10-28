@@ -114,13 +114,38 @@ abstract class Screen : Activity() {
         super.onDestroy()
     }
 
-    /** Downloads [release] and hands it to Android's installer, which asks to confirm and restarts Alder. */
+    /**
+     * Downloads [release] and hands it to Android's installer. Alder closes to be replaced and doesn't open again by
+     * itself, so the viewer is told first. Without permission to install apps, Android's page for it opens, and the
+     * install goes on when the viewer comes back with it allowed; a TV without that page gets the steps instead.
+     */
     protected fun installUpdate(release: Updates.Release) {
-        if (!Updates.canInstall(this)) return
-        android.widget.Toast.makeText(this, "Downloading Alder ${release.version}…", android.widget.Toast.LENGTH_LONG).show()
+        if (!Updates.canInstall(this)) {
+            pendingInstall = release
+            if (!Updates.askToInstall(this)) {
+                pendingInstall = null
+                choose("Allow Alder to install updates", listOf("OK"),
+                    "On Fire TV: Settings › My Fire TV › Developer options › Install unknown apps, then turn on Alder. " +
+                        "On Google TV: Settings › Apps › Security & restrictions › Unknown sources, then turn on Alder. " +
+                        "Then select Install again.") {}
+            }
+            return
+        }
+        android.widget.Toast.makeText(this, "Downloading Alder ${release.version}… Alder closes to update. Open it again after.",
+            android.widget.Toast.LENGTH_LONG).show()
         background({ Updates.install(applicationContext, release) }) { r ->
             if (r.isFailure) choose("Couldn't download the update", listOf("OK"), "Check the TV's connection and try again from Settings › About.") {}
         }
+    }
+
+    // An update waiting on the TV's permission to install apps: it goes on when the viewer comes back with it allowed.
+    private var pendingInstall: Updates.Release? = null
+
+    override fun onResume() {
+        super.onResume()
+        val release = pendingInstall ?: return
+        pendingInstall = null
+        if (Updates.canInstall(this)) installUpdate(release)
     }
 
     /** Runs [work] off the main thread and hands its result back on it, unless the screen is gone. */

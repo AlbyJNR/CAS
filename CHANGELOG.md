@@ -39,6 +39,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
 - Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
 - **What is new after each update.** After Alder updates, Home shows the changes in the new version. Select **See all changes** to read all of them. Select **Settings → About → What's new** to read them again.
+- **Updates on Fire TV.** Alder does not stop when it asks for permission to install an update. When the TV has no page for this permission, Alder shows the steps.
+- After you let Alder install apps, the update continues. Before, you had to select **Install** again.
+- When the download of an update stops or is not complete, Alder tells you. Before, nothing happened.
+- Before an update, Alder tells you that it closes. Open Alder again after the update.
 
 ## 1.1
 

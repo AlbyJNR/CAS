@@ -45,12 +45,19 @@ object Updates {
         return true
     }
 
-    /** False when this TV hasn't allowed Alder to install apps yet: Android's page for that is opened instead. */
-    fun canInstall(c: Context): Boolean {
-        if (c.packageManager.canRequestPackageInstalls()) return true
+    fun canInstall(c: Context) = c.packageManager.canRequestPackageInstalls()
+
+    /**
+     * Opens Android's page for letting Alder install apps. False when this TV has no such page (some Fire TV models
+     * keep it under Developer options instead): starting it there crashed Alder.
+     */
+    fun askToInstall(c: Context): Boolean = try {
         c.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             android.net.Uri.parse("package:${c.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return false
+        true
+    } catch (e: RuntimeException) { // ActivityNotFoundException, or a SecurityException from a locked-down settings app
+        android.util.Log.w("Alder", "no install permission page: $e")
+        false
     }
 
     /** Downloads [release] into an install session and hands it to Android. Blocks: run it off the main thread. */
@@ -63,9 +70,17 @@ object Updates {
         val id = installer.createSession(params)
         installer.openSession(id).use { session ->
             try {
-                URL(release.apk).openStream().use { input ->
-                    session.openWrite("Alder.apk", 0, -1).use { out -> input.copyTo(out); session.fsync(out) }
+                // Timeouts: a stalled download used to wait forever with no word. A short file (a dropped connection)
+                // is refused here, before Android's installer calls it a package it can't parse.
+                val c = URL(release.apk).openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 15_000
+                c.readTimeout = 30_000
+                if (c.responseCode !in 200..299) throw java.io.IOException("HTTP ${c.responseCode}")
+                val expected = c.contentLengthLong
+                val written = c.inputStream.use { input ->
+                    session.openWrite("Alder.apk", 0, -1).use { out -> input.copyTo(out).also { session.fsync(out) } }
                 }
+                if (expected > 0 && written != expected) throw java.io.IOException("download cut short: $written of $expected bytes")
             } catch (e: Exception) {
                 session.abandon()
                 throw e
