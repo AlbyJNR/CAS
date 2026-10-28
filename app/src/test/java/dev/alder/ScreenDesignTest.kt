@@ -29,7 +29,12 @@ class ScreenDesignTest {
         assertEquals("de", Languages.code("ger"))
         assertEquals("fr", Languages.code("fre"))
         assertEquals("nl", Languages.code("dut"))
-        assertEquals("pt", Languages.code("pob"))
+        listOf("pob", "pt-BR", "pt_br", "por-BR", "Portuguese (Brazil)").forEach { assertEquals("pt-BR", Languages.code(it)) }
+        listOf("pt", "por", "pom", "pt-PT", "Portuguese").forEach { assertEquals("pt", Languages.code(it)) }
+        assertEquals(2, Languages.match("pob", "pt-BR"))
+        assertEquals(1, Languages.match("por", "pt-BR"))
+        assertEquals(0, Languages.match("spa", "pt-BR"))
+        assertEquals("Portuguese (Brazil)", Languages.name("pob"))
         assertEquals("he", Languages.code("heb"))
         assertEquals(null, Languages.code("und"))
         assertEquals(true, Languages.same("eng", "en"))

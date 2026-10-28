@@ -12,10 +12,12 @@ Put changes that are not released under `## Unreleased`. Rename that heading to 
 
 ## Unreleased
 
-- **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language** and choose any language. Each profile keeps its own choice. Subtitles in that language start with the video. They do not start when the sound is already in that language.
+- **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language** and choose any language. Each profile keeps its own choice. Subtitles in that language start with the video, also when the sound is in that language.
 - **All subtitle languages in the player.** **Audio & subtitles** now lists every language that your subtitle add-ons have. Your subtitle language and English come first. Before, Alder showed only the TV's language and English.
 - **Any audio language.** **Settings → Picture & Sound → Audio language** now has every language, not 7. Common languages are at the top.
 - Alder now matches languages from all sources, for example "es", "spa" and "Spanish". Before, some subtitles and audio tracks did not match.
+- **Portuguese (Brazil)** and **Portuguese** are now 2 different languages.
+- Add-on subtitles in your language no longer make the video start again.
 - Lists that open in **Settings** are no longer see-through.
 
 ## 1.1

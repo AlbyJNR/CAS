@@ -226,7 +226,7 @@ class Stream(
     val multiAudio = Regex("\\b(multi|dual)\\b").containsMatchIn(words)
     val dubbed = Regex("\\bdub(bed)?\\b").containsMatchIn(words)
     /** Whether the names mention this language ("hindi" for "hi"). */
-    fun mentions(language: String) = Locale(language).getDisplayLanguage(Locale.ENGLISH).lowercase().let { it.length > 2 && it in words }
+    fun mentions(language: String) = Locale.forLanguageTag(language).getDisplayLanguage(Locale.ENGLISH).lowercase().let { it.length > 2 && it in words }
 
     /** Short tags for the source list: "REMUX · DV · Atmos". */
     val tags get() = listOfNotNull(

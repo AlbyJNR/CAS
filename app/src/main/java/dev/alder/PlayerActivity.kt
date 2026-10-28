@@ -93,7 +93,6 @@ class PlayerActivity : Screen() {
     private var chosenSub: Subtitle? = null
     private var selectAddonSub = false
     private val wantSub by lazy { Settings.subtitleLanguage(this) }
-    private var wantAddonSub = false // the file has no subtitles in the profile's language: attach an addon's
     // Timing for an addon subtitle file that runs early or late: the file is fetched, its times moved, and attached
     // from the app's cache instead of its URL. ponytail: SRT and VTT only; ASS and the file's own subtitles can't move.
     private var subDelay = 0L
@@ -288,18 +287,20 @@ class PlayerActivity : Screen() {
                 if (audio.isNotEmpty()) audioGroups = audio
                 val best = bestAudio(audio)
                 // Releases flag foreign subtitles as forced or default (Lanterns came up with Russian "Forced" under
-                // English audio): start with subtitles only in the profile's subtitle language, else none; and none when
-                // the sound is already in it. With none in the file, an addon's file in that language is attached once
-                // it arrives (wantAddonSub). Once per video, like audio.
+                // English audio): start with subtitles only in the profile's subtitle language, whatever the sound, else
+                // none. The file's own come first, then the addon file attached at the start, then the file's own from
+                // another country (Portugal's for Brazil's). Once per video, like audio.
                 if (!subsPicked && best != null) {
                     subsPicked = true
-                    val want = wantSub
-                    val shownSubs = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)
-                    val needed = Settings.subtitles(this@PlayerActivity) && !Languages.same(best.getTrackFormat(0).language, want)
-                    if (!needed || (shownSubs != null && !Languages.same(shownSubs.language, want)))
-                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-                    wantAddonSub = needed && (shownSubs == null || !Languages.same(shownSubs.language, want))
-                    attachWantedSub()
+                    val texts = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0) }
+                    fun inFile(score: Int) = texts.filterNot(::isAddonSub).filter { Languages.match(it.getTrackFormat(0).language, wantSub) == score }
+                        .maxByOrNull { it.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_FORCED == 0 } // full, not forced-only
+                    val pick = if (!Settings.subtitles(this@PlayerActivity)) null
+                        else inFile(2) ?: texts.firstOrNull { isAddonSub(it) && Languages.same(chosenSub?.lang, wantSub) } ?: inFile(1)
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
+                        if (pick == null) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        else setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(TrackSelectionOverride(pick.mediaTrackGroup, 0))
+                    }.build()
                 }
                 if (audioPicked || best == null) return
                 audioPicked = true // once per video; picks made later in the settings menu stand
@@ -308,6 +309,23 @@ class PlayerActivity : Screen() {
             }
         })
 
+        // "Start Over" plays from the beginning; a switch to a lower quality carries its own second.
+        val known = if (intent.getBooleanExtra("startOver", false)) 0L else intent.getLongExtra("resumeAt", -1L).takeIf { it >= 0 }
+        // The addon's subtitles are waited for (SUB_WAIT at most) so a file in the profile's language is attached from
+        // the start: attaching one later means loading the source again. The latest resume point asked for wins.
+        var subsAnswered = !Settings.subtitles(this)
+        var waiting: Long? = null
+        fun begin(resume: Long) {
+            if (prepared) return
+            if (!subsAnswered) { waiting = resume; return }
+            load(resume)
+            lastPosition = resume
+            prepared = true
+            main.postDelayed(tickTask, TICK)
+            main.post(skipTask)
+        }
+        val stopWaiting = Runnable { subsAnswered = true; waiting?.let(::begin) }
+        main.postDelayed(stopWaiting, SUB_WAIT)
         background({
             // Every language: the profile's subtitle language and English first, three files each in the addon's order,
             // then one file for each other language by name, so the list stays short enough for a remote.
@@ -320,18 +338,10 @@ class PlayerActivity : Screen() {
         }) { r ->
             addonSubs = r.getOrDefault(emptyList())
             android.util.Log.i("Alder", "addon subtitles: ${addonSubs.size}", r.exceptionOrNull())
-            attachWantedSub()
-        }
-
-        // "Start Over" plays from the beginning; a switch to a lower quality carries its own second.
-        val known = if (intent.getBooleanExtra("startOver", false)) 0L else intent.getLongExtra("resumeAt", -1L).takeIf { it >= 0 }
-        fun begin(resume: Long) {
-            if (prepared) return
-            load(resume)
-            lastPosition = resume
-            prepared = true
-            main.postDelayed(tickTask, TICK)
-            main.post(skipTask)
+            if (subsAnswered) return@background // too late: playing already, offered in the list
+            main.removeCallbacks(stopWaiting)
+            if (chosenSub == null) chosenSub = addonSubs.firstOrNull { Languages.same(it.lang, wantSub) } // attached, picked above
+            stopWaiting.run()
         }
         // The stream starts at once from what's known here (the intent, or the library saved on the TV) instead of
         // waiting a round trip to Stremio for the resume point; Stremio's answer corrects it if it moved elsewhere.
@@ -395,16 +405,6 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(loadingTask)
         loading.visibility = View.GONE
         status.text = ""
-    }
-
-    /** Attaches an addon's file in the profile's subtitle language when the video needs one and the list has it. */
-    private fun attachWantedSub() {
-        if (!wantAddonSub || chosenSub != null) return
-        val sub = addonSubs.firstOrNull { Languages.same(it.lang, wantSub) } ?: return
-        wantAddonSub = false
-        chosenSub = sub
-        selectAddonSub = true
-        load(position())
     }
 
     /** Plays the current source from [position], with its own request headers (debrid proxies need them). */
@@ -478,7 +478,7 @@ class PlayerActivity : Screen() {
             .filter { it.isTrackSupported(0) && (it.getTrackFormat(0).id ?: "") !in failedAudio }
             .filter { it.getTrackFormat(0).label?.contains("commentary", ignoreCase = true) != true }
             .maxWithOrNull(compareBy<Tracks.Group>(
-                { Languages.same(it.getTrackFormat(0).language, language) },
+                { Languages.match(it.getTrackFormat(0).language, language) },
                 { it.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_DEFAULT != 0 },
                 { it.getTrackFormat(0).channelCount },
             ))
@@ -1251,6 +1251,7 @@ class PlayerActivity : Screen() {
         const val HIDE = 5_000L // ms the controls stay up while playing
         const val START_WAIT = 12_000L // ms for a source to show a picture before the next is tried (4K DV from debrid took 6 s)
         const val ADDON_SUB = "addon-subtitle" // the id an addon subtitle file is attached under
+        const val SUB_WAIT = 2_000L // ms the start waits for the addon's subtitles
         const val RETRIES = 2
         const val RETRY_WAIT = 1_500L
     }

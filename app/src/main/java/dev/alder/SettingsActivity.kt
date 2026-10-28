@@ -43,43 +43,59 @@ object Settings {
     fun subtitles(c: Context) = prefs(c).getBoolean("subtitles", true)
     /** Two-letter code of the dub to start with: the TV's language unless one is picked. */
     fun audioLanguage(c: Context): String = prefs(c).getString(profileKey(c, "audioLang"), prefs(c).getString("audioLang", ""))
-        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().language) ?: "en" }
+        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().toLanguageTag()) ?: "en" }
     /** Two-letter code of the subtitles to start with: the TV's language unless one is picked. */
     fun subtitleLanguage(c: Context): String = prefs(c).getString(profileKey(c, "subLang"), "")
-        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().language) ?: "en" }
+        .orEmpty().ifEmpty { Languages.code(Locale.getDefault().toLanguageTag()) ?: "en" }
     fun subtitleSize(c: Context) = prefs(c).getInt("subSize", 100) // percent of Media3's default size
     fun subtitleBackground(c: Context) = prefs(c).getBoolean("subBackground", true)
 }
 
 /**
  * Every source writes languages its own way: the TV "es", a file's track "spa" or "es-MX", OpenSubtitles "spa", "ger"
- * or "pob", some add-ons "Spanish". [code] turns any of them into one two-letter code, so all comparisons go through it.
+ * or "pob", some add-ons "Spanish". [code] turns any of them into one code, so all comparisons go through it: two
+ * letters, except Brazilian Portuguese ("pt-BR"), which OpenSubtitles keeps apart from Portugal's.
  */
 object Languages {
+    const val BRAZIL = "pt-BR"
     // ISO 639-2/B codes (OpenSubtitles sends these) where they differ from 639-2/T, OpenSubtitles' own, and Java's old ones.
     private val aliases = mapOf("alb" to "sq", "arm" to "hy", "baq" to "eu", "bur" to "my", "chi" to "zh", "cze" to "cs",
         "dut" to "nl", "fre" to "fr", "geo" to "ka", "ger" to "de", "gre" to "el", "ice" to "is", "mac" to "mk", "mao" to "mi",
-        "may" to "ms", "per" to "fa", "rum" to "ro", "slo" to "sk", "tib" to "bo", "wel" to "cy", "pob" to "pt", "pom" to "pt",
+        "may" to "ms", "per" to "fa", "rum" to "ro", "slo" to "sk", "tib" to "bo", "wel" to "cy", "pom" to "pt",
         "scc" to "sr", "scr" to "hr", "ze" to "zh", "zht" to "zh", "zhe" to "zh", "iw" to "he", "in" to "id", "ji" to "yi")
+    private val brazilian = setOf("pob", "pb", "ptbr", "brazilian", "brazilian portuguese", "portuguese (brazil)",
+        "portuguese (brazilian)", "portuguese (br)")
     private val iso by lazy { Locale.getISOLanguages().map { aliases[it] ?: it }.distinct() }
     private val threeLetter by lazy { iso.associateBy { runCatching { Locale(it).isO3Language }.getOrDefault(it) } }
     private val englishNames by lazy { iso.associateBy { Locale(it).getDisplayLanguage(Locale.ENGLISH).lowercase() } }
-    private val common = listOf("en", "es", "fr", "de", "pt", "it", "hi", "ar", "ja", "ko", "zh", "ru")
+    private val common = listOf("en", "es", "fr", "de", "pt", BRAZIL, "it", "hi", "ar", "ja", "ko", "zh", "ru")
 
-    /** The two-letter code, or null for none or unknown ("und"). */
+    /** The code ("es", "pt-BR"), or null for none or unknown ("und"). */
     fun code(raw: String?): String? {
-        val s = raw?.trim()?.lowercase()?.split('-', '_')?.first()?.ifEmpty { null } ?: return null
-        aliases[s]?.let { return it }
-        return when (s.length) {
-            2 -> s.takeIf { it in iso }
-            3 -> threeLetter[s]
-            else -> englishNames[s]
-        }
+        val s = raw?.trim()?.lowercase()?.replace('_', '-')?.ifEmpty { null } ?: return null
+        if (s in brazilian) return BRAZIL
+        val parts = s.split('-')
+        val base = parts[0].let { aliases[it] ?: when (it.length) {
+            2 -> it.takeIf { it in iso }
+            3 -> threeLetter[it]
+            else -> englishNames[it]
+        } } ?: return null
+        return if (base == "pt" && parts.getOrNull(1) == "br") BRAZIL else base
     }
+    /** "pt-BR" -> "pt". */
+    fun base(code: String) = code.substringBefore('-')
     fun same(a: String?, b: String?) = code(a).let { it != null && it == code(b) }
-    /** "Spanish", in the TV's language. */
+    /** 2 for the same language, 1 for the same language from another country (Portugal's for Brazil's), else 0. */
+    fun match(a: String?, b: String?): Int {
+        val x = code(a) ?: return 0
+        val y = code(b) ?: return 0
+        return if (x == y) 2 else if (base(x) == base(y)) 1 else 0
+    }
+    /** "Spanish", "Portuguese (Brazil)", in the TV's language. */
     fun name(raw: String): String = (code(raw) ?: raw).let { c ->
-        Locale(c).getDisplayLanguage(Locale.getDefault()).ifBlank { c }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+        val l = Locale.forLanguageTag(c)
+        (if (l.country.isEmpty()) l.getDisplayLanguage(Locale.getDefault()) else l.getDisplayName(Locale.getDefault()))
+            .ifBlank { c }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
     }
     /** Every language, the common ones first, the rest by name. */
     val all: List<String> by lazy { common + iso.filter { it !in common && name(it) != it }.sortedBy(::name) }
@@ -128,7 +144,7 @@ class SettingsActivity : Screen() {
             listOf("" to "No preference", "original" to "Original first", "mine" to "My language first"), true),
     )
     private val subtitles = listOf(
-        Choice("subtitles", "Subtitles by default", "Subtitles in your subtitle language start with the video when available, unless the sound is already in it.",
+        Choice("subtitles", "Subtitles by default", "Subtitles in your subtitle language start with the video when available.",
             listOf(true to "On", false to "Off")),
     )
     private val subtitleLooks = listOf(
