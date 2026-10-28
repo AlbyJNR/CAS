@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CAS charcoal: the one surface colour behind everything (Screen.BASE). -->
+    <color name="cas_base">#FF08090B</color>
+</resources>

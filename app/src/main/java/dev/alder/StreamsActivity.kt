@@ -114,7 +114,7 @@ class StreamsActivity : Screen() {
             addView(art, FrameLayout.LayoutParams(-1, -1))
             addView(View(context).apply {
                 background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                    intArrayOf(0xB30E0C0A.toInt(), 0x730E0C0A, 0x590E0C0A))
+                    intArrayOf(0xB308090B.toInt(), 0x7308090B, 0x5908090B))
             }, FrameLayout.LayoutParams(-1, -1))
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -211,7 +211,7 @@ class StreamsActivity : Screen() {
                 background({ addon.streams(type, videoId) }) { streams ->
                     streams.exceptionOrNull()?.let { e ->
                         failures[i] = e
-                        android.util.Log.w("Alder", "streams from ${addon.name} failed", e)
+                        android.util.Log.w("CAS", "streams from ${addon.name} failed", e)
                     }
                     torrents[i] = streams.getOrNull()?.torrents ?: 0
                     answers[i] = streams.getOrNull()?.playable.orEmpty()
@@ -282,7 +282,7 @@ class StreamsActivity : Screen() {
                 "Couldn't get sources from ${it.joinToString(", ")}. Check the add-on in Stremio, or try again later."
             },
             torrentOnly.takeIf { it.isNotEmpty() }?.let {
-                "${it.joinToString(", ")} found only torrents. Alder plays them through a debrid service: connect one in the add-on's settings."
+                "${it.joinToString(", ")} found only torrents. CAS plays them through a debrid service: connect one in the add-on's settings."
             },
             unplayable.takeIf { it > 0 }?.let { "$it ${if (it == 1) "source needs" else "sources need"} a video format this TV can't decode." },
         ).ifEmpty { listOf("Your add-ons have no sources for this title.") }
@@ -369,7 +369,7 @@ class StreamsActivity : Screen() {
             detail.addView(text(tag.uppercase(), 9f, bold = true, color = TUNGSTEN).apply {
                 letterSpacing = 0.03f
                 background = GradientDrawable().apply {
-                    setColor(Color.TRANSPARENT); cornerRadius = dp(3).toFloat(); setStroke(dp(1), 0x80F3D9B1.toInt())
+                    setColor(Color.TRANSPARENT); cornerRadius = dp(3).toFloat(); setStroke(dp(1), 0x80FFFFFF.toInt())
                 }
                 setPadding(dp(4), dp(1), dp(4), dp(1))
             }, wrap().apply { marginEnd = dp(5) })

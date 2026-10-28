@@ -13,7 +13,7 @@ class Profile(val id: String, val name: String, val color: Int, val authKey: Str
  */
 object Profiles {
     const val MAX = 5
-    val COLORS = intArrayOf(0xFFF3D9B1.toInt(), 0xFFC98E6A.toInt(), 0xFF8FA39A.toInt(), 0xFFA6A2BD.toInt(), 0xFFD3A66B.toInt())
+    val COLORS = intArrayOf(0xFFFFFFFF.toInt(), 0xFFC98E6A.toInt(), 0xFF8FA39A.toInt(), 0xFFA6A2BD.toInt(), 0xFFD3A66B.toInt())
 
     fun all(context: Context): List<Profile> {
         val prefs = prefs(context)

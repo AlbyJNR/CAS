@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon: charcoal plate with the white CAS wordmark held inside the safe zone, so launchers and the
+     Android 12+ splash can mask it round, squircle or square without the mark being cut or boxed. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/cas_base" />
+    <foreground>
+        <inset android:drawable="@drawable/logo_transparent" android:inset="16%" />
+    </foreground>
+    <monochrome>
+        <inset android:drawable="@drawable/logo_transparent" android:inset="16%" />
+    </monochrome>
+</adaptive-icon>
