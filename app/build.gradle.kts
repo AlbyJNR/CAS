@@ -44,6 +44,24 @@ android {
     }
 }
 
+// CHANGELOG.md goes into the app as an asset, so "What's new" shows the notes for the version installed, offline.
+abstract class ChangelogAsset : DefaultTask() {
+    @get:InputFile abstract val changelog: RegularFileProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction fun copy() {
+        changelog.get().asFile.copyTo(outputDir.get().file("CHANGELOG.md").asFile, overwrite = true)
+    }
+}
+
+val changelogAsset = tasks.register<ChangelogAsset>("changelogAsset") {
+    changelog.set(rootProject.layout.projectDirectory.file("CHANGELOG.md"))
+}
+
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(changelogAsset, ChangelogAsset::outputDir) }
+}
+
 // Media3 stays on the version Jellyfin's ffmpeg decoder is built against: its native glue targets one exact release.
 val media3 = "1.9.0"
 

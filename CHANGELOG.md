@@ -38,6 +38,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **Alder tells you why there is no source.** For example, an add-on did not answer, or an add-on found only torrents.
 - Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
 - Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
+- **What is new after each update.** After Alder updates, Home shows the changes in the new version. Select **See all changes** to read all of them. Select **Settings → About → What's new** to read them again.
 
 ## 1.1
 

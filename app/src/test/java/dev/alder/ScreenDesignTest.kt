@@ -51,6 +51,13 @@ class ScreenDesignTest {
         assertEquals(emptySet<String>(), audioLanguagesIn("Movie.2024.2160p.WEB-DL.DV.HDR.H265"))
     }
 
+    @Test fun whatsNewReadsOneVersionsEntries() {
+        val log = "# Changelog\n\n- a rule, not a change\n\n## Unreleased\n\n- Next\n\n## 1.2\n\n- **One.** First\n- Two\n\n## 1.1\n\n- Old\n"
+        assertEquals(listOf("**One.** First", "Two"), changesFor(log, "1.2"))
+        assertEquals(listOf("Next"), changesFor(log, "Unreleased"))
+        assertEquals(emptyList<String>(), changesFor(log, "1.3"))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))
