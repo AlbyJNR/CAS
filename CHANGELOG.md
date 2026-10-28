@@ -1,19 +1,22 @@
 # Changelog
 
-Write every entry in ASD-STE100 Simplified Technical English:
+Write every entry in ASD-STE100 Simplified Technical English (STE):
 
-- Write one idea in each sentence. Use 20 words or fewer in each sentence.
-- Use the active voice and the present tense.
+- Use only the approved words of the STE dictionary, with their approved meanings. You can also use technical names: Alder, Stremio, add-on, subtitle, and the names that Alder shows on the screen.
+- Write one idea in each sentence. Write 20 words or fewer in an instruction and 25 words or fewer in a description.
+- Use the active voice. Use the simple present tense, or the simple past tense for "Before, …".
+- Do not use words that end in "-ing", except in technical names.
+- Do not use contractions. Write "does not", not "doesn't". Text that Alder shows on the screen stays as it is.
 - Write instructions as commands: "Select **Subtitles**", not "**Subtitles** can be selected".
 - Use one word for one thing. Use the names that Alder shows on the screen.
 - Put the 3 most interesting changes first.
 
-Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
+Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
 
 ## Unreleased
 
-- **Skip forward in more movies.** Alder now finds the right second in files without an index, for example .ts files. Before, moving forward on the progress bar started those movies again from the beginning.
-- When a source cannot skip at all, Alder tells you and keeps playing. Select **Change stream** to try another source.
+- **Skip forward in more movies.** Alder finds the correct position in files that have no index, for example .ts files. Before, a skip forward on the progress bar started these movies again from the beginning.
+- Some sources cannot skip. In these sources, Alder shows a message, and the movie continues. To get a different source, select **Change stream**.
 
 ## 1.1
 
