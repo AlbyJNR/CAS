@@ -106,6 +106,7 @@ abstract class Screen : Activity() {
         // Disk cache for pictures (and anything else whose server allows caching), and last time's answers.
         android.net.http.HttpResponseCache.install(java.io.File(cacheDir, "http"), 250L * 1024 * 1024)
         Http.saved = java.io.File(cacheDir, "answers")
+        Http.userAgent = "Alder/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
     }
 
     override fun onDestroy() {
