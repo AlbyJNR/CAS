@@ -49,6 +49,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Hold OK on a title in **Continue** now opens a menu. To see all sources, select **Choose a source**.
 - **See the debrid service of each source.** The source list shows the service of each source, for example **RD** for Real-Debrid. **⚡** shows that the file is ready and starts immediately.
 - The player shows the debrid service of the source that plays, for example "Torrentio · 2160p · Real-Debrid".
+- **All catalogs from AIOMetadata show.** Before, Alder did not show a catalog that needs a genre, for example an AIOMetadata catalog that is not on the Stremio home page. Now Alder shows these catalogs, as Stremio does. This also corrects a **Shows** page with no rows.
 
 ## 1.1
 
