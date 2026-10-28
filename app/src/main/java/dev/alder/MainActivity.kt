@@ -1458,6 +1458,24 @@ class MainActivity : Screen() {
         }
     }
 
+    /** Hold OK on a Continue Watching title: choose a source yourself, or take the title off the row. */
+    private fun continueMenu(item: Item) {
+        choose(item.name, listOf("Choose a source", "Remove from Continue Watching")) { selected ->
+            if (selected == 0) return@choose play(item, pick = true)
+            val original = library.firstOrNull { it.optString("_id") == item.id } ?: return@choose
+            val updated = JSONObject(original.toString()).also(Library::hideFromContinueWatching)
+            background({ Stremio.saveLibrary(profile.authKey, listOf(updated)) }) { result ->
+                result.fold({
+                    library = library.map { if (it.optString("_id") == item.id) updated else it }
+                    refreshLibrary?.invoke() // the row (and Google TV's) is drawn again without it
+                }) { error ->
+                    forgetIfSessionGone(error)
+                    if (!isFinishing) choose("Couldn't remove it", listOf("OK"), "Check the connection and try again.") { }
+                }
+            }
+        }
+    }
+
     // ---------- rows ----------
 
     /** The rest of a list already in hand, a page at a time: a row of hundreds of cards would be slow to build. */
@@ -1742,7 +1760,7 @@ class MainActivity : Screen() {
                 }
                 setOnClickListener { openDetails(item) }
                 if (grid) setOnLongClickListener { listMenu(item); true }
-                else if (item.resume) setOnLongClickListener { play(item, pick = true); true }
+                else if (item.resume) setOnLongClickListener { continueMenu(item); true }
             }
 
             private var showing: Boolean? = null

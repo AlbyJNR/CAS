@@ -48,6 +48,16 @@ object Library {
         item.put("_mtime", now())
     }
 
+    /**
+     * Off Continue Watching, as Stremio's own dismiss does (stremio-core's RewindLibraryItem): the resume point goes;
+     * watch history, the episode reached and My List stay, and watching it again brings it back. It syncs, so the
+     * phone and the web hide it too.
+     */
+    fun hideFromContinueWatching(item: JSONObject) {
+        item.state.put("timeOffset", 0)
+        item.put("_mtime", now())
+    }
+
     /** Where to resume [videoId] in milliseconds, 0 to start from the beginning. */
     fun resumeAt(item: JSONObject, videoId: String): Long {
         val s = item.state
