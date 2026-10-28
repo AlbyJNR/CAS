@@ -1,24 +1,27 @@
 # Changelog
 
-Write every entry in ASD-STE100 Simplified Technical English:
+Write every entry in ASD-STE100 Simplified Technical English (STE):
 
-- Write one idea in each sentence. Use 20 words or fewer in each sentence.
-- Use the active voice and the present tense.
+- Use only the approved words of the STE dictionary, with their approved meanings. You can also use technical names: Alder, Stremio, add-on, subtitle, and the names that Alder shows on the screen.
+- Write one idea in each sentence. Write 20 words or fewer in an instruction and 25 words or fewer in a description.
+- Use the active voice. Use the simple present tense, or the simple past tense for "Before, …".
+- Do not use words that end in "-ing", except in technical names.
+- Do not use contractions. Write "does not", not "doesn't". Text that Alder shows on the screen stays as it is.
 - Write instructions as commands: "Select **Subtitles**", not "**Subtitles** can be selected".
 - Use one word for one thing. Use the names that Alder shows on the screen.
 - Put the 3 most interesting changes first.
 
-Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
+Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
 
 ## Unreleased
 
-- **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language** and choose any language. Each profile keeps its own choice. Subtitles in that language start with the video, also when the sound is in that language.
-- **All subtitle languages in the player.** **Audio & subtitles** now lists every language that your subtitle add-ons have. Your subtitle language and English come first. Before, Alder showed only the TV's language and English.
-- **Any audio language.** **Settings → Picture & Sound → Audio language** now has every language, not 7. Common languages are at the top.
-- Alder now matches languages from all sources, for example "es", "spa" and "Spanish". Before, some subtitles and audio tracks did not match.
-- **Portuguese (Brazil)** and **Portuguese** are now 2 different languages.
-- Add-on subtitles in your language no longer make the video start again.
-- Lists that open in **Settings** are no longer see-through.
+- **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language**. Then select a language. Each profile keeps its own language. Subtitles in that language start with the video. They also start when the audio is in that language.
+- **All subtitle languages in the player.** **Audio & subtitles** shows all the languages from your subtitle add-ons. Your subtitle language and English are at the top. Before, Alder showed only the language of the TV and English.
+- **All audio languages.** **Settings → Picture & Sound → Audio language** has all the languages. Before, it had only 7. Frequently used languages are at the top.
+- Alder matches language names from all sources, for example "es", "spa" and "Spanish". Before, some subtitles and audio tracks did not match.
+- **Portuguese (Brazil)** and **Portuguese** are 2 different languages.
+- An add-on subtitle in your language does not start the video again.
+- Lists in **Settings** are not transparent.
 
 ## 1.1
 
