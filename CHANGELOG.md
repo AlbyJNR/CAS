@@ -30,6 +30,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Alder shows a title when an add-on sends an episode that has no id.
 - **Sources in your audio language.** Select a language above the source list. Alder shows only the sources in that language. Sources with "Multi" or "Dual" audio show for all languages.
 - When **Dubbed releases** is **My language first**, the source list opens on your audio language.
+- **Profiles stay after a sign-out.** When Stremio signs a profile out of this TV, Alder keeps the profile. Select the profile and sign in again. The settings and the PIN of the profile stay. Before, Alder removed the profile.
+- When you remove a profile, Alder does not sign out a Stremio account that another profile uses.
+- Alder tells you when you add a Stremio account that another profile already uses.
+- The sign-in page tells you how to connect 2 accounts with 1 phone.
 
 ## 1.1
 

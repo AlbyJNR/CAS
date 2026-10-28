@@ -44,9 +44,23 @@ object Profiles {
         val prefs = prefs(context)
         save(prefs, all(context).filterNot { it.id == id })
         if (prefs.getString("active", null) == id) prefs.edit().remove("active").apply()
-        prefs.edit().remove("shareStreams:$id").apply()
+        prefs.edit().remove("shareStreams:$id").remove("signedOut:$id").apply()
         Settings.forget(context, id)
         context.getSharedPreferences("search", Context.MODE_PRIVATE).edit().remove("recent:$id").apply()
+    }
+
+    /**
+     * Stremio no longer knows this profile's sign-in (signed out on the phone or elsewhere, or the session expired). The
+     * profile stays, with its name, PIN and settings, and asks to sign in again instead of being removed.
+     */
+    fun signedOut(context: Context, id: String) = prefs(context).getBoolean("signedOut:$id", false)
+
+    fun markSignedOut(context: Context, id: String) = prefs(context).edit().putBoolean("signedOut:$id", true).apply()
+
+    /** A fresh sign-in for an existing profile: its new auth key, everything else kept. */
+    fun signIn(context: Context, id: String, authKey: String) {
+        save(prefs(context), all(context).map { if (it.id != id) it else Profile(it.id, it.name, it.color, authKey, it.pin) })
+        prefs(context).edit().remove("signedOut:$id").apply()
     }
 
     /** Whether [id] lends its stream add-ons (`Addon.shareable`) to the other profiles on this TV. */

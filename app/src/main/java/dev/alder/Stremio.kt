@@ -100,6 +100,10 @@ object Stremio {
         }
     }
 
+    /** The account behind a sign-in: each sign-in has its own auth key, so two keys can be the same account. */
+    fun userId(authKey: String): String =
+        result(post("getUser", JSONObject().put("type", "GetUser").put("authKey", authKey))).getString("_id")
+
     fun logout(authKey: String) {
         addonsCache.remove(authKey)
         post("logout", JSONObject().put("type", "Logout").put("authKey", authKey))
