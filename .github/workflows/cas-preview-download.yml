@@ -1,0 +1,22 @@
+name: Publish CAS preview download
+on:
+  push:
+    branches: [design/cas]
+    paths: [.github/workflows/cas-preview-download.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download tested APK and publish preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download 40665444699 --name CAS-test-apk --dir dist
+          mv dist/app-debug.apk dist/CAS.apk
+          gh release create cas-preview dist/CAS.apk --target 93dc9f838c8c772c1ea52cb8e932bd568eaff404 --prerelease --title "CAS preview — Fire TV test build" --notes "CAS preview for Android TV and Fire TV (Android 8.0+). Download CAS.apk directly. This is the debug APK from successful build 40665444699: compilation and unit tests passed. TV layout, navigation and playback still require hardware testing. Installs separately from Alder as uk.albyjnr.cas; sign in to Stremio again. Preview signing keys may change, so a later test build may require uninstalling this version. Source: commit 93dc9f838c8c772c1ea52cb8e932bd568eaff404. Based on Alder by aradhyas8; GPL-3.0."
