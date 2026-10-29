@@ -411,7 +411,7 @@ abstract class Screen : Activity() {
             addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
             addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
         }
-        val info = text("", SMALL, color = TEXT_3).apply { maxLines = 1; alpha = 0.8f }
+        val info = text("", SMALL, color = TEXT_3).apply { maxLines = 1; alpha = 0.8f; visibility = View.GONE } // the probe's findings go to the log now
         trailerInfo = info
         val artBehind = Settings.titlePage(this, SettingsActivity.TRAILER_ART)
         if (punch) {
@@ -532,8 +532,8 @@ abstract class Screen : Activity() {
                 // Playing for 14 s with no frame drawn: this TV's engine sends video somewhere the box can't show
                 // (Fire TV). Trailers go to the YouTube app from now on; Settings › Title page can bring the box back.
                 hasVideo && json.optInt("w") == 0 && json.optInt("rs") >= 2 && trailerProbes >= 2 -> {
-                    Settings.setTrailerPlayer(this, "app")
-                    hideTrailer(); openTrailerOutside(json.optString("id"))
+                    Settings.setTrailerPlayer(this, if (android.os.Build.MANUFACTURER.equals("Amazon", true)) "browser" else "app")
+                    hideTrailer(); showTrailer(json.optString("id"), "")
                 }
                 (!hasVideo || json.optInt("w") == 0) && trailerProbes < 4 -> main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
             }

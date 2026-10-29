@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.4.2
+
+- **Trailers open in Silk on Fire TV.** The browser is now the first choice there. The box plays sound only on Fire TV, whatever is tried, so it stays as an option for other TVs.
+
 ## 1.4.1
 
 - **Trailers in the browser.** **Settings → Title page → Trailers play** has a third choice: the TV's browser, full screen (Silk on Fire TV).

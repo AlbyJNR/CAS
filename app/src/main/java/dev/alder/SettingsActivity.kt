@@ -36,9 +36,9 @@ object Settings {
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
     /** Settings › Title page: each extra on a title's page is on unless turned off. Keys: TITLE_* in SettingsActivity. */
     fun titlePage(c: Context, key: String) = prefs(c).getBoolean(key, true)
-    /** Where a trailer plays: "app" (the YouTube app), "browser" (Silk or whatever browser) or "box". Fire TV's browser engine plays sound but no picture in the box, so it starts on "app". */
-    fun trailerPlayer(c: Context): String = prefs(c).getString(SettingsActivity.TRAILER_PLAYER, null)
-        ?: if (android.os.Build.MANUFACTURER.equals("Amazon", true)) "app" else "box"
+    /** Where a trailer plays: "browser" (Silk or whatever browser), "app" (the YouTube app) or "box". Fire TV's engine plays sound but no picture in the box, however the window is arranged, so Fire TV starts on Silk. */
+    fun trailerPlayer(c: Context): String = prefs(c).getString(SettingsActivity.TRAILER_PLAYER, null) ?: defaultTrailerPlayer()
+    fun defaultTrailerPlayer() = if (android.os.Build.MANUFACTURER.equals("Amazon", true)) "browser" else "box"
     fun setTrailerPlayer(c: Context, value: String) = prefs(c).edit().putString(SettingsActivity.TRAILER_PLAYER, value).apply()
     /**
      * Titles this profile hid from Continue Watching on this TV: id to {name, timeOffset}, so Settings can put them
@@ -168,8 +168,8 @@ class SettingsActivity : Screen() {
     private val onOff = listOf(true to "On", false to "Off")
     private val titlePage = listOf(
         Choice(TITLE_TRAILER, "Trailer button", "A trailer for the title, when YouTube has one.", onOff),
-        Choice(TRAILER_PLAYER, "Trailers play", "In the YouTube app or the TV's browser (Silk on Fire TV): full screen, sure to show a picture. In a box over the page: CAS's own box, through the TV's browser engine, which on Fire TV may play sound only.",
-            listOf("app" to "In the YouTube app", "browser" to "In the browser", "box" to "In a box over the page")),
+        Choice(TRAILER_PLAYER, "Trailers play", "In the browser (Silk on Fire TV) or the YouTube app: full screen, with a picture. In a box over the page: CAS's own box, through the TV's browser engine, which on Fire TV plays sound only.",
+            listOf("browser" to "In the browser", "app" to "In the YouTube app", "box" to "In a box over the page")),
         Choice(TITLE_RECAP, "Recap button", "For series: opens a search for the season's recap in the TV's YouTube app. YouTube may show its own adverts there.", onOff),
         Choice(TITLE_CAST, "Cast", "The leads under the description. Select a name to find more of their films and shows.", onOff),
         Choice(TITLE_DIRECTOR, "Director", "The director under the cast, for films.", onOff),
@@ -651,7 +651,7 @@ class SettingsActivity : Screen() {
         const val TITLE_CAST = "titleCast"
         const val TITLE_DIRECTOR = "titleDirector"
         const val TRAILER_ART = "trailerArt"
-        const val TRAILER_PLAYER = "trailerPlayer" // "app" or "box"; unset: the box, except on Fire TV, where it draws no picture
+        const val TRAILER_PLAYER = "trailerPlayer" // "browser", "app" or "box"; unset: the box, except on Fire TV (Silk), where the box draws no picture
         val PRESETS = listOf(
             "Add-on's order" to mapOf("release" to "", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 0),
             "Best picture" to mapOf("release" to "remux", "hdrPref" to "dv", "maxHeight" to 0, "maxSizeGb" to 0),
