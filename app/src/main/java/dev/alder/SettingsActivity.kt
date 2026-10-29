@@ -36,6 +36,8 @@ object Settings {
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
     /** Settings › Title page: each extra on a title's page is on unless turned off. Keys: TITLE_* in SettingsActivity. */
     fun titlePage(c: Context, key: String) = prefs(c).getBoolean(key, true)
+    /** Settings › Picture & sound › Screensaver: Home's cinema after IDLE without a key. */
+    fun homeCinema(c: Context) = prefs(c).getBoolean("homeCinema", true)
     /** Where a trailer plays: "browser" (Silk or whatever browser), "app" (the YouTube app) or "box". Fire TV's engine plays sound but no picture in the box, however the window is arranged, so Fire TV starts on Silk. */
     fun trailerPlayer(c: Context): String = prefs(c).getString(SettingsActivity.TRAILER_PLAYER, null) ?: defaultTrailerPlayer()
     fun defaultTrailerPlayer() = if (android.os.Build.MANUFACTURER.equals("Amazon", true)) "browser" else "box"
@@ -177,6 +179,7 @@ class SettingsActivity : Screen() {
         Choice(TRAILER_ART, "Art behind the trailer", "Keeps the title's art, dimmed, behind the trailer box. Off plays the trailer over black.", onOff),
     )
     private val pictureAndSound = listOf(
+        Choice("homeCinema", "Screensaver", "After five minutes without a key on Home, one of your Continue Watching titles fills the screen with its art and a clock. Any key returns.", listOf(true to "On", false to "Off")),
         Choice("hdrPref", "HDR and Dolby Vision", "Which goes first when a title has both. Off picks plain releases.",
             listOf("" to "On", "dv" to "Dolby Vision first", "hdr10" to "HDR10 first", "off" to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate so pans don't judder.",

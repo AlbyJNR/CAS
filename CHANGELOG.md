@@ -15,6 +15,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.6.0
+
+- **Preview any episode.** In the episode list, press Right on an episode to preview it in the box. Hold OK for its sources, as before.
+- **Screensaver.** After five minutes without a key on Home, one of your Continue Watching titles fills the screen with its art and a clock. Any key returns. **Settings → Picture & sound → Screensaver** turns it off.
+
 ## 1.5.0
 
 - **Preview.** Select **Preview** on a title. A minute of the film or episode plays in a box over the page, a little way in, through the same sources as Play. OK pauses, Left and Right skip 10 seconds, Back closes. The box closes by itself when the minute is up. A preview does not change your progress.

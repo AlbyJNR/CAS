@@ -430,7 +430,8 @@ class MainActivity : Screen() {
 
     override fun onResume() {
         super.onResume()
-        // ponytail: idle dim and the cinema screensaver are off (2026-10-26, not wanted yet); post `idle` here to bring the cinema back.
+        // Idle dim stays off (ponytail, 2026-10-26); the cinema screensaver is Settings › Picture & sound › Screensaver (CAS 1.6).
+        restIdle()
         if (Updates.due(this)) background({ Updates.latest(applicationContext) }) { r ->
             val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) } ?: return@background
             if (Updates.offerOnce(this, release.version)) choose("CAS ${release.version} is ready", listOf("Later", "Install"),
@@ -445,10 +446,17 @@ class MainActivity : Screen() {
         main.removeCallbacks(advance)
     }
 
+    /** The screensaver's clock: IDLE from the last key, while Settings wants it. */
+    private fun restIdle() {
+        main.removeCallbacks(idle)
+        if (Settings.homeCinema(this)) main.postDelayed(idle, IDLE)
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             touched = true
             dimHome(false)
+            restIdle()
         }
         val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER
         if (mode == Mode.CINEMA) {

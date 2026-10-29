@@ -35,3 +35,15 @@ A passing CI build verifies compilation and the existing unit suite, not visual 
 8. Confirm the update checker only uses AlbyJNR/CAS releases. Publish only CAS APKs signed with the same private release key.
 
 Source packages remain `dev.alder` to avoid unnecessary refactoring; Android application ID is `uk.albyjnr.cas`.
+
+## Ideas kept for later (2026-10-29)
+
+Agreed with Alan to keep, in his order of interest; 2 and 5 were taken on first.
+
+1. **Catch up**: on a series part way through, a button beside Resume plays the minute before the resume point in the preview box.
+2. **Preview any episode**: Right on an episode in the guide previews it (hold OK stays "every source"). *(done in 1.6.0)*
+3. **Surprise me**: a Library button that picks a random unwatched title and opens its preview; OK plays, Back spins again.
+4. **Living posters**: resting on a title on Home for a few seconds cross-fades the hero art into a muted preview clip. Off by default, a setting, a delay before it fires: every hover fetches a debrid stream.
+5. **Idle cinema**: the screensaver already in MainActivity (Continue Watching art, a clock), as a setting. *(done in 1.6.0)*
+6. **Kids profile**: a profile flagged Kids shows family catalogs only, hides Settings, and leaves only with the PIN. About a day.
+7. **What you'll get**: a quiet "4K · Dolby Vision · Atmos" line on the title page for what Play would pick, once sources are known.

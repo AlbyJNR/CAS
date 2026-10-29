@@ -431,6 +431,12 @@ class DetailsActivity : Screen() {
         pane.addView(previewAbout, FrameLayout.LayoutParams(previewWidth, -2).apply {
             leftMargin = previewX; topMargin = dp(if (largeText) 313 else 304)
         })
+        // What the remote can do on an episode, under its still: the preview is a key away, the sources a held one.
+        pane.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(keyHint("▸", "Preview"))
+            addView(keyHint("Hold OK", "Sources"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(16) })
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { leftMargin = previewX; bottomMargin = dp(16) })
         guide.addView(pane, FrameLayout.LayoutParams(width, height).apply {
             leftMargin = x; topMargin = top
         })
@@ -591,8 +597,13 @@ class DetailsActivity : Screen() {
         story.requestFocus()
     }
 
+    private var previewFrom: View? = null // the episode row a preview was opened from
+
     override fun onTrailerClosed() {
-        if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
+        val from = previewFrom
+        previewFrom = null
+        if (guideOpen && from != null && from.isAttachedToWindow) from.requestFocus()
+        else if (::playButton.isInitialized && !guideOpen && !infoOpen && !similarOpen) playButton.requestFocus()
     }
 
     private fun hideInfo() {
@@ -734,7 +745,13 @@ class DetailsActivity : Screen() {
                 }
                 val at = episodeRows.indexOf(focused)
                 if (at >= 0) when (event.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> return true
+                    // Right, free in a list, previews the episode under the remote; the box hands the remote back here.
+                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        val m = meta; val id = focused?.tag as? String
+                        if (m != null && id != null && Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW)) { previewFrom = focused; preview(id, m) }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> return true
                     KeyEvent.KEYCODE_DPAD_UP -> if (at == 0) { seasonButtons[selectedSeason]?.requestFocus(); return true }
                     KeyEvent.KEYCODE_DPAD_DOWN -> if (at == episodeRows.lastIndex) return true
                 }
