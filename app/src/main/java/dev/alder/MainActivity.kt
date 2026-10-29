@@ -98,7 +98,7 @@ internal fun catalogAnswerKey(page: String, title: String, genre: String?, sourc
 //    where you are and Resume, moving on to the next every ADVANCE. OK resumes; any other key returns to where you were.
 //    The TV's own screensaver takes over later (10 min on the test TV), so nothing stays still for hours.
 class MainActivity : Screen() {
-    private enum class Page(val label: String) { HOME("Home"), SHOWS("Shows"), MOVIES("Movies"), LIVE("Live"), LIBRARY("Library") }
+    private enum class Page(val label: String) { HOME("Home"), SHOWS("TV"), MOVIES("Movies"), LIVE("Live"), LIBRARY("Library") }
     private enum class Mode { CINEMA, BROWSE }
     private enum class ListFilter { ALL, MOVIES, SHOWS }
     private enum class ListSort { RECENT, NAME, UNWATCHED }
@@ -1297,7 +1297,7 @@ class MainActivity : Screen() {
             line.addView(control, LinearLayout.LayoutParams(-2, dp(CHIP_H)).apply { if (line.childCount > 0) marginStart = dp(6) })
             return control
         }
-        listOf(ListFilter.ALL to "All", ListFilter.MOVIES to "Movies", ListFilter.SHOWS to "Shows").forEach { (value, label) ->
+        listOf(ListFilter.ALL to "All", ListFilter.MOVIES to "Movies", ListFilter.SHOWS to "TV").forEach { (value, label) ->
             listFilterChips[value] = add(label, value == listFilter) {
                 if (listFilter != value) { listFilter = value; styleListChips(); redrawLibrary() }
             }
@@ -1315,7 +1315,7 @@ class MainActivity : Screen() {
 
     private fun styleListChips() {
         listFilterChips.forEach { (value, view) -> view.select(when (value) {
-            ListFilter.ALL -> "All"; ListFilter.MOVIES -> "Movies"; ListFilter.SHOWS -> "Shows"
+            ListFilter.ALL -> "All"; ListFilter.MOVIES -> "Movies"; ListFilter.SHOWS -> "TV"
         }, value == listFilter) }
         listSortChips.forEach { (value, view) -> view.select(when (value) {
             ListSort.RECENT -> "Recently added"; ListSort.NAME -> "A–Z"; ListSort.UNWATCHED -> "Unwatched first"

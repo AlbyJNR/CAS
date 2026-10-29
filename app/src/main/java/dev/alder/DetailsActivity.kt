@@ -257,12 +257,15 @@ class DetailsActivity : Screen() {
         listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }
         val trailer = m.trailers.firstOrNull()?.takeIf { Settings.titlePage(this, SettingsActivity.TITLE_TRAILER) }
             ?.let { id -> glassButton("Trailer") { showTrailer(id, m.name) } }
+        val preview = if (Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW))
+            glassButton("Preview") { preview(target?.first ?: metaId, m) } else null
         val recap = if (type == "series" && Settings.titlePage(this, SettingsActivity.TITLE_RECAP))
             glassButton("Recap") { openRecap(m, episode?.season ?: selectedSeason) } else null
         stack.addView(LinearLayout(this).apply {
             clipChildren = false
             addView(playButton, wrap().apply { marginEnd = dp(14) })
             trailer?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
+            preview?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
             recap?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
             startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }) }
             addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
@@ -296,6 +299,18 @@ class DetailsActivity : Screen() {
         setPadding(dp(14), 0, dp(14), 0)
         rowFocus(16, rest = { glass(16) })
         setOnClickListener { action() }
+    }
+
+    /** A minute of what Play would play, in the box: the same add-ons, filters and ranking as the sources page. */
+    private fun preview(videoId: String, m: Meta) {
+        val episode = m.videos.firstOrNull { it.id == videoId }?.let { "S${it.season} E${it.episode}" }
+        showPreview(listOfNotNull(m.name, episode).joinToString("  ·  ")) {
+            val tv = Device.of(this)
+            val all = streamAddons(this, key, type, videoId).parallelStream()
+                .map { a -> runCatching { a.streams(type, videoId).playable }.getOrDefault(emptyList()) }
+                .collect(java.util.stream.Collectors.toList()).flatten() // Stream.toList() needs Android 14
+            rankSources(this, all.filter { it.isVideo && it.playableOn(tv) && wantedSource(this, it) }, videoId, metaId).take(3)
+        }
     }
 
     /**

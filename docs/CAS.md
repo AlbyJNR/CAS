@@ -6,6 +6,7 @@ An understated, cinematic TV interface: charcoal (#08090B), near-white (#F5F5F7)
 
 ## Implemented
 
+- Preview: the box (Screen.openBox) with CAS's own ExoPlayer, fed by the same add-on list, filter and ranking as the sources page (streamAddons / wantedSource / rankSources in StreamsActivity.kt), starting at 12% for titles over 10 minutes and closing after 60 s. Debug builds open it from `adb shell am start ... --es preview <direct url>`.
 - The mark is an aperture (a C with a dot), generated with the banner and icon by `tools/cas_brand.py`, and as `drawable/ic_mark.xml` for `Screen.brand()`.
 - Browse-by-genre tiles in Search were tried in 1.4.0 and removed in 1.4.1 at Alan's request; the genre chips on Shows and Movies remain.
 - Trailers: Fire OS's WebView sends video to a surface the box can't show, so Fire TV opens the YouTube app (`vnd.youtube:` then the web link); other TVs use the box, which probes itself and switches a TV to the app when it draws no frame. Settings › Title page › Trailers play overrides.

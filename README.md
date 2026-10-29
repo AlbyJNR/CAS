@@ -10,7 +10,7 @@ CAS is a minimalist Android TV and Fire TV app for your Stremio account. Cinemat
 - Automatic source selection and fallback.
 - Separate profiles with individual watch history.
 - Continue Watching, voice search and intro skipping when available.
-- A simple home screen with Home, Shows, Movies and Library.
+- A simple home screen with Home, TV, Movies and Library.
 
 ## Install the preview
 

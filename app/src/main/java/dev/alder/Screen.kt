@@ -30,6 +30,20 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -369,8 +383,6 @@ abstract class Screen : Activity() {
         // drawn behind the window shows inside the box and nowhere else.
         val punch = android.os.Build.MANUFACTURER.equals("Amazon", true)
         trailerWeb = web
-        val boxW = (resources.displayMetrics.widthPixels * TRAILER_W).toInt()
-        val boxH = boxW * 9 / 16
         web.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -396,23 +408,21 @@ abstract class Screen : Activity() {
         }
         // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
         // is what some TVs' WebViews refuse to draw.
-        val box = FrameLayout(this).apply {
-            background = if (punch) GradientDrawable().apply { cornerRadius = dp(TILE_RADIUS + 1).toFloat(); setStroke(dp(1), GLASS_EDGE) } else glass(TILE_RADIUS + 1)
-            setPadding(dp(1), dp(1), dp(1), dp(1))
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
-            }
-            clipToOutline = true
-            addView(web, FrameLayout.LayoutParams(-1, -1))
+        val box = boxFrame(web).apply {
+            if (punch) background = GradientDrawable().apply { cornerRadius = dp(TILE_RADIUS + 1).toFloat(); setStroke(dp(1), GLASS_EDGE) }
         }
-        val hints = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(keyHint("OK", "Play / pause"))
-            addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
-            addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
-        }
+        val hints = boxHints()
         val info = text("", SMALL, color = TEXT_3).apply { maxLines = 1; alpha = 0.8f; visibility = View.GONE } // the probe's findings go to the log now
         trailerInfo = info
+        openBox("Trailer", title, box, hints, info, punch)
+        trailerProbes = 0
+        main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
+    }
+
+    /** The box over the screen, holding [box] under a label and above the key hints. One recipe for trailers and previews. */
+    private fun openBox(kind: String, title: String, box: View, hints: View, extra: View? = null, punch: Boolean = false) {
+        val boxW = (resources.displayMetrics.widthPixels * TRAILER_W).toInt()
+        val boxH = boxW * 9 / 16
         val artBehind = Settings.titlePage(this, SettingsActivity.TRAILER_ART)
         if (punch) {
             window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
@@ -423,23 +433,136 @@ abstract class Screen : Activity() {
             if (punch) background = HoleShade(box, dp(TILE_RADIUS + 1).toFloat()) else setBackgroundColor(if (artBehind) TRAILER_SCRIM else TRAILER_BLACK)
             isFocusable = true // holds the remote while the box is up
             addView(column(Gravity.CENTER_HORIZONTAL,
-                caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
+                caps(kind, TEXT_2).apply { letterSpacing = 0.16f },
                 text(title, SMALL, color = TEXT_3).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = boxW }.marginTop(4),
                 box.apply { layoutParams = LinearLayout.LayoutParams(boxW, boxH).apply { topMargin = dp(14) } },
                 hints.marginTop(14),
-                info.marginTop(10),
+                *listOfNotNull(extra?.marginTop(10)).toTypedArray(),
             ), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             alpha = 0f
         }
         findViewById<FrameLayout>(android.R.id.content).addView(trailerOverlay, FrameLayout.LayoutParams(-1, -1))
         if (punch) trailerOverlay?.alpha = 1f else trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
         trailerOverlay?.requestFocus()
-        trailerProbes = 0
-        main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
+    }
+
+    private fun boxFrame(content: View) = FrameLayout(this).apply {
+        background = glass(TILE_RADIUS + 1)
+        setPadding(dp(1), dp(1), dp(1), dp(1))
+        outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
+        }
+        clipToOutline = true
+        addView(content, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private fun boxHints() = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        addView(keyHint("OK", "Play / pause"))
+        addView(keyHint("◂ ▸", "Skip 10 s"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+        addView(keyHint("Back", "Close"), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(18) })
+    }
+
+    // ---------- preview ----------
+
+    private var boxPlayer: ExoPlayer? = null
+    private var previewToken = 0
+    private val previewEnd = Runnable { hideTrailer() }
+
+    /**
+     * A minute of the title itself in the box: the sources Play would use, found by [find] off the main thread while
+     * the box shows a ring, the best one started a little way in (past the logos, before the story), and the box
+     * closes itself when the minute is up. OK pauses, Left and Right skip ten seconds, Back closes. Progress isn't
+     * kept: a preview is a look, not a watch. A source that fails gives way to the next; none left closes with a word.
+     */
+    protected fun showPreview(title: String, find: () -> List<Stream>) {
+        hideTrailer()
+        val token = ++previewToken
+        val surface = android.view.SurfaceView(this)
+        val ring = ring()
+        val content = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(surface, FrameLayout.LayoutParams(-1, -1))
+            addView(ring, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+        }
+        openBox("Preview", title, boxFrame(content), boxHints())
+        background(find) { result ->
+            if (token != previewToken || trailerOverlay == null) return@background
+            val sources = result.getOrDefault(emptyList())
+            if (sources.isEmpty()) {
+                hideTrailer()
+                return@background choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {}
+            }
+            // As the player sets its sound up: decoded here unless a receiver takes Dolby and DTS; ffmpeg after the TV's decoders.
+            val passthrough = Settings.passthrough(this)
+            val renderers = object : DefaultRenderersFactory(this) {
+                override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+                    if (passthrough) DefaultAudioSink.Builder(context).build() else
+                    object : ForwardingAudioSink(DefaultAudioSink.Builder(context).build()) {
+                        override fun getFormatSupport(format: Format): Int =
+                            if (format.sampleMimeType == MimeTypes.AUDIO_RAW) super.getFormatSupport(format) else AudioSink.SINK_FORMAT_UNSUPPORTED
+                        override fun supportsFormat(format: Format) = getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
+                    }
+            }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            val player = ExoPlayer.Builder(this, renderers).build()
+            boxPlayer = player
+            player.setVideoSurfaceView(surface)
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .setPreferredAudioLanguage(Settings.audioLanguage(this)).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            var at = 0
+            var placed = false
+            fun start(s: Stream) {
+                placed = false
+                ring.visibility = View.VISIBLE
+                val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(s.headers)
+                    .apply { Http.userAgent?.let { setUserAgent(it) } }
+                val item = MediaItem.Builder().setUri(s.url).apply { if (s.url.contains(".m3u8", true)) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
+                player.setMediaSource(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)).createMediaSource(item))
+                player.prepare()
+                player.playWhenReady = true
+            }
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    // A short file, over before the minute is. Closed on the next frame: the box releases the player, and
+                    // a player shouldn't be released from inside its own callback.
+                    if (state == Player.STATE_ENDED) return main.post { if (boxPlayer === player) hideTrailer() }.let {}
+                    if (state != Player.STATE_READY || placed) return
+                    placed = true
+                    val length = player.duration
+                    if (length > PREVIEW_MIN_LENGTH) player.seekTo((length * PREVIEW_FROM).toLong())
+                }
+                override fun onRenderedFirstFrame() {
+                    ring.visibility = View.GONE
+                    main.removeCallbacks(previewEnd)
+                    main.postDelayed(previewEnd, PREVIEW_MS)
+                }
+                override fun onPlayerError(error: PlaybackException) {
+                    android.util.Log.w("CAS", "preview source ${at + 1} failed: ${error.errorCodeName}")
+                    if (++at < sources.size) start(sources[at])
+                    else main.post { if (boxPlayer === player) { hideTrailer(); choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {} } }
+                }
+            })
+            start(sources[0])
+        }
+    }
+
+    private fun boxPlayerKey(code: Int): Boolean {
+        val p = boxPlayer ?: return false
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> p.playWhenReady = !p.playWhenReady
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0))
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> p.seekTo(p.currentPosition + 10_000)
+        }
+        return true
     }
 
     protected fun hideTrailer() {
         main.removeCallbacks(trailerProbe)
+        main.removeCallbacks(previewEnd)
+        previewToken++
+        boxPlayer?.let { runCatching { it.release() } }
+        boxPlayer = null
         val overlay = trailerOverlay ?: return
         trailerOverlay = null
         trailerInfo = null
@@ -551,9 +674,9 @@ abstract class Screen : Activity() {
             if (event.action == KeyEvent.ACTION_DOWN) when (event.keyCode) {
                 KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MEDIA_STOP -> hideTrailer()
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> trailerJs(TRAILER_TOGGLE)
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> trailerJs(trailerSeek(-10))
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> trailerJs(trailerSeek(10))
+                KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> if (!boxPlayerKey(event.keyCode)) trailerJs(TRAILER_TOGGLE)
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> if (!boxPlayerKey(event.keyCode)) trailerJs(trailerSeek(-10))
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> if (!boxPlayerKey(event.keyCode)) trailerJs(trailerSeek(10))
             }
             return true
         }
@@ -936,6 +1059,9 @@ abstract class Screen : Activity() {
         const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
         const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
         const val TRAILER_PROBE_MS = 7_000L
+        const val PREVIEW_MS = 60_000L // how long a preview plays
+        const val PREVIEW_FROM = 0.12 // where it starts, as a share of the title: past the logos, before the story
+        const val PREVIEW_MIN_LENGTH = 10 * 60_000L // shorter than this (a short, a clip) plays from the start
         const val TRAILER_REFERER = "https://albyjnr.github.io/cas/"
         val YT_ID = Regex("^[A-Za-z0-9_-]{11}$")
         /** Finds the embed page's video once it exists, reports its end and errors back, and makes sure it's playing. */

@@ -15,6 +15,12 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.5.0
+
+- **Preview.** Select **Preview** on a title. A minute of the film or episode plays in a box over the page, a little way in, through the same sources as Play. OK pauses, Left and Right skip 10 seconds, Back closes. The box closes by itself when the minute is up. A preview does not change your progress.
+- **TV, not Shows.** The top bar, the Library filter and Search say **TV**.
+- **Settings → Title page → Preview button** turns the preview on or off.
+
 ## 1.4.2
 
 - **Trailers open in Silk on Fire TV.** The browser is now the first choice there. The box plays sound only on Fire TV, whatever is tried, so it stays as an option for other TVs.

@@ -1,5 +1,6 @@
 package dev.alder
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -18,6 +19,68 @@ import java.util.Locale
 
 // Finds the sources for one video. Normally it picks one and hands the player a short list to fall back on, so Play
 // is one click; with "pick" (held OK on Play, or after three sources failed) it lists them all.
+/** The add-ons that give streams for [videoId]: a lender's shared ones first, then the profile's own. Blocks. */
+internal fun streamAddons(c: Context, key: String, type: String, videoId: String): List<Addon> {
+    val own = Stremio.addons(key).filter { it.serves("stream", type, videoId) }
+    val household = Profiles.streamLenders(c).flatMap { lender ->
+        runCatching {
+            (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey))
+                .filter { it.shareable && it.serves("stream", type, videoId) }
+        }.getOrDefault(emptyList())
+    }.distinctBy { it.id }
+    return household + own.filterNot { mine -> household.any { it.id == mine.id } }
+}
+
+/** Settings' limits on a source: height, size, HDR, and never a cinema recording. [maxHeight] when the player asks for less. */
+internal fun wantedSource(c: Context, s: Stream, maxHeight: Int = 0): Boolean {
+    val limit = maxHeight.takeIf { it > 0 } ?: Settings.maxHeight(c)
+    val maxBytes = Settings.maxSizeGb(c) * 1_073_741_824L
+    return (limit == 0 || s.height == 0 || s.height <= limit) && (maxBytes == 0L || s.size == 0L || s.size <= maxBytes) &&
+        (Settings.hdr(c) || !s.isHdr) && !s.cam
+}
+
+/** Sources best first, as Play orders them: the file or release group that played last, then fit for this TV, then Settings' tastes. */
+internal fun rankSources(c: Context, streams: List<Stream>, videoId: String, metaId: String?, maxHeight: Int = 0): List<Stream> {
+    val prefs = c.getSharedPreferences("sources", Context.MODE_PRIVATE)
+    val file = prefs.getString("file:$videoId", null)
+    val binge = prefs.getString("binge:$metaId", null)
+    val tv = Device.of(c)
+    val prefer = sourcePreference(c)
+    val lower = maxHeight > 0 // the player asked for less: the tallest that's left
+    return streams.sortedWith(compareByDescending<Stream> { if (lower) it.height else 0 }
+        .thenByDescending { file != null && it.filename == file }
+        .thenByDescending { binge != null && it.bingeGroup == binge }
+        .thenBy { it.awkward }
+        .thenBy { it.dolbyVisionOnly && !tv.dolbyVision } // may show no picture (or purple and green) here: last
+        .thenByDescending { it.fit(tv) }
+        .thenByDescending(prefer))
+}
+
+/** Settings' stream preferences as a score, higher first. At "No preference" with TV speakers, every source scores 0. */
+internal fun sourcePreference(c: Context): (Stream) -> Int {
+    val release = Settings.release(c)
+    val hdr = Settings.hdrPref(c)
+    val dub = Settings.dub(c)
+    val language = Settings.audioLanguage(c)
+    val receiver = Settings.passthrough(c)
+    return { s ->
+        when (release) {
+            "remux" -> if (s.remux) 3 else if (s.bluray) 1 else 0
+            "encode" -> if (s.remux) -2 else if (s.bluray || s.web) 2 else 0
+            "web" -> if (s.web && !s.remux) 2 else if (s.remux) -2 else 0
+            else -> 0
+        } + when (hdr) {
+            "dv" -> if (s.dolbyVision) 2 else if (s.hdr) 1 else 0
+            "hdr10" -> if (s.hdr) 2 else 0
+            else -> 0
+        } + when (dub) {
+            "original" -> if (s.dubbed) -2 else 0
+            "mine" -> if (s.mentions(language)) 2 else if (s.multiAudio) 1 else 0
+            else -> 0
+        } + if (receiver && s.bigAudio) 1 else 0 // a receiver gets Atmos and lossless tracks; TV speakers don't
+    }
+}
+
 internal fun readyStreams(answers: Array<List<Stream>?>, allowGaps: Boolean): List<Stream> =
     (if (allowGaps) answers.asList() else answers.takeWhile { it != null }).flatMap { it.orEmpty() }
 
@@ -138,17 +201,7 @@ class StreamsActivity : Screen() {
         })
         val tv = Device.of(this)
 
-        val lenders = Profiles.streamLenders(this)
-        background({
-            val own = Stremio.addons(key).filter { it.serves("stream", type, videoId) }
-            val household = lenders.flatMap { lender ->
-                runCatching {
-                    (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey))
-                        .filter { it.shareable && it.serves("stream", type, videoId) }
-                }.getOrDefault(emptyList())
-            }.distinctBy { it.id }
-            household + own.filterNot { mine -> household.any { it.id == mine.id } }
-        }) { result ->
+        background({ streamAddons(this, key, type, videoId) }) { result ->
             val addons = result.getOrElse { status.text = "Couldn't load sources. Check your connection and try again."; return@background }
             if (addons.isEmpty()) { status.text = "No stream add-ons are connected. Add one in Stremio to find sources."; return@background }
             val answers = arrayOfNulls<List<Stream>>(addons.size)
@@ -304,54 +357,12 @@ class StreamsActivity : Screen() {
      * screen's resolution or HDR on a screen without it moved down, 3D and hard-coded subtitles last, and then Settings'
      * stream preferences. The sort is stable, so ties keep the addon's order.
      */
-    private fun rank(streams: List<Stream>, videoId: String): List<Stream> {
-        val prefs = getSharedPreferences("sources", MODE_PRIVATE)
-        val file = prefs.getString("file:$videoId", null)
-        val binge = prefs.getString("binge:${intent.getStringExtra("id")}", null)
-        val tv = Device.of(this)
-        val prefer = preference()
-        val lower = intent.getIntExtra("maxHeight", 0) > 0 // the player asked for less: the tallest that's left
-        return streams.sortedWith(compareByDescending<Stream> { if (lower) it.height else 0 }
-            .thenByDescending { file != null && it.filename == file }
-            .thenByDescending { binge != null && it.bingeGroup == binge }
-            .thenBy { it.awkward }
-            .thenBy { it.dolbyVisionOnly && !tv.dolbyVision } // may show no picture (or purple and green) here: last
-            .thenByDescending { it.fit(tv) }
-            .thenByDescending(prefer))
-    }
+    private fun rank(streams: List<Stream>, videoId: String) =
+        rankSources(this, streams, videoId, intent.getStringExtra("id"), intent.getIntExtra("maxHeight", 0))
 
-    /** Settings' stream preferences as a score, higher first. At "No preference" with TV speakers, every source scores 0. */
-    private fun preference(): (Stream) -> Int {
-        val release = Settings.release(this)
-        val hdr = Settings.hdrPref(this)
-        val dub = Settings.dub(this)
-        val language = Settings.audioLanguage(this)
-        val receiver = Settings.passthrough(this)
-        return { s ->
-            when (release) {
-                "remux" -> if (s.remux) 3 else if (s.bluray) 1 else 0
-                "encode" -> if (s.remux) -2 else if (s.bluray || s.web) 2 else 0
-                "web" -> if (s.web && !s.remux) 2 else if (s.remux) -2 else 0
-                else -> 0
-            } + when (hdr) {
-                "dv" -> if (s.dolbyVision) 2 else if (s.hdr) 1 else 0
-                "hdr10" -> if (s.hdr) 2 else 0
-                else -> 0
-            } + when (dub) {
-                "original" -> if (s.dubbed) -2 else 0
-                "mine" -> if (s.mentions(language)) 2 else if (s.multiAudio) 1 else 0
-                else -> 0
-            } + if (receiver && s.bigAudio) 1 else 0 // a receiver gets Atmos and lossless tracks; TV speakers don't
-        }
-    }
 
     /** Within Settings' limits (quality, file size, HDR), and never a cam or screener. Unknown sizes and resolutions pass. */
-    private fun wanted(s: Stream): Boolean {
-        val maxHeight = intent.getIntExtra("maxHeight", 0).takeIf { it > 0 } ?: Settings.maxHeight(this) // the player asks for less
-        val maxBytes = Settings.maxSizeGb(this) * 1_073_741_824L
-        return (maxHeight == 0 || s.height == 0 || s.height <= maxHeight) && (maxBytes == 0L || s.size == 0L || s.size <= maxBytes) &&
-            (Settings.hdr(this) || !s.isHdr) && !s.cam
-    }
+    private fun wanted(s: Stream) = wantedSource(this, s, intent.getIntExtra("maxHeight", 0))
 
     private fun streamRow(s: Stream, addon: String, best: Boolean): View {
         val quality = text(if (s.height > 0) "${s.height}p" else "Auto", BODY, bold = true).onArt()

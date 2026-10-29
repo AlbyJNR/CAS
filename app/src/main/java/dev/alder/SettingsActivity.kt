@@ -170,6 +170,7 @@ class SettingsActivity : Screen() {
         Choice(TITLE_TRAILER, "Trailer button", "A trailer for the title, when YouTube has one.", onOff),
         Choice(TRAILER_PLAYER, "Trailers play", "In the browser (Silk on Fire TV) or the YouTube app: full screen, with a picture. In a box over the page: CAS's own box, through the TV's browser engine, which on Fire TV plays sound only.",
             listOf("browser" to "In the browser", "app" to "In the YouTube app", "box" to "In a box over the page")),
+        Choice(TITLE_PREVIEW, "Preview button", "Plays a minute of the title itself in a box over the page, from a little way in, through the same sources as Play.", onOff),
         Choice(TITLE_RECAP, "Recap button", "For series: opens a search for the season's recap in the TV's YouTube app. YouTube may show its own adverts there.", onOff),
         Choice(TITLE_CAST, "Cast", "The leads under the description. Select a name to find more of their films and shows.", onOff),
         Choice(TITLE_DIRECTOR, "Director", "The director under the cast, for films.", onOff),
@@ -648,6 +649,7 @@ class SettingsActivity : Screen() {
     companion object {
         const val TITLE_TRAILER = "titleTrailer"
         const val TITLE_RECAP = "titleRecap"
+        const val TITLE_PREVIEW = "titlePreview"
         const val TITLE_CAST = "titleCast"
         const val TITLE_DIRECTOR = "titleDirector"
         const val TRAILER_ART = "trailerArt"

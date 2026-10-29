@@ -278,7 +278,7 @@ class SearchActivity : Screen() {
             setOnClickListener { input.requestFocus() }
         }
         nav.addView(searchTab, LinearLayout.LayoutParams(dp(44), dp(30)))
-        listOf("Home", "Shows", "Movies", "Library").forEach { page ->
+        listOf("Home", "TV", "Movies", "Library").forEach { page ->
             nav.addView(text(page, BODY, color = TEXT_2).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), 0, dp(12), 0)
@@ -538,7 +538,7 @@ class SearchActivity : Screen() {
                     .distinctBy { it.type to it.id }
                 val ranked = rankSearchTitles(found, query) { it.name }
                 val sections = linkedMapOf("Movies" to ranked.filter { it.type == "movie" }.take(PER_TYPE),
-                    "Shows" to ranked.filter { it.type == "series" }.take(PER_TYPE)).filterValues { it.isNotEmpty() }
+                    "TV" to ranked.filter { it.type == "series" }.take(PER_TYPE)).filterValues { it.isNotEmpty() }
                 if (sections.isNotEmpty()) render(sections, query, moveFocus && (final || completed == addons.size))
                 else if (final || completed == addons.size) {
                     results.removeAllViews()

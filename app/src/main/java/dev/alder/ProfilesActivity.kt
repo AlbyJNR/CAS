@@ -41,6 +41,11 @@ class ProfilesActivity : Screen() {
         // opens the trailer box here, so it can be checked on an emulator with no Stremio account.
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
             intent.getStringExtra("trailer")?.let { id -> main.postDelayed({ showTrailer(id, "Trailer test") }, 1500) }
+        // Likewise `--es preview <direct video url>` opens the preview box on that file.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+            intent.getStringExtra("preview")?.let { url -> main.postDelayed({
+                showPreview("Preview test") { listOf(Stream("Test", "", url, emptyMap(), 0, null, null)) }
+            }, 1500) }
         val profiles = Profiles.all(this)
         // Home found this profile signed out: straight to its sign-in, the profile and its settings kept.
         val again = intent.getStringExtra("signIn")?.let { id -> profiles.firstOrNull { it.id == id } }
