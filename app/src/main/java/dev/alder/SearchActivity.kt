@@ -516,7 +516,6 @@ class SearchActivity : Screen() {
                     results.removeAllViews()
                     results.addView(failed("Popular titles are unavailable.") { search(false) })
                 } else render(linkedMapOf("Popular" to titles), "", false)
-                results.addView(browseByGenre(), 0)
             }
             return
         }
@@ -569,42 +568,6 @@ class SearchActivity : Screen() {
     override fun onDestroy() {
         searchTasks.forEach { it.cancel(true) }
         super.onDestroy()
-    }
-
-    /**
-     * Browse: a genre a press away, before anything is typed. Kids first, for the people the app is for. A tile opens
-     * Movies at that genre's row; the same genre chip then stands at the top of Shows. Each tile names the genre
-     * words add-ons use for it, first match wins (Cinemeta has Family and Animation, others have Kids).
-     */
-    private fun browseByGenre(): View {
-        val tiles = listOf(
-            "Kids & Family" to "Kids|Family|Animation|Children", "Comedy" to "Comedy", "Drama" to "Drama", "Action" to "Action",
-            "Thriller" to "Thriller", "Documentary" to "Documentary", "Animation" to "Animation|Anime", "Sci-Fi" to "Sci-Fi|Science Fiction",
-            "Horror" to "Horror", "Romance" to "Romance",
-        )
-        return column(Gravity.START).apply {
-            addView(caps("Browse").onArt(), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-            tiles.chunked(5).forEach { row ->
-                addView(LinearLayout(this@SearchActivity).apply {
-                    clipChildren = false
-                    row.forEachIndexed { i, (label, keys) ->
-                        addView(text(label, BODY, bold = true).apply {
-                            gravity = Gravity.CENTER
-                            maxLines = 1
-                            setPadding(dp(10), 0, dp(10), 0)
-                            contentDescription = "$label films and shows"
-                            rowFocus(12, rest = { glass(12) })
-                            setOnClickListener {
-                                startActivity(Intent(this@SearchActivity, MainActivity::class.java)
-                                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                                    .putExtra("page", "Movies").putExtra("genre", keys))
-                                finish()
-                            }
-                        }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { if (i > 0) marginStart = dp(8) })
-                    }
-                }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
-            }
-        }.apply { setPadding(0, 0, dp(PAD), dp(SECTION_GAP - 8)) }
     }
 
     private fun render(sections: Map<String, List<Meta>>, query: String, moveFocus: Boolean) {

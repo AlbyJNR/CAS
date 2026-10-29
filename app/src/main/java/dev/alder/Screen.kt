@@ -359,8 +359,15 @@ abstract class Screen : Activity() {
     protected fun showTrailer(ytId: String, title: String) {
         if (!ytId.matches(YT_ID)) return // an add-on's data goes into a URL: only a real YouTube id does
         hideTrailer()
-        if (Settings.trailerPlayer(this) == "app") return openTrailerOutside(ytId)
+        when (Settings.trailerPlayer(this)) {
+            "app" -> return openTrailerOutside(ytId)
+            "browser" -> return openTrailerInBrowser(ytId)
+        }
         val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
+        // Fire OS's engine appears to draw video on a layer behind the app's window (sound, no picture, in the box).
+        // There, the window goes see-through and the box leaves a hole in an otherwise opaque shade, so whatever is
+        // drawn behind the window shows inside the box and nowhere else.
+        val punch = android.os.Build.MANUFACTURER.equals("Amazon", true)
         trailerWeb = web
         val boxW = (resources.displayMetrics.widthPixels * TRAILER_W).toInt()
         val boxH = boxW * 9 / 16
@@ -370,7 +377,7 @@ abstract class Screen : Activity() {
             settings.mediaPlaybackRequiresUserGesture = false
             settings.allowFileAccess = false
             settings.allowContentAccess = false
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(if (punch) Color.TRANSPARENT else Color.BLACK)
             isFocusable = false // the remote's keys stay with the screen (dispatchKeyEvent), not the page
             isFocusableInTouchMode = false
             webChromeClient = WebChromeClient() // without one, Android plays a video's sound over a black box
@@ -390,7 +397,7 @@ abstract class Screen : Activity() {
         // The corners are cut on the box around the page, not on the page itself: clipping the video's own surface
         // is what some TVs' WebViews refuse to draw.
         val box = FrameLayout(this).apply {
-            background = glass(TILE_RADIUS + 1)
+            background = if (punch) GradientDrawable().apply { cornerRadius = dp(TILE_RADIUS + 1).toFloat(); setStroke(dp(1), GLASS_EDGE) } else glass(TILE_RADIUS + 1)
             setPadding(dp(1), dp(1), dp(1), dp(1))
             outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(v: View, o: android.graphics.Outline) = o.setRoundRect(0, 0, v.width, v.height, dp(TILE_RADIUS + 1).toFloat())
@@ -407,8 +414,13 @@ abstract class Screen : Activity() {
         val info = text("", SMALL, color = TEXT_3).apply { maxLines = 1; alpha = 0.8f }
         trailerInfo = info
         val artBehind = Settings.titlePage(this, SettingsActivity.TRAILER_ART)
+        if (punch) {
+            window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+            val content = findViewById<FrameLayout>(android.R.id.content)
+            trailerHidContent = content.getChildAt(0)?.also { it.visibility = View.INVISIBLE }
+        }
         trailerOverlay = FrameLayout(this).apply {
-            setBackgroundColor(if (artBehind) TRAILER_SCRIM else TRAILER_BLACK)
+            if (punch) background = HoleShade(box, dp(TILE_RADIUS + 1).toFloat()) else setBackgroundColor(if (artBehind) TRAILER_SCRIM else TRAILER_BLACK)
             isFocusable = true // holds the remote while the box is up
             addView(column(Gravity.CENTER_HORIZONTAL,
                 caps("Trailer", TEXT_2).apply { letterSpacing = 0.16f },
@@ -420,7 +432,7 @@ abstract class Screen : Activity() {
             alpha = 0f
         }
         findViewById<FrameLayout>(android.R.id.content).addView(trailerOverlay, FrameLayout.LayoutParams(-1, -1))
-        trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
+        if (punch) trailerOverlay?.alpha = 1f else trailerOverlay?.animate()?.alpha(1f)?.setDuration(220)?.start()
         trailerOverlay?.requestFocus()
         trailerProbes = 0
         main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
@@ -434,7 +446,41 @@ abstract class Screen : Activity() {
         findViewById<FrameLayout>(android.R.id.content).removeView(overlay) // off the screen before destroy(): attached, it has crashed TVs
         trailerWeb?.let { web -> runCatching { web.loadUrl("about:blank"); web.stopLoading(); web.destroy() } }
         trailerWeb = null
+        trailerHidContent?.let { it.visibility = View.VISIBLE; window.setFormat(android.graphics.PixelFormat.OPAQUE) }
+        trailerHidContent = null
         onTrailerClosed()
+    }
+
+    private var trailerHidContent: View? = null // the screen's own content, hidden while the window is see-through
+
+    /** An opaque charcoal shade with one rounded hole where [box] is: the see-through window shows only there. */
+    private inner class HoleShade(private val box: View, private val radius: Float) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BASE }
+        private val path = Path()
+        private val hole = RectF()
+        private val at = IntArray(2)
+        override fun draw(canvas: Canvas) {
+            val me = IntArray(2); (callback as? View)?.getLocationInWindow(me)
+            box.getLocationInWindow(at)
+            val x = (at[0] - me[0] + box.paddingLeft).toFloat(); val y = (at[1] - me[1] + box.paddingTop).toFloat()
+            hole.set(x, y, x + box.width - box.paddingLeft - box.paddingRight, y + box.height - box.paddingTop - box.paddingBottom)
+            path.reset(); path.fillType = Path.FillType.EVEN_ODD
+            path.addRect(RectF(bounds), Path.Direction.CW)
+            path.addRoundRect(hole, radius, radius, Path.Direction.CW)
+            canvas.drawPath(path, paint)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    /** The TV's browser (Silk on Fire TV), at the trailer on YouTube's site, full screen. */
+    private fun openTrailerInBrowser(ytId: String) {
+        if (!ytId.matches(YT_ID)) return
+        val uri = Uri.parse("https://www.youtube.com/watch?v=$ytId")
+        val silk = Intent(Intent.ACTION_VIEW, uri).setPackage("com.amazon.cloud9")
+        if (runCatching { startActivity(silk); true }.getOrDefault(false)) return
+        if (!openOutside(uri)) choose("Trailer unavailable", listOf("OK"), "This TV has no browser to play the trailer.") {}
     }
 
     /** The TV's YouTube app, straight to the trailer, full screen; failing that, a word. */

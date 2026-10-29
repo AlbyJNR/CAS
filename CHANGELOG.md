@@ -15,10 +15,14 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.4.1
+
+- **Trailers in the browser.** **Settings → Title page → Trailers play** has a third choice: the TV's browser, full screen (Silk on Fire TV).
+- **The box, one more try on Fire TV.** With **In a box over the page** selected, the window goes see-through where the box is, so a picture Fire OS draws behind the app can show inside it.
+
 ## 1.4.0
 
 - **A new mark.** The CAS aperture: a C with a dot, on the launcher tile, the icon and beside the name on every screen.
-- **Browse by genre.** Open Search. Before you type, select a genre tile, Kids & Family first. Movies opens at that genre, and the same genre chip is at the top of Shows.
 - **Trailers play in the YouTube app on Fire TV.** Full screen, with a picture. **Settings → Title page → Trailers play** chooses the app or CAS's own box. A box that shows no picture switches the TV to the app by itself.
 
 ## 1.3.3

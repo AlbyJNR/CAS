@@ -121,7 +121,6 @@ class MainActivity : Screen() {
     // ponytail: row answers this session, including their catalogs; unbounded, but a few hundred titles per page.
     private val answers = java.util.concurrent.ConcurrentHashMap<String, List<Pair<List<Meta>, Boolean>>>()
     private var genre: String? = null
-    private var wantedGenre: String? = null // "Kids|Family": from Search's Browse tiles; the first chip that matches is pressed
     private var jumpTo: String? = null // a chip's row that wasn't made yet when OK was pressed
     private var listFilter = ListFilter.ALL
     private var listSort = ListSort.RECENT
@@ -358,7 +357,6 @@ class MainActivity : Screen() {
             // Rows settle after a focus move (the next heading can peek in): name it once, whichever shows.
             main.removeCallbacks(nextRowCheck); main.postDelayed(nextRowCheck, 300)
         }
-        wantedGenre = intent.getStringExtra("genre")
         showPage(pageNamed(intent.getStringExtra("page")) ?: Page.HOME)
         main.postDelayed(::warmPages, WARM_AFTER)
     }
@@ -366,16 +364,7 @@ class MainActivity : Screen() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        wantedGenre = intent.getStringExtra("genre")
-        pageNamed(intent.getStringExtra("page"))?.let { if (it != page) showPage(it) else if (wantedGenre != null) genreChips.keys.filterNotNull().let(::openWantedGenre) }
-    }
-
-    /** A Browse tile's genre, pressed as soon as its chip is on the page: the remote lands on that genre's row. */
-    private fun openWantedGenre(names: List<String>) {
-        val want = wantedGenre?.split('|') ?: return
-        val match = want.firstNotNullOfOrNull { w -> names.firstOrNull { it.equals(w.trim(), true) } } ?: return
-        wantedGenre = null
-        genreChips[match]?.performClick()
+        pageNamed(intent.getStringExtra("page"))?.takeIf { it != page }?.let(::showPage)
     }
 
     /** A page by its name on screen or in code; "My List" is what Search and older callers call the Library. */
@@ -1363,7 +1352,6 @@ class MainActivity : Screen() {
         }
         genreStrip.addView(line)
         if (hadFocus) (genreChips[focusedGenre] ?: genreChips[null])?.requestFocus()
-        openWantedGenre(names)
     }
 
     private fun markChip(rowTitle: String) {
