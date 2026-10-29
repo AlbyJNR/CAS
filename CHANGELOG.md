@@ -15,6 +15,12 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.4.0
+
+- **A new mark.** The CAS aperture: a C with a dot, on the launcher tile, the icon and beside the name on every screen.
+- **Browse by genre.** Open Search. Before you type, select a genre tile, Kids & Family first. Movies opens at that genre, and the same genre chip is at the top of Shows.
+- **Trailers play in the YouTube app on Fire TV.** Full screen, with a picture. **Settings → Title page → Trailers play** chooses the app or CAS's own box. A box that shows no picture switches the TV to the app by itself.
+
 ## 1.3.3
 
 - **Trailers, again.** The box now shows YouTube's own player page, which draws its picture where the earlier page did not. A small grey line under the box reports what the TV's browser engine does with the video, for this test build.

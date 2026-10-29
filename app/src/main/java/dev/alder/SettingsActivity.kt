@@ -36,6 +36,10 @@ object Settings {
     fun profileKey(c: Context, key: String) = "$key@${Profiles.active(c)?.id}"
     /** Settings › Title page: each extra on a title's page is on unless turned off. Keys: TITLE_* in SettingsActivity. */
     fun titlePage(c: Context, key: String) = prefs(c).getBoolean(key, true)
+    /** Where a trailer plays: "app" (the YouTube app) or "box". Fire TV's browser engine plays sound but no picture in the box, so it starts on "app". */
+    fun trailerPlayer(c: Context): String = prefs(c).getString(SettingsActivity.TRAILER_PLAYER, null)
+        ?: if (android.os.Build.MANUFACTURER.equals("Amazon", true)) "app" else "box"
+    fun setTrailerPlayer(c: Context, value: String) = prefs(c).edit().putString(SettingsActivity.TRAILER_PLAYER, value).apply()
     /**
      * Titles this profile hid from Continue Watching on this TV: id to {name, timeOffset}, so Settings can put them
      * back. ponytail: this TV only; titles hidden in Stremio elsewhere aren't listed.
@@ -163,7 +167,9 @@ class SettingsActivity : Screen() {
     )
     private val onOff = listOf(true to "On", false to "Off")
     private val titlePage = listOf(
-        Choice(TITLE_TRAILER, "Trailer button", "Plays the title's trailer in a box over the page, through the TV's own browser engine and YouTube.", onOff),
+        Choice(TITLE_TRAILER, "Trailer button", "A trailer for the title, when YouTube has one.", onOff),
+        Choice(TRAILER_PLAYER, "Trailers play", "In the YouTube app: full screen, and sure to show a picture on Fire TV. In a box over the page: CAS's own box, through the TV's browser engine, where that engine draws video.",
+            listOf("app" to "In the YouTube app", "box" to "In a box over the page")),
         Choice(TITLE_RECAP, "Recap button", "For series: opens a search for the season's recap in the TV's YouTube app. YouTube may show its own adverts there.", onOff),
         Choice(TITLE_CAST, "Cast", "The leads under the description. Select a name to find more of their films and shows.", onOff),
         Choice(TITLE_DIRECTOR, "Director", "The director under the cast, for films.", onOff),
@@ -645,6 +651,7 @@ class SettingsActivity : Screen() {
         const val TITLE_CAST = "titleCast"
         const val TITLE_DIRECTOR = "titleDirector"
         const val TRAILER_ART = "trailerArt"
+        const val TRAILER_PLAYER = "trailerPlayer" // "app" or "box"; unset: the box, except on Fire TV, where it draws no picture
         val PRESETS = listOf(
             "Add-on's order" to mapOf("release" to "", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 0),
             "Best picture" to mapOf("release" to "remux", "hdrPref" to "dv", "maxHeight" to 0, "maxSizeGb" to 0),

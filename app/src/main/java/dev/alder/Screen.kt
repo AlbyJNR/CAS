@@ -359,6 +359,7 @@ abstract class Screen : Activity() {
     protected fun showTrailer(ytId: String, title: String) {
         if (!ytId.matches(YT_ID)) return // an add-on's data goes into a URL: only a real YouTube id does
         hideTrailer()
+        if (Settings.trailerPlayer(this) == "app") return openTrailerOutside(ytId)
         val web = runCatching { WebView(this) }.getOrNull() ?: return openTrailerOutside(ytId)
         trailerWeb = web
         val boxW = (resources.displayMetrics.widthPixels * TRAILER_W).toInt()
@@ -436,11 +437,13 @@ abstract class Screen : Activity() {
         onTrailerClosed()
     }
 
-    /** The TV's YouTube app, for a trailer YouTube won't let a page embed; failing that, a word. */
+    /** The TV's YouTube app, straight to the trailer, full screen; failing that, a word. */
     private fun openTrailerOutside(ytId: String) {
         if (!ytId.matches(YT_ID)) return
-        if (!openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
-            choose("Trailer unavailable", listOf("OK"), "This trailer can't be played on this TV.") {}
+        // The YouTube app's own scheme first (Fire TV and Android TV both answer it), then the web link for whatever
+        // else is installed. On a TV with neither, Android's own "no app" word shows.
+        if (!openOutside(Uri.parse("vnd.youtube:$ytId")) && !openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
+            choose("Trailer unavailable", listOf("OK"), "This TV has no YouTube app to play the trailer.") {}
     }
 
     /** Hands [uri] to whatever app takes it (the YouTube app, a browser). False when nothing on this TV does. */
@@ -480,6 +483,12 @@ abstract class Screen : Activity() {
             // frames haven't arrived yet the line is read again, so it ends up saying what the TV actually drew.
             when {
                 !hasVideo && trailerProbes >= 2 -> { hideTrailer(); openTrailerOutside(json.optString("id")) }
+                // Playing for 14 s with no frame drawn: this TV's engine sends video somewhere the box can't show
+                // (Fire TV). Trailers go to the YouTube app from now on; Settings › Title page can bring the box back.
+                hasVideo && json.optInt("w") == 0 && json.optInt("rs") >= 2 && trailerProbes >= 2 -> {
+                    Settings.setTrailerPlayer(this, "app")
+                    hideTrailer(); openTrailerOutside(json.optString("id"))
+                }
                 (!hasVideo || json.optInt("w") == 0) && trailerProbes < 4 -> main.postDelayed(trailerProbe, TRAILER_PROBE_MS)
             }
         }
@@ -569,6 +578,12 @@ abstract class Screen : Activity() {
     /** CAS wordmark: a single, quiet signature on every entry screen. */
     protected fun brand(size: Float = WORDMARK) = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
+        // The aperture, as tall as the capitals beside it.
+        val markPx = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, size * 0.95f, resources.displayMetrics).toInt()
+        addView(ImageView(this@Screen).apply {
+            setImageResource(R.drawable.ic_mark)
+            imageTintList = android.content.res.ColorStateList.valueOf(TEXT)
+        }, LinearLayout.LayoutParams(markPx, markPx).apply { marginEnd = (markPx * 0.42f).toInt() })
         addView(text("CAS", size, bold = true).apply {
             letterSpacing = 0.16f
             includeFontPadding = false
