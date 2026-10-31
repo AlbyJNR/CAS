@@ -84,6 +84,11 @@ object Settings {
         .orEmpty().ifEmpty { Languages.code(Locale.getDefault().toLanguageTag()) ?: "en" }
     fun subtitleSize(c: Context) = prefs(c).getInt("subSize", 100) // percent of Media3's default size
     fun subtitleBackground(c: Context) = prefs(c).getBoolean("subBackground", true)
+    /** Voices lifted above music and effects in the player (DialogueAudioProcessor); off with a receiver (passthrough). */
+    fun clearDialogue(c: Context) = prefs(c).getBoolean("clearDialogue", false)
+    fun setClearDialogue(c: Context, on: Boolean) = prefs(c).edit().putBoolean("clearDialogue", on).apply()
+    /** Episode stills of unwatched episodes blurred in the guide, against spoilers. */
+    fun blurThumbnails(c: Context) = prefs(c).getBoolean("blurThumbnails", false)
 }
 
 /**
@@ -176,6 +181,8 @@ class SettingsActivity : Screen() {
         Choice(TITLE_CAST, "Cast", "The leads under the description. Select a name to find more of their films and shows.", onOff),
         Choice(TITLE_DIRECTOR, "Director", "The director under the cast, for films.", onOff),
         Choice(TRAILER_ART, "Art behind the trailer", "Keeps the title's art, dimmed, behind the trailer box. Off plays the trailer over black.", onOff),
+        Choice(TITLE_RATING, "Content rating", "The age rating (PG, 15, TV-MA) beside the year, when it is known.", onOff),
+        Choice("blurThumbnails", "Blur unwatched episodes", "Pictures of episodes you have not watched are blurred in the episode guide, against spoilers.", listOf(false to "Off", true to "On")),
     )
     private val pictureAndSound = listOf(
         Choice("homeCinema", "Screensaver", "After five minutes without a key on Home, one of your Continue Watching titles fills the screen with its art and a clock. Any key returns.", listOf(true to "On", false to "Off")),
@@ -183,8 +190,10 @@ class SettingsActivity : Screen() {
             listOf("" to "On", "dv" to "Dolby Vision first", "hdr10" to "HDR10 first", "off" to "Off")),
         Choice("matchFrameRate", "Match frame rate", "The TV switches to the film's rate so pans don't judder.",
             listOf(true to "On", false to "Off")),
-        Choice("passthrough", "Audio output", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes the sound on the TV, which always workss.",
+        Choice("passthrough", "Audio output", "Receiver sends Dolby and DTS untouched to a soundbar or receiver. TV speakers decodes the sound on the TV, which always works.",
             listOf(false to "TV speakers", true to "Receiver")),
+        Choice("clearDialogue", "Clear dialogue", "Lifts voices above music and effects, for TV speakers. Also in the player under Audio & subtitles. Does nothing with Audio output set to Receiver.",
+            listOf(false to "Off", true to "On")),
     )
     private val dubbed = listOf(
         Choice("dub", "Dubbed releases", "Original first puts dubbed releases last; My language first uses this profile's audio language.",
@@ -677,6 +686,7 @@ class SettingsActivity : Screen() {
         const val TITLE_CAST = "titleCast"
         const val TITLE_DIRECTOR = "titleDirector"
         const val TRAILER_ART = "trailerArt"
+        const val TITLE_RATING = "titleRating"
         const val TRAILER_PLAYER = "trailerPlayer" // "browser", "app" or "box"; unset: the box, except on Fire TV (Silk), where the box draws no picture
         val PRESETS = listOf(
             "Add-on's order" to mapOf("release" to "", "hdrPref" to "", "maxHeight" to 0, "maxSizeGb" to 0),
