@@ -208,7 +208,11 @@ internal fun imdbTrailerStreams(imdbId: String): List<Stream> {
     return runCatching {
         val query = JSONObject().put("query",
             "{title(id:\"$imdbId\"){primaryVideos(first:5){edges{node{id name{value}contentType{displayName{value}}playbackURLs{displayName{value}url videoMimeType}}}}}}").toString()
-        val raw = Http.post("https://api.graphql.imdb.com/", query, timeoutMs = 5_000, headers = mapOf("x-imdb-client-name" to "imdb-web-next-localized"))
+        // A TV stick's first call to a new host can take a few seconds (DNS, TLS): time enough, and one more try.
+        val raw = (1..2).firstNotNullOfOrNull { attempt ->
+            runCatching { Http.post("https://api.graphql.imdb.com/", query, timeoutMs = 12_000, headers = mapOf("x-imdb-client-name" to "imdb-web-next-localized")) }
+                .onFailure { android.util.Log.w("CAS", "IMDb trailer call $attempt for $imdbId failed: $it") }.getOrNull()
+        } ?: return emptyList()
         parseImdbTrailerStreams(JSONObject(raw)).also { imdbTrailerCache[imdbId] = it }
     }.getOrDefault(emptyList())
 }
@@ -249,6 +253,8 @@ class Meta(json: JSONObject) {
     val runtime = json.text("runtime")?.let(::runtime)
     val rating = json.text("imdbRating")
     val genres = json.optJSONArray("genres").strings().take(3)
+    /** The IMDb id, from the id itself or the add-on's `imdb_id` field (an add-on may number titles its own way). */
+    val imdbId: String? = id.takeIf { it.startsWith("tt") }?.substringBefore(':') ?: json.text("imdb_id")?.takeIf { it.startsWith("tt") }
     val cast = json.optJSONArray("cast").strings()
     val director = json.optJSONArray("director").strings()
     /** Trailer files an add-on gives outright (a `url` in `trailerStreams`): playable in CAS's own player. */

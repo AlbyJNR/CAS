@@ -15,6 +15,13 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.7.4
+
+- **Title page buttons in two clear lines.** Play, Trailer, Preview and Recap on one line at one height; the small round controls beneath.
+- **Trailers start at once.** The trailer is fetched as the title page opens.
+- **Coming back from Settings is immediate.** Home refreshes after it is back on screen, and asks for the add-on list again only every few minutes.
+- **Settings → Title page** no longer offers where trailers play: they play in the box.
+
 ## 1.7.3
 
 - **Posters that would not load** now come from a second source, and are tried again after a moment, before the title's name stands in.

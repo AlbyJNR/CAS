@@ -628,7 +628,7 @@ abstract class Screen : Activity() {
         // The YouTube app's own scheme first (Fire TV and Android TV both answer it), then the web link for whatever
         // else is installed. On a TV with neither, Android's own "no app" word shows.
         if (!openOutside(Uri.parse("vnd.youtube:$ytId")) && !openOutside(Uri.parse("https://www.youtube.com/watch?v=$ytId")))
-            choose("Trailer unavailable", listOf("OK"), "This TV has no YouTube app to play the trailer.") {}
+            choose("Trailer unavailable", listOf("OK"), "No trailer could be played on this TV.") {}
     }
 
     /** Hands [uri] to whatever app takes it (the YouTube app, a browser). False when nothing on this TV does. */

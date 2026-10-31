@@ -419,9 +419,19 @@ class MainActivity : Screen() {
     // the library's rows are redrawn, so the remote stays where it was on the rest of the page.
     override fun onRestart() {
         super.onRestart()
-        refreshLibrary?.invoke()
-        refreshAddons?.invoke()
+        // After the screen is back and drawn, not during the return: the library and add-on checks start network
+        // work and can rebuild rows, which made coming back from Settings feel like a pause.
+        main.removeCallbacks(refreshOnReturn)
+        main.postDelayed(refreshOnReturn, 700)
     }
+
+    private val refreshOnReturn = Runnable {
+        if (isFinishing || isDestroyed) return@Runnable
+        refreshLibrary?.invoke()
+        // The add-on list rarely changes while CAS is open: asked again at most every few minutes, not on every return.
+        if (android.os.SystemClock.uptimeMillis() - lastAddonCheck > ADDON_RECHECK) refreshAddons?.invoke()
+    }
+    private var lastAddonCheck = 0L
 
     private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to CAS
 
@@ -444,6 +454,7 @@ class MainActivity : Screen() {
         main.removeCallbacks(idle)
         main.removeCallbacks(idleDim)
         main.removeCallbacks(advance)
+        main.removeCallbacks(refreshOnReturn)
     }
 
     /** The screensaver's clock: IDLE from the last key, while Settings wants it. */
@@ -1282,7 +1293,8 @@ class MainActivity : Screen() {
             if (built && g == generation && builtFrom != fresh.map { it.id }) showPage(p, quick = false) else drawn(fresh)
         }) { if (!built && g == generation) failedToLoad(it) } }
         checkAddons(::build)
-        refreshAddons = { checkAddons {} }
+        lastAddonCheck = android.os.SystemClock.uptimeMillis()
+        refreshAddons = { lastAddonCheck = android.os.SystemClock.uptimeMillis(); checkAddons {} }
     }
 
     private class Shelf(val page: Page, val title: String, val rank: Int)
@@ -2067,6 +2079,7 @@ class MainActivity : Screen() {
         const val FIRST = 10 // cards per row loaded before it's scrolled sideways (a screenful, the one past the edge, one more)
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)
+        const val ADDON_RECHECK = 5 * 60_000L // ms between asking Stremio for the add-on list again on coming back to the front
         const val DIM_AFTER = 10_000L
         const val GENRE_ROWS = 6 // genre rows (and chips) at most on Shows and Movies
         const val CATALOG_WAIT = 6_000

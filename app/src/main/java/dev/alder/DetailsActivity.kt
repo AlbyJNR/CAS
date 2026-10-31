@@ -101,6 +101,7 @@ class DetailsActivity : Screen() {
             val wasGuide = guideOpen
             val episodeTag = currentFocus?.takeIf { it in episodeRows }?.tag
             showHero(m)
+            m.imdbId?.let { id -> background({ imdbTrailerStreams(id) }) {} } // ready before the button is pressed
             if (type == "series" && m.videos.isNotEmpty()) {
                 buildGuide(m.videos)
                 if (wasGuide) { showGuide(); episodeRows.firstOrNull { it.tag == episodeTag }?.requestFocus() }
@@ -262,7 +263,7 @@ class DetailsActivity : Screen() {
         val ytId = m.trailers.firstOrNull()
         val trailer = if (Settings.titlePage(this, SettingsActivity.TITLE_TRAILER))
             glassButton("Trailer") {
-                showTrailerClip(m.name, { m.trailerFiles + imdbTrailerStreams(metaId) }) {
+                showTrailerClip(m.name, { m.trailerFiles + (m.imdbId?.let(::imdbTrailerStreams) ?: emptyList()) }) {
                     if (ytId != null) showTrailer(ytId, m.name)
                     else choose("Trailer unavailable", listOf("OK"), "No trailer was found for this title.") {}
                 }
@@ -273,20 +274,21 @@ class DetailsActivity : Screen() {
             glassButton("Recap") { openRecap(m, episode?.season ?: selectedSeason) } else null
         // Play and its small controls on one line; Trailer, Preview and Recap on a second, so none is ever squeezed
         // out of a line the text block's width can't hold (a series with a resume point had seven controls).
+        // The worded actions on one line at one height (Play white, the others glass), the three small round
+        // controls on a quieter line beneath: two kinds of thing, two lines, nothing bunched.
         actionRow1 = LinearLayout(this).apply {
             clipChildren = false
-            addView(playButton, wrap().apply { marginEnd = dp(14) })
-            startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }) }
-            addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
-            addView(infoButton)
+            addView(playButton, wrap().apply { marginEnd = dp(10) })
+            listOfNotNull(trailer, preview, recap).forEach { addView(it, LinearLayout.LayoutParams(-2, dp(BUTTON_H)).apply { marginEnd = dp(8) }) }
         }
         stack.addView(actionRow1, wrap().apply { topMargin = dp(16) })
-        val extras = listOfNotNull(trailer, preview, recap)
-        actionRow2 = if (extras.isEmpty()) null else LinearLayout(this).apply {
+        actionRow2 = LinearLayout(this).apply {
             clipChildren = false
-            extras.forEachIndexed { i, b -> addView(b, LinearLayout.LayoutParams(-2, dp(32)).apply { if (i > 0) marginStart = dp(8) }) }
+            startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(10) }) }
+            addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(10) })
+            addView(infoButton)
         }
-        actionRow2?.let { stack.addView(it, wrap().apply { topMargin = dp(10) }) }
+        stack.addView(actionRow2, wrap().apply { topMargin = dp(12) })
         // The title's details arrive in two or three steps, each redrawing this block: the remote stays on the
         // control it was on (Trailer, a cast name, ⓘ) rather than snapping back to Play each time.
         playButton.post {
@@ -312,8 +314,8 @@ class DetailsActivity : Screen() {
     /** A worded glass control beside Play, as tall as the icon buttons. */
     private fun glassButton(label: String, action: () -> Unit) = text(label, SMALL, bold = true).apply {
         gravity = Gravity.CENTER
-        setPadding(dp(14), 0, dp(14), 0)
-        lightFocus(16)
+        setPadding(dp(16), 0, dp(16), 0)
+        lightFocus(10) // the same corners and height as Play beside it
         setOnClickListener { action() }
     }
 
@@ -336,7 +338,7 @@ class DetailsActivity : Screen() {
     private fun openRecap(m: Meta, season: Int) {
         val query = Uri.encode("${m.name} season ${season.coerceAtLeast(1)} recap")
         if (!openOutside(Uri.parse("https://www.youtube.com/results?search_query=$query")))
-            choose("Recap unavailable", listOf("OK"), "This TV has no YouTube app to search for a recap.") {}
+            choose("Recap unavailable", listOf("OK"), "This TV has no video app to search for a recap.") {}
     }
 
     /** What Play opens: the episode Continue Watching points at, or the first episode, or the movie itself. */
