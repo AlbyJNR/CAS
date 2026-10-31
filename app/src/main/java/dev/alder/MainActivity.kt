@@ -1814,7 +1814,18 @@ class MainActivity : Screen() {
                 face.animate().cancel()
                 face.alpha = 0f
                 var now = true // from memory: no fade, it's simply there
-                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
+                // A poster host that fails (rated-poster services rate-limit, CDNs hiccup) falls back to MetaHub's poster
+                // for the same title, and that is tried once more a few seconds later before the name stands in.
+                val fallback = Images.posterFor(item.id)?.takeIf { it != url }
+                var retried = false
+                fun failedOnce() {
+                    if (!retried && wanted && shown == url) {
+                        retried = true
+                        main.postDelayed({ if (wanted && shown == url) { shown = null; load() } }, 3_000)
+                    }
+                    name.visibility = View.VISIBLE; face.alpha = 1f
+                }
+                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), orElse = fallback, failed = ::failedOnce) {
                     if (nameMade.isInitialized()) name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
                     if (isFocused) lift(true)
@@ -2048,11 +2059,11 @@ class MainActivity : Screen() {
         // Building every row's 25 cards at once held the main thread for over a second on a page switch (about 3.6 ms
         // a card), so the first row's posters, already decoded, didn't show until every row was made.
         const val FOCUS_ROOM = 8 // dp around the title block for a focused pill to grow into
-        const val START = 9
+        const val START = 12 // cards a row starts with: past the screen's edge, so the first move right has somewhere to go
         const val ROW_LATER = 350L // ms after a page opens before its rows out of sight are made
         const val ROW_STAGGER = 60L // ms between them
-        const val PAGE = 12
-        const val AHEAD = 8 // cards from a row's end when the next page is asked for: early enough that a row of 9 grows before it would stop short of the margin
+        const val PAGE = 24 // cards a row grows by: fewer, larger asks of the add-on, so a browse rarely waits on one
+        const val AHEAD = 12 // cards from a row's end when the next page is asked for: early enough that a row of 9 grows before it would stop short of the margin
         const val FIRST = 10 // cards per row loaded before it's scrolled sideways (a screenful, the one past the edge, one more)
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)

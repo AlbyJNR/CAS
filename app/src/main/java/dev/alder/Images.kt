@@ -46,6 +46,8 @@ object Images {
 
     // Logos straight from MetaHub (Stremio's image server) by IMDb id, so a card's logo doesn't wait for its details.
     fun logoFor(id: String) = id.takeIf { it.startsWith("tt") }?.let { "https://images.metahub.space/logo/medium/${it.substringBefore(':')}/img" }
+    /** A poster from MetaHub by IMDb id: the fallback when an add-on's own poster host (rated posters, a rate-limited CDN) won't answer. */
+    fun posterFor(id: String) = id.takeIf { it.startsWith("tt") }?.let { "https://images.metahub.space/poster/medium/${it.substringBefore(':')}/img" }
 
     /**
      * Shows [url] in [into]; [done] runs once it's showing (right away when cached), for fading it in. When [url] is

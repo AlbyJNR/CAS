@@ -15,6 +15,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.7.3
+
+- **Posters that would not load** now come from a second source, and are tried again after a moment, before the title's name stands in.
+- **Rows grow earlier and further.** A row starts with 12 titles and asks for the next 24 as soon as you enter it, so moving right rarely waits on the add-on.
+
 ## 1.7.2
 
 - **Clearer focus.** A button or chip under the remote turns white with dark words. Rows under the remote are brighter.
