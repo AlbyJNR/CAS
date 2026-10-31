@@ -227,7 +227,9 @@ class MainActivity : Screen() {
         val stoppedAt: Long? = null,
         val addedAt: String? = null,
         val finished: Boolean = false,
+        val newEpisodeMark: Boolean = false, // Stremio says a new episode is out (Library.hasNewEpisode)
     ) {
+        var newEpisode = newEpisodeMark // ...and the episode aired recently, once its details confirm it
         var filled = false
         var settled = false // its details are in (or failed): what it has now is all it will get
         var warming = false
@@ -409,8 +411,9 @@ class MainActivity : Screen() {
                 val kept = sources.map { (c, _) -> (c.addon.savedCatalog(c, picked) ?: return@forEachIndexed) to true }
                 answers.putIfAbsent(key, kept)
                 if (i < 2) kept.flatMap { it.first }.take(FIRST).forEach { Images.prefetch(it.poster ?: it.background, (dp(CARD_W) * CARD_GROW).toInt()) }
-                // The first title's full-screen art too, so the page opens on its own picture, not the last page's.
-                if (i == 0) kept.firstOrNull()?.first?.firstOrNull()?.background?.let { Images.prefetch(it, artW, look = shaded) }
+                // The first titles' details, full-screen art and logo too, so the page opens on its own picture and the
+                // first moves along its top row are instant, not on the last page's picture with a wait.
+                if (i == 0) kept.firstOrNull()?.first?.take(WARM_FIRST)?.forEach { m -> main.post { if (!isDestroyed) warm(metaItem(m)) } }
             }
         }
     }) {}
@@ -695,7 +698,7 @@ class MainActivity : Screen() {
             art.alpha = 0f
             Images.load(url, art, artW, urgent = true, look = shaded, failed = ready) {
                 // Once the new art covers it, the old one lets go: otherwise the GPU paints a hidden full screen every frame.
-                art.animate().alpha(1f).setDuration(if (artBack.drawable == null) 800 else 600).withEndAction {
+                art.animate().alpha(1f).setDuration(if (artBack.drawable == null) 600 else 380).withEndAction {
                     artBack.setImageDrawable(null)
                     art.animate().scaleX(1.03f).scaleY(1.03f).setDuration(20_000).start()
                 }.start()
@@ -909,7 +912,7 @@ class MainActivity : Screen() {
             else meta?.runtime
         // A show in progress describes its next episode, so the line names that episode rather than the show.
         val code = item.left?.split(DOT)?.firstOrNull { it.startsWith("S") && " E" in it }
-        heroFacts.text = (if (code != null) listOfNotNull(code, episode(item)?.title?.takeIf { it.isNotEmpty() })
+        heroFacts.text = (if (code != null) listOfNotNull(if (item.newEpisode) "New episode" else null, code, episode(item)?.title?.takeIf { it.isNotEmpty() })
             else listOfNotNull(year, genre, length)).joinToString(DOT)
         val rating = meta?.rating ?: item.facts.firstOrNull { it.startsWith("IMDb") }?.removePrefix("IMDb ")
         heroRating.visibility = if (rating.isNullOrBlank()) View.GONE else View.VISIBLE
@@ -1757,6 +1760,15 @@ class MainActivity : Screen() {
             private val shade = View(context).apply { setBackgroundColor(Color.BLACK); alpha = 0f }
             // On every card in progress, as Netflix does: comparing how far along titles are is the point of the row.
             private val progress = item.progress.takeIf { it > 0 }?.let { progressBar(it) }
+            private val newBadge = caps("New", BASE).apply {
+                textSize = 9f
+                includeFontPadding = false
+                background = rounded(TEXT, 5)
+                setPadding(dp(6), dp(3), dp(6), dp(3))
+                visibility = View.GONE
+            }
+
+            fun showNew() { newBadge.visibility = if (wide && item.newEpisode) View.VISIBLE else View.GONE }
 
             init {
                 outlineProvider = object : android.view.ViewOutlineProvider() {
@@ -1777,6 +1789,9 @@ class MainActivity : Screen() {
                     background = rounded(0x99000000.toInt(), 8)
                     setPadding(dp(8), dp(3), dp(8), dp(4))
                 }, LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(10), dp(10), 0) })
+                // A new episode: a small white mark in the corner, the one bright badge in the row, so it reads as news.
+                if (wide) face.addView(newBadge, LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(10), dp(10), 0, 0) })
+                showNew()
                 addView(face, LayoutParams(-1, -1))
                 // A white bar inset and rounded inside the card's dark foot, so it reads as a bar and not a cropped edge.
                 if (progress != null) addView(progress.apply { clipToOutline = true },
@@ -1879,6 +1894,13 @@ class MainActivity : Screen() {
     }
 
     private fun applyMeta(item: Item, m: Meta) {
+        // Stremio's new-episode mark stands only while the episode is news: aired within the last month.
+        if (item.newEpisodeMark) {
+            val aired = m.videos.firstOrNull { it.id == item.videoId }?.released?.take(10)
+            val recent = aired?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+                ?.let { !it.isAfter(java.time.LocalDate.now()) && !it.isBefore(java.time.LocalDate.now().minusDays(NEW_EPISODE_DAYS)) } ?: true
+            if (item.newEpisode != recent) { item.newEpisode = recent; rows.forEach { r -> r.cards.filter { it.item === item }.forEach { it.showNew() } } }
+        }
         if (item.art == null) item.art = m.background
         if (item.logo == null) item.logo = m.logo
         if (item.about.isEmpty()) item.about = m.description ?: ""
@@ -1920,6 +1942,7 @@ class MainActivity : Screen() {
             item.getString("_id"), item.optString("type"), item.optString("name"), item.text("poster"),
             null, Images.logoFor(item.getString("_id")), "", emptyList(), videoId, progress,
             resume = progress > 0, left = listOfNotNull(episode, left).joinToString(DOT).ifEmpty { null }, stoppedAt = offset,
+            newEpisodeMark = Library.hasNewEpisode(item),
             addedAt = item.text("_ctime"), finished = libraryFinished(item),
         )
     }
@@ -2080,6 +2103,8 @@ class MainActivity : Screen() {
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)
         const val ADDON_RECHECK = 5 * 60_000L // ms between asking Stremio for the add-on list again on coming back to the front
+        const val NEW_EPISODE_DAYS = 30L // how long a new episode counts as news on Home
+        const val WARM_FIRST = 3 // titles at the top of Shows and Movies readied (details, art, logo) while Home is open
         const val DIM_AFTER = 10_000L
         const val GENRE_ROWS = 6 // genre rows (and chips) at most on Shows and Movies
         const val CATALOG_WAIT = 6_000

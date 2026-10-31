@@ -15,6 +15,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.8.0
+
+- **New episodes come first.** A series with a new episode out moves to the front of Continue, with a small **NEW** mark on its card, and the title line says **New episode**. The mark stays for a month after the episode airs.
+- **TV and Movies open on their own picture.** Their first titles' art is readied while you are on Home, so the switch no longer waits for a download, and art changes fade a little faster.
+
 ## 1.7.4
 
 - **Title page buttons in two clear lines.** Play, Trailer, Preview and Recap on one line at one height; the small round controls beneath.
