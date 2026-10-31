@@ -1105,7 +1105,7 @@ class MainActivity : Screen() {
                     // The viewer's own lists, each a row under Continue, newest additions first.
                     Lists.all(this).filter { it.items.isNotEmpty() }.forEach { l ->
                         val listItems = l.items.map { e -> Item(e.id, e.type, e.name, e.poster, null, Images.logoFor(e.id), "", emptyList(), null, 0f, resume = false, left = null) }
-                        slot.addView(row(l.name, listItems.take(START), later(listItems)).view)
+                        slot.addView(row(l.name, listItems.take(START), later(listItems), listId = l.id).view)
                     }
                     if (items.isEmpty() && Lists.all(this).any { it.items.isNotEmpty() }) homeEmptyNote?.visibility = View.GONE
                     // New episodes of the series in My List, looked for behind the row; the row is drawn again if any turned up.
@@ -1499,13 +1499,21 @@ class MainActivity : Screen() {
 
     /** Hold OK on any card: what the row offers for the title, then the viewer's own lists. */
     private fun holdMenu(item: Item) {
-        val own = when {
+        // Held in one of the viewer's own rows: that list can be edited from here, not only in Settings › Lists.
+        val inList = rows.firstOrNull { r -> r.listId != null && r.cards.any { it.item === item } }?.listId?.let { id -> Lists.all(this).firstOrNull { it.id == id } }
+        val redraw = { refreshLibrary?.invoke() ?: Unit }
+        val listOwn = inList?.let { l -> listOf(
+            "Remove from ${l.name}" to { Lists.toggle(this, l.id, Lists.Entry(item.id, item.type, item.name, item.poster)); redraw() },
+            "Rename ${l.name}…" to { askName("Rename ${l.name}", l.name) { name -> Lists.rename(this, l.id, name); redraw() } },
+            "Delete ${l.name}…" to { choose("Delete ${l.name}?", listOf("Keep", "Delete"), "The titles stay in your library; only the list goes.") { if (it == 1) { Lists.remove(this, l.id); redraw() } } },
+        ) } ?: emptyList()
+        val own = listOwn + when {
             page == Page.LIBRARY -> listOf("Remove from My List" to { libraryEdit(item, 0) }) +
                 (if (item.finished) emptyList() else listOf("Mark as watched" to { libraryEdit(item, 1) }))
             item.resume && page == Page.HOME -> listOf("Choose a source" to { play(item, pick = true) }, "Remove from Continue Watching" to { hideFromContinue(item) })
             else -> emptyList()
         }
-        listsMenu(Lists.Entry(item.id, item.type, item.name, item.poster), own) { if (page == Page.HOME) refreshLibrary?.invoke() }
+        listsMenu(Lists.Entry(item.id, item.type, item.name, item.poster), own, skip = inList?.id) { if (page == Page.HOME) refreshLibrary?.invoke() }
     }
 
     private fun libraryEdit(item: Item, selected: Int) {
@@ -1553,7 +1561,7 @@ class MainActivity : Screen() {
     private fun later(all: List<Item>): ((Int) -> List<Item>)? =
         if (all.size <= START) null else { from -> all.drop(from).take(PAGE) }
 
-    private fun row(title: String, items: List<Item>, more: ((Int) -> List<Item>)? = null, wide: Boolean = false, grid: Boolean = false): Row = Row(title, items, more, wide, grid).also {
+    private fun row(title: String, items: List<Item>, more: ((Int) -> List<Item>)? = null, wide: Boolean = false, grid: Boolean = false, listId: String? = null): Row = Row(title, items, more, wide, grid, listId).also {
         rows += it
         main.post(::updateImages)
         if (!focusedSomething && mode == Mode.BROWSE) {
@@ -1610,7 +1618,7 @@ class MainActivity : Screen() {
      * (Continue Watching) shows 16:9 art with the name, time left and progress on the card, two poster columns wide, and
      * ends on the same foot line as the poster rows.
      */
-    private inner class Row(val title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?, val wide: Boolean = false, val grid: Boolean = false) {
+    private inner class Row(val title: String, first: List<Item>, private var more: ((Int) -> List<Item>)?, val wide: Boolean = false, val grid: Boolean = false, val listId: String? = null) {
         val cardW = if (grid) LIST_W else if (wide) WIDE_W else CARD_W
         val cardH = if (grid) LIST_H else if (wide) WIDE_H else CARD_H
         val items = first.toMutableList()

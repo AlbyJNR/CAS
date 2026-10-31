@@ -1048,8 +1048,8 @@ abstract class Screen : Activity() {
      * Hold OK on a title: its place in the viewer's own lists (Lists). One row per list, "Add to" or "Remove from";
      * with no list yet, an offer to make one. [before] are the title's other hold options; [changed] runs after an edit.
      */
-    protected fun listsMenu(entry: Lists.Entry, before: List<Pair<String, () -> Unit>> = emptyList(), changed: () -> Unit = {}) {
-        val lists = Lists.all(this)
+    protected fun listsMenu(entry: Lists.Entry, before: List<Pair<String, () -> Unit>> = emptyList(), skip: String? = null, changed: () -> Unit = {}) {
+        val lists = Lists.all(this).filterNot { it.id == skip } // the row held in offers its own entries in [before]
         val options = before.map { it.first } +
             lists.map { l -> if (l.items.any { it.id == entry.id }) "Remove from ${l.name}" else "Add to ${l.name}" } +
             "Add to a new list…" // always there: a second or third list starts from the title too, not only in Settings

@@ -15,6 +15,16 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.11.0
+
+- **Clear dialogue.** Turn on **Settings → Picture & sound → Clear dialogue** to lift voices above music and effects on TV speakers. Also in the player under **Audio & subtitles**.
+- **Tick episodes.** Hold OK on an episode in the guide: **Mark as watched**, **Mark as unwatched** or **Mark previous episodes watched**. Hold OK on a season to mark all of it. The ticks sync to Stremio and clear the **NEW** mark on Home.
+- **Air dates.** An episode that has not aired shows **Airs** and its date, and does not play.
+- **Content rating.** The age rating is beside the year on the title page. Turn it off in **Settings → Title page**.
+- **Blur unwatched episodes.** Turn on **Settings → Title page → Blur unwatched episodes** to blur the pictures of episodes you have not watched.
+- **What is playing.** Open the player controls to see the resolution, Dolby Vision or HDR, the sound format, the audio language, the subtitles and the debrid service under the title.
+- **Lists from Home.** Hold OK on a title in one of your lists to remove it, or to rename or delete the list. Lists are also in **Settings → Lists**.
+
 ## 1.10.0
 
 - **Continue is in the order you watched.** The title you played last is first. Before, a series with a next episode queued went in front of it.
