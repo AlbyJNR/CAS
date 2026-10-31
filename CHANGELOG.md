@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.9.2
+
+- **A new list from any title.** Hold OK on a title: the menu always ends with **Add to a new list…**, also when lists exist already.
+
 ## 1.9.1
 
 - **Lists sit under Continue.** In 1.9.0 a list row was drawn on top of the Continue row. Each list is now its own row below.

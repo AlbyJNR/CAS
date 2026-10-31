@@ -1052,7 +1052,7 @@ abstract class Screen : Activity() {
         val lists = Lists.all(this)
         val options = before.map { it.first } +
             lists.map { l -> if (l.items.any { it.id == entry.id }) "Remove from ${l.name}" else "Add to ${l.name}" } +
-            (if (lists.isEmpty()) listOf("Add to a new list…") else emptyList())
+            "Add to a new list…" // always there: a second or third list starts from the title too, not only in Settings
         choose(entry.name, options) { i ->
             when {
                 i < before.size -> before[i].second()
