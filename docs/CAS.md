@@ -48,3 +48,5 @@ Agreed with Alan to keep, in his order of interest; 2 and 5 were taken on first.
 5. **Idle cinema**: the screensaver already in MainActivity (Continue Watching art, a clock), as a setting. *(done in 1.6.0)*
 6. **Kids profile**: a profile flagged Kids shows family catalogs only, hides Settings, and leaves only with the PIN. About a day.
 7. **What you'll get**: a quiet "4K · Dolby Vision · Atmos" line on the title page for what Play would pick, once sources are known.
+8. **New episode first** on Home with a NEW mark. *(done in 1.8.0)*
+9. **Background picture lag** switching TV ↔ Movies: the next pages' first titles are now warmed fully while on Home. *(done in 1.8.0)*
