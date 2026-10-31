@@ -1259,7 +1259,10 @@ class PlayerActivity : Screen() {
         }) { r ->
             subFile = r.getOrNull()
             selectAddonSub = true
+            // Attaching the file reloads the source: a title the viewer paused meanwhile stays paused (upstream fix).
+            val playing = player.playWhenReady
             load(position())
+            player.playWhenReady = playing
         }
     }
 

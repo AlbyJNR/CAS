@@ -122,7 +122,12 @@ abstract class Screen : Activity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        Crash.install(this)
         if (Http.saved != null) return
+        // The first screen after a crash says so, once; the trace waits in Settings › About.
+        if (Crash.unseen(this)) main.postDelayed({
+            if (!isFinishing) android.widget.Toast.makeText(this, "CAS closed unexpectedly last time. Settings › About › Last crash has the details.", android.widget.Toast.LENGTH_LONG).show()
+        }, 2_500)
         // Pictures load many at a time from a few hosts: keep enough connections open to reuse (Android keeps 5).
         System.setProperty("http.maxConnections", "16")
         // Disk cache for pictures (and anything else whose server allows caching), and last time's answers.

@@ -46,6 +46,9 @@ class ProfilesActivity : Screen() {
             intent.getStringExtra("imdb")?.let { id -> main.postDelayed({
                 showTrailerClip("IMDb trailer test", { imdbTrailerStreams(id) }) { android.util.Log.w("CAS", "no IMDb trailer for $id") }
             }, 1500) }
+        // `--ez crash true` throws after a moment, to check the crash record and the word on the next start.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && intent.getBooleanExtra("crash", false))
+            main.postDelayed({ throw IllegalStateException("CAS crash test") }, 1500)
         // Likewise `--es preview <direct video url>` opens the preview box on that file.
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
             intent.getStringExtra("preview")?.let { url -> main.postDelayed({

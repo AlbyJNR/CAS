@@ -468,6 +468,11 @@ class SettingsActivity : Screen() {
                     choose("CAS", listOf("OK"), "A TV interface for your Stremio account.") {}
                 }
                 actionRow("What's new", "Version " + Updates.mine(this), "The changes in the version on this TV.") { whatsNew() }
+                Crash.last(this)?.let { trace ->
+                    actionRow("Last crash", Crash.lastWhen(this) ?: "", "What went wrong the last time CAS closed on its own. Photograph it to report it.") {
+                        choose("Last crash", listOf("Keep", "Clear"), trace.take(1_400)) { if (it == 1) { Crash.clear(this); showGroup(Group.ABOUT) } }
+                    }
+                }
                 var found: Updates.Release? = null
                 val value = actionRow("Updates", "Checking…", "New versions come from CAS's releases on GitHub.") {
                     found?.let(::installUpdate) ?: run { latestChecked = null; showGroup(Group.ABOUT) }

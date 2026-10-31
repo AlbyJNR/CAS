@@ -15,6 +15,12 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.7.1
+
+- **Last crash.** When CAS closes on its own, the next start says so, and **Settings → About → Last crash** shows what went wrong.
+- **Subtitles that arrive late** no longer start a paused title or pause a playing one.
+- Every build now starts on a TV emulator before it is published.
+
 ## 1.7.0
 
 - **Trailers in the box, on every TV.** Select **Trailer** and the trailer plays in the box over the page, with a picture, on Fire TV too. CAS now plays the trailer file itself, from IMDb or from your add-on, instead of a YouTube page. A title with only a YouTube trailer still opens the way **Settings → Title page → Trailers play** says.
