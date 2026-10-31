@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.9.1
+
+- **Lists sit under Continue.** In 1.9.0 a list row was drawn on top of the Continue row. Each list is now its own row below.
+
 ## 1.9.0
 
 - **Your own lists on Home.** Make a list in **Settings → Lists** (Kids, AC, Film night). Hold OK on any title on Home, TV, Movies or Library, or on the + button of a title page, to add it. Each list is a row on Home under Continue. Lists stay on this TV, one set for each profile.

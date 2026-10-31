@@ -124,7 +124,7 @@ class MainActivity : Screen() {
     private var jumpTo: String? = null // a chip's row that wasn't made yet when OK was pressed
     private var listFilter = ListFilter.ALL
     private var listSort = ListSort.RECENT
-    private var librarySlot: FrameLayout? = null
+    private var librarySlot: LinearLayout? = null
     private var listTotal = 0
     private var listRows = 0
     private var listBuild = 0
@@ -1429,7 +1429,8 @@ class MainActivity : Screen() {
         chrome()
     }
 
-    private fun slot() = FrameLayout(this).also { content.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+    /** A page's place for rows that come and go (the library, the viewer's lists): they stack, one under the other. */
+    private fun slot() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also { content.addView(it, LinearLayout.LayoutParams(-1, -2)) }
 
     private fun redrawLibrary() {
         val slot = librarySlot ?: return
@@ -1442,7 +1443,7 @@ class MainActivity : Screen() {
         else firstRow()?.items?.firstOrNull()?.let { fill(it); showHero(it) }
     }
 
-    private fun showLibrary(slot: FrameLayout) {
+    private fun showLibrary(slot: LinearLayout) {
         val all = library.filter { !it.optBoolean("removed") && it.optString("type") in listOf("movie", "series") }
             .filter { listFilter == ListFilter.ALL || it.optString("type") == if (listFilter == ListFilter.MOVIES) "movie" else "series" }
         val ordered = when (listSort) {
