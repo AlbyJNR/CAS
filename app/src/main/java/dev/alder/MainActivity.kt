@@ -1079,7 +1079,7 @@ class MainActivity : Screen() {
                 val cw = Library.continueWatching(list)
                 val what = (if (p == Page.HOME) cw else list).joinToString {
                     it.optString("_id") + it.optString("_mtime") + it.optBoolean("removed") + it.optJSONObject("state")?.optLong("timeOffset")
-                }
+                } + (if (p == Page.HOME) Lists.signature(this) else "")
                 // Saved copies wait once the remote is in use; Stremio's own answer always goes in (focus stays on
                 // its title below), or a stale disk copy could hide a show for the whole visit.
                 if (what == shown || (shown != null && touched && !force)) return
@@ -1099,6 +1099,12 @@ class MainActivity : Screen() {
                         android.util.Log.d("CAS", "page ${p.label}: Continue in ${android.os.SystemClock.uptimeMillis() - opened} ms")
                         startCinema(items.take(CINEMA_MAX))
                     }
+                    // The viewer's own lists, each a row under Continue, newest additions first.
+                    Lists.all(this).filter { it.items.isNotEmpty() }.forEach { l ->
+                        val listItems = l.items.map { e -> Item(e.id, e.type, e.name, e.poster, null, Images.logoFor(e.id), "", emptyList(), null, 0f, resume = false, left = null) }
+                        slot.addView(row(l.name, listItems.take(START), later(listItems)).view)
+                    }
+                    if (items.isEmpty() && Lists.all(this).any { it.items.isNotEmpty() }) homeEmptyNote?.visibility = View.GONE
                 } else {
                     showLibrary(slot)
                 }
@@ -1478,10 +1484,20 @@ class MainActivity : Screen() {
         return state.optInt("timesWatched") > 0 && state.optLong("timeOffset") == 0L
     }
 
-    private fun listMenu(item: Item) {
+    /** Hold OK on any card: what the row offers for the title, then the viewer's own lists. */
+    private fun holdMenu(item: Item) {
+        val own = when {
+            page == Page.LIBRARY -> listOf("Remove from My List" to { libraryEdit(item, 0) }) +
+                (if (item.finished) emptyList() else listOf("Mark as watched" to { libraryEdit(item, 1) }))
+            item.resume && page == Page.HOME -> listOf("Choose a source" to { play(item, pick = true) }, "Remove from Continue Watching" to { hideFromContinue(item) })
+            else -> emptyList()
+        }
+        listsMenu(Lists.Entry(item.id, item.type, item.name, item.poster), own) { if (page == Page.HOME) refreshLibrary?.invoke() }
+    }
+
+    private fun libraryEdit(item: Item, selected: Int) {
         val original = library.firstOrNull { it.optString("_id") == item.id } ?: return
-        val options = if (item.finished) listOf("Remove from My List") else listOf("Remove from My List", "Mark as watched")
-        choose(item.name, options) { selected ->
+        run {
             val updated = JSONObject(original.toString())
             if (selected == 0) Library.setInList(updated, false)
             else Library.markTitleWatched(updated, metas[item.id]?.videos.orEmpty())
@@ -1498,11 +1514,10 @@ class MainActivity : Screen() {
         }
     }
 
-    /** Hold OK on a Continue Watching title: choose a source yourself, or take the title off the row. */
-    private fun continueMenu(item: Item) {
-        choose(item.name, listOf("Choose a source", "Remove from Continue Watching")) { selected ->
-            if (selected == 0) return@choose play(item, pick = true)
-            val original = library.firstOrNull { it.optString("_id") == item.id } ?: return@choose
+    /** Hold OK on a Continue Watching title, "Remove from Continue Watching": the title off the row, remembered in Settings. */
+    private fun hideFromContinue(item: Item) {
+        run {
+            val original = library.firstOrNull { it.optString("_id") == item.id } ?: return
             val updated = JSONObject(original.toString())
             val offset = Library.hideFromContinueWatching(updated)
             background({ Stremio.saveLibrary(profile.authKey, listOf(updated)) }) { result ->
@@ -1814,8 +1829,8 @@ class MainActivity : Screen() {
                     } else main.post { if (!view.hasFocus()) pendingUpdate?.let { pendingUpdate = null; it() } }
                 }
                 setOnClickListener { openDetails(item) }
-                if (grid) setOnLongClickListener { listMenu(item); true }
-                else if (item.resume) setOnLongClickListener { continueMenu(item); true }
+                // Hold OK: the title's own options first (My List, Continue Watching), then the viewer's lists.
+                setOnLongClickListener { holdMenu(item); true }
             }
 
             private var showing: Boolean? = null

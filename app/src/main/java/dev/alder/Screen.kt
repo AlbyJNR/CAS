@@ -1004,6 +1004,64 @@ abstract class Screen : Activity() {
         rows.getOrNull(focus)?.requestFocus()
     }
 
+    /** A short name typed with the TV's keyboard: a list's name. [done] gets the trimmed words, never blank. */
+    protected fun askName(title: String, initial: String = "", hint: String = "Name", done: (String) -> Unit) {
+        if (isFinishing || isDestroyed) return
+        val dialog = android.app.Dialog(this).apply { requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) }
+        val field = android.widget.EditText(this).apply {
+            this.hint = hint
+            textSize = BODY
+            setTextColor(TEXT)
+            setHintTextColor(TEXT_3)
+            setPadding(dp(14), 0, dp(14), 0)
+            background = glass(8)
+            setOnFocusChangeListener { v, has -> v.background = glass(8, has) }
+            setSingleLine()
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setText(initial)
+            setSelection(initial.length)
+        }
+        fun finish() {
+            val words = field.text.toString().trim()
+            if (words.isEmpty()) return
+            dialog.dismiss()
+            done(words)
+        }
+        field.setOnEditorActionListener { _, _, _ -> finish(); true }
+        val ok = pill("Done").apply { setOnClickListener { finish() } }
+        dialog.setContentView(column(Gravity.START,
+            text(title, BODY, bold = true),
+            field.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(12) } },
+            ok.marginTop(14),
+        ).apply { setPadding(dp(24), dp(20), dp(24), dp(20)); background = glassOver(this, 16) })
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            setLayout(dp(360), -2)
+            setDimAmount(0.6f)
+            setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        }
+        dialog.show()
+        field.requestFocus()
+    }
+
+    /**
+     * Hold OK on a title: its place in the viewer's own lists (Lists). One row per list, "Add to" or "Remove from";
+     * with no list yet, an offer to make one. [before] are the title's other hold options; [changed] runs after an edit.
+     */
+    protected fun listsMenu(entry: Lists.Entry, before: List<Pair<String, () -> Unit>> = emptyList(), changed: () -> Unit = {}) {
+        val lists = Lists.all(this)
+        val options = before.map { it.first } +
+            lists.map { l -> if (l.items.any { it.id == entry.id }) "Remove from ${l.name}" else "Add to ${l.name}" } +
+            (if (lists.isEmpty()) listOf("Add to a new list…") else emptyList())
+        choose(entry.name, options) { i ->
+            when {
+                i < before.size -> before[i].second()
+                i - before.size < lists.size -> { Lists.toggle(this, lists[i - before.size].id, entry); changed() }
+                else -> askName("Name the list", hint = "Kids, AC, Film night…") { name -> Lists.toggle(this, Lists.create(this, name).id, entry); changed() }
+            }
+        }
+    }
+
     /**
      * "What's new" for [version]: its entries from CHANGELOG.md (packaged with the app), the first [SHORT_LIST] on glass
      * with Got it, and See all changes to open the rest in a taller panel that the remote steps through line by line.

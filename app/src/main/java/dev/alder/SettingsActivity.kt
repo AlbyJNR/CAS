@@ -150,6 +150,7 @@ class SettingsActivity : Screen() {
         PICTURE("Picture & sound", R.drawable.ic_tv),
         SUBTITLES("Subtitles", R.drawable.ic_subtitles),
         TITLE("Title page", R.drawable.ic_article),
+        LISTS("Lists", R.drawable.ic_list),
         ADDONS("Add-ons", R.drawable.ic_layers),
         PROFILE("Profile", R.drawable.ic_person),
         LANGUAGE("Language", R.drawable.ic_language),
@@ -364,6 +365,7 @@ class SettingsActivity : Screen() {
             Group.PICTURE -> "Choose the picture and sound this TV can play."
             Group.SUBTITLES -> "Set how subtitles start and appear."
             Group.TITLE -> "Choose what a title's page shows."
+            Group.LISTS -> "Your own rows on Home, under Continue. Hold OK on any title to add it to one."
             Group.ADDONS -> "Manage the add-ons connected to this profile."
             Group.PROFILE -> "Profile choices stay with the person watching."
             Group.LANGUAGE -> "CAS follows the TV's language."
@@ -408,6 +410,22 @@ class SettingsActivity : Screen() {
                 subtitleLooks.forEach(::choiceRow)
             }
             Group.TITLE -> titlePage.forEach(::choiceRow)
+            Group.LISTS -> {
+                Lists.all(this).forEach { l ->
+                    val count = l.items.size
+                    actionRow(l.name, if (count == 1) "1 title" else "$count titles", "Hold OK on a title on Home, TV, Movies or Library to add it here.") {
+                        choose(l.name, listOf("Rename", "Remove list", "Keep")) { picked ->
+                            when (picked) {
+                                0 -> askName("Rename ${l.name}", l.name) { name -> Lists.rename(this, l.id, name); showGroup(Group.LISTS) }
+                                1 -> { Lists.remove(this, l.id); showGroup(Group.LISTS) }
+                            }
+                        }
+                    }
+                }
+                actionRow("New list", "", "A name of your own: a person, a mood, a night of the week.") {
+                    askName("Name the list", hint = "Kids, AC, Film night…") { name -> Lists.create(this, name); showGroup(Group.LISTS) }
+                }
+            }
             Group.ADDONS -> {
                 actionRow("My add-ons", "…", "Add by URL, reorder or remove this profile's add-ons.") {
                     if (authKey != null) startActivity(Intent(this, AddonsActivity::class.java))

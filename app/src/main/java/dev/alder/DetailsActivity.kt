@@ -257,7 +257,10 @@ class DetailsActivity : Screen() {
             openSources(target?.first ?: metaId, startOver = true)
         } else null
         infoButton = iconButton("ⓘ", "More information") { showInfo() }
-        listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }
+        listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }.apply {
+            // Held: the viewer's own lists (Kids, AC…), the rows under Continue on Home.
+            setOnLongClickListener { listsMenu(Lists.Entry(metaId, type, m.name, m.poster ?: poster)); true }
+        }
         // A trailer file (IMDb's, or the add-on's own) plays in the box on every TV; a title with only a YouTube id
         // takes the YouTube route Settings chose. Shown whenever IMDb could have one: every IMDb-numbered title.
         val ytId = m.trailers.firstOrNull()

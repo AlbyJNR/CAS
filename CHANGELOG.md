@@ -15,6 +15,10 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.9.0
+
+- **Your own lists on Home.** Make a list in **Settings → Lists** (Kids, AC, Film night). Hold OK on any title on Home, TV, Movies or Library, or on the + button of a title page, to add it. Each list is a row on Home under Continue. Lists stay on this TV, one set for each profile.
+
 ## 1.8.0
 
 - **New episodes come first.** A series with a new episode out moves to the front of Continue, with a small **NEW** mark on its card, and the title line says **New episode**. The mark stays for a month after the episode airs.
