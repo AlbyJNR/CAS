@@ -15,6 +15,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.10.0
+
+- **Continue is in the order you watched.** The title you played last is first. Before, a series with a next episode queued went in front of it.
+- **New episodes bring a series back.** A series in My List with an episode out since you last watched it is in Continue again, placed by the day the episode aired, with a **NEW** mark and the count. CAS reads the episode list, as Stremio does, so a series you are up to date with comes back when its next episode airs.
+
 ## 1.9.2
 
 - **A new list from any title.** Hold OK on a title: the menu always ends with **Add to a new list…**, also when lists exist already.

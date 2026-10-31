@@ -16,17 +16,17 @@ object Library {
     private const val WATCHED = 0.7 // stremio-core WATCHED_THRESHOLD_COEF: watched this much, it counts as seen
     private const val CREDITS = 0.9 // CREDITS_THRESHOLD_COEF: stopped past this, it's finished
 
-    fun continueWatching(items: List<JSONObject>): List<JSONObject> = items
-        .filter { it.optString("type") != "other" && (!it.optBoolean("removed") || it.optBoolean("temp")) && it.state.optLong("timeOffset") > 0 }
-        // A series with a new episode out comes to the front: that's the news in the row, the rest is where you left off.
-        .sortedWith(compareByDescending<JSONObject> { hasNewEpisode(it) }.thenByDescending { it.state.text("lastWatched") })
-
     /**
-     * Stremio's own mark for "a new episode is out" on a series you follow: it points the item at that episode with
-     * a time offset of 1 ms, so it stays in Continue Watching without a real position. The episode's air date is
-     * checked against the metadata when it arrives (an episode aired long ago isn't news).
+     * Continue Watching: what's in progress, plus the series in My List with a new episode out ([news], from
+     * [NewEpisodes]), each placed by its most recent moment: the last time it was watched, or the day its newest
+     * episode aired, whichever is later. So the film started tonight comes first, last night's new episode next.
      */
-    fun hasNewEpisode(item: JSONObject) = item.optString("type") == "series" && item.state.optLong("timeOffset") == 1L && item.state.text("video_id") != null
+    fun continueWatching(items: List<JSONObject>, news: Map<String, NewEpisodes.News> = emptyMap()): List<JSONObject> {
+        val inProgress = items.filter { it.optString("type") != "other" && (!it.optBoolean("removed") || it.optBoolean("temp")) && it.state.optLong("timeOffset") > 0 }
+        val going = inProgress.map { it.optString("_id") }.toSet()
+        val withNews = items.filter { it.optString("_id") in news && it.optString("_id") !in going && !it.optBoolean("removed") }
+        return (inProgress + withNews).sortedByDescending { maxOf(it.state.text("lastWatched") ?: "", news[it.optString("_id")]?.latest ?: "") }
+    }
 
     /** A title that isn't in the library yet: Stremio keeps those as temporary, hidden items. */
     fun newItem(id: String, type: String, name: String, poster: String?): JSONObject {

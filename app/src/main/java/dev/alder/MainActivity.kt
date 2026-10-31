@@ -227,9 +227,10 @@ class MainActivity : Screen() {
         val stoppedAt: Long? = null,
         val addedAt: String? = null,
         val finished: Boolean = false,
-        val newEpisodeMark: Boolean = false, // Stremio says a new episode is out (Library.hasNewEpisode)
+        newEpisodes: Int = 0, // new episodes out (NewEpisodes), for the mark on the card and the hero line
     ) {
-        var newEpisode = newEpisodeMark // ...and the episode aired recently, once its details confirm it
+        var newCount = newEpisodes
+        val newEpisode get() = newCount > 0
         var filled = false
         var settled = false // its details are in (or failed): what it has now is all it will get
         var warming = false
@@ -439,6 +440,7 @@ class MainActivity : Screen() {
     private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to CAS
 
     private var refreshLibrary: (() -> Unit)? = null // the open page's library rows (Home, Library), asked again
+    private var newsChecking = false // NewEpisodes.refresh is running for Home
     private var last: View? = null // where the remote last was in the rows
 
     override fun onResume() {
@@ -912,7 +914,7 @@ class MainActivity : Screen() {
             else meta?.runtime
         // A show in progress describes its next episode, so the line names that episode rather than the show.
         val code = item.left?.split(DOT)?.firstOrNull { it.startsWith("S") && " E" in it }
-        heroFacts.text = (if (code != null) listOfNotNull(if (item.newEpisode) "New episode" else null, code, episode(item)?.title?.takeIf { it.isNotEmpty() })
+        heroFacts.text = (if (code != null) listOfNotNull(when { item.newCount > 1 -> "${item.newCount} new episodes"; item.newCount == 1 -> "New episode"; else -> null }, code, episode(item)?.title?.takeIf { it.isNotEmpty() })
             else listOfNotNull(year, genre, length)).joinToString(DOT)
         val rating = meta?.rating ?: item.facts.firstOrNull { it.startsWith("IMDb") }?.removePrefix("IMDb ")
         heroRating.visibility = if (rating.isNullOrBlank()) View.GONE else View.VISIBLE
@@ -1076,9 +1078,10 @@ class MainActivity : Screen() {
             var shown: String? = null // what's on screen, to tell whether the fresh library changed anything
             var fresh = false
             fun show(list: List<JSONObject>, force: Boolean = false) {
-                val cw = Library.continueWatching(list)
+                val news = if (p == Page.HOME) NewEpisodes.all(this, profile.id, list) else emptyMap()
+                val cw = Library.continueWatching(list, news)
                 val what = (if (p == Page.HOME) cw else list).joinToString {
-                    it.optString("_id") + it.optString("_mtime") + it.optBoolean("removed") + it.optJSONObject("state")?.optLong("timeOffset")
+                    it.optString("_id") + it.optString("_mtime") + it.optBoolean("removed") + it.optJSONObject("state")?.optLong("timeOffset") + (news[it.optString("_id")]?.count ?: 0)
                 } + (if (p == Page.HOME) Lists.signature(this) else "")
                 // Saved copies wait once the remote is in use; Stremio's own answer always goes in (focus stays on
                 // its title below), or a stale disk copy could hide a show for the whole visit.
@@ -1092,7 +1095,7 @@ class MainActivity : Screen() {
                 rows.filter { isInside(it.view, slot) }.forEach { r -> r.cards.forEach { it.unload() }; rows.remove(r) }
                 slot.removeAllViews()
                 if (p == Page.HOME) {
-                    val items = cw.map(::libraryItem)
+                    val items = cw.map { libraryItem(it, news[it.optString("_id")]) }
                     homeEmptyNote?.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
                     if (items.isNotEmpty()) {
                         slot.addView(row("Continue", items.take(START), later(items)).view)
@@ -1105,6 +1108,15 @@ class MainActivity : Screen() {
                         slot.addView(row(l.name, listItems.take(START), later(listItems)).view)
                     }
                     if (items.isEmpty() && Lists.all(this).any { it.items.isNotEmpty() }) homeEmptyNote?.visibility = View.GONE
+                    // New episodes of the series in My List, looked for behind the row; the row is drawn again if any turned up.
+                    if (!newsChecking) {
+                        newsChecking = true
+                        val me = profile
+                        background({ NewEpisodes.refresh(applicationContext, me.id, list) { t, id -> Stremio.addons(me.authKey).meta(t, id) } }) { r ->
+                            newsChecking = false
+                            if (r.getOrDefault(false) && g == generation && page == Page.HOME) show(library, force = true)
+                        }
+                    }
                 } else {
                     showLibrary(slot)
                 }
@@ -1784,7 +1796,10 @@ class MainActivity : Screen() {
                 visibility = View.GONE
             }
 
-            fun showNew() { newBadge.visibility = if (wide && item.newEpisode) View.VISIBLE else View.GONE }
+            fun showNew() {
+                newBadge.text = (if (item.newCount > 1) "${item.newCount} new" else "New").uppercase()
+                newBadge.visibility = if (wide && item.newEpisode) View.VISIBLE else View.GONE
+            }
 
             init {
                 outlineProvider = object : android.view.ViewOutlineProvider() {
@@ -1910,12 +1925,10 @@ class MainActivity : Screen() {
     }
 
     private fun applyMeta(item: Item, m: Meta) {
-        // Stremio's new-episode mark stands only while the episode is news: aired within the last month.
-        if (item.newEpisodeMark) {
-            val aired = m.videos.firstOrNull { it.id == item.videoId }?.released?.take(10)
-            val recent = aired?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
-                ?.let { !it.isAfter(java.time.LocalDate.now()) && !it.isBefore(java.time.LocalDate.now().minusDays(NEW_EPISODE_DAYS)) } ?: true
-            if (item.newEpisode != recent) { item.newEpisode = recent; rows.forEach { r -> r.cards.filter { it.item === item }.forEach { it.showNew() } } }
+        // A series in My List: its episode list says whether a new episode is out (the mark on its card follows).
+        if (item.type == "series") library.firstOrNull { it.optString("_id") == item.id && !it.optBoolean("removed") }?.let { raw ->
+            val n = NewEpisodes.record(this, profile.id, raw, m)?.count ?: 0
+            if (item.newCount != n) { item.newCount = n; rows.forEach { r -> r.cards.filter { it.item === item }.forEach { it.showNew() } } }
         }
         if (item.art == null) item.art = m.background
         if (item.logo == null) item.logo = m.logo
@@ -1944,11 +1957,12 @@ class MainActivity : Screen() {
         null, 0f, resume = false, left = null,
     )
 
-    private fun libraryItem(item: JSONObject): Item {
+    private fun libraryItem(item: JSONObject, news: NewEpisodes.News? = null): Item {
         val s = item.optJSONObject("state") ?: JSONObject()
-        val videoId = s.text("video_id")
         val duration = s.optLong("duration")
         val offset = s.optLong("timeOffset")
+        // A series back in Continue only for its new episode points at that episode; one in progress keeps its place.
+        val videoId = s.text("video_id")?.takeIf { offset > 0 } ?: news?.videoId ?: s.text("video_id")
         // "S1 E3" for an episode (ids look like tt123:1:3), and how much is left.
         val episode = videoId?.split(":")?.takeIf { it.size == 3 }?.let { "S${it[1]} E${it[2]}" }
         val mins = (duration - offset) / 60_000
@@ -1958,7 +1972,7 @@ class MainActivity : Screen() {
             item.getString("_id"), item.optString("type"), item.optString("name"), item.text("poster"),
             null, Images.logoFor(item.getString("_id")), "", emptyList(), videoId, progress,
             resume = progress > 0, left = listOfNotNull(episode, left).joinToString(DOT).ifEmpty { null }, stoppedAt = offset,
-            newEpisodeMark = Library.hasNewEpisode(item),
+            newEpisodes = news?.count ?: 0,
             addedAt = item.text("_ctime"), finished = libraryFinished(item),
         )
     }
@@ -2119,7 +2133,6 @@ class MainActivity : Screen() {
         const val CINEMA_MAX = 8
         const val IDLE = 5 * 60_000L // ms without a key before the cinema takes over (the TV's own screensaver: 10 min)
         const val ADDON_RECHECK = 5 * 60_000L // ms between asking Stremio for the add-on list again on coming back to the front
-        const val NEW_EPISODE_DAYS = 30L // how long a new episode counts as news on Home
         const val WARM_FIRST = 3 // titles at the top of Shows and Movies readied (details, art, logo) while Home is open
         const val DIM_AFTER = 10_000L
         const val GENRE_ROWS = 6 // genre rows (and chips) at most on Shows and Movies
