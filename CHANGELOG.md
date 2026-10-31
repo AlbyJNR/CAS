@@ -15,6 +15,12 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 
 ## Unreleased
 
+## 1.7.2
+
+- **Clearer focus.** A button or chip under the remote turns white with dark words. Rows under the remote are brighter.
+- **A bigger box.** Trailers and previews play in a box two thirds of the screen wide.
+- **Trailer, Preview and Recap on their own line** under Play, so a title with many controls shows all of them. Before, the Trailer button could be missing on a series.
+
 ## 1.7.1
 
 - **Last crash.** When CAS closes on its own, the next start says so, and **Settings → About → Last crash** shows what went wrong.

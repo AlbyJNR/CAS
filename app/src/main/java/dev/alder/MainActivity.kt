@@ -1297,7 +1297,7 @@ class MainActivity : Screen() {
         fun add(label: String, selected: Boolean, click: () -> Unit): TextView {
             val control = chip(label, selected).apply {
                 setOnFocusChangeListener { v, has ->
-                    v.background = glass(CHIP_H / 2, has)
+                    chipFocus(has)
                     if (has) lastListChip = this
                 }
                 setOnClickListener { click() }

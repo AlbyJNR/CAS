@@ -721,7 +721,13 @@ abstract class Screen : Activity() {
         minHeight = dp(CHIP_H)
         setPadding(dp(16), 0, dp(16), 0)
         background = glass(CHIP_H / 2)
-        setOnFocusChangeListener { v, has -> v.background = glass(CHIP_H / 2, has); v.grow(has, CHIP_GROW).start() }
+        setOnFocusChangeListener { v, has -> chipFocus(has); v.grow(has, CHIP_GROW).start() }
+    }
+
+    /** A chip under the remote turns white with dark words; at rest it's glass, its words full or dimmed by [select]. */
+    protected fun TextView.chipFocus(has: Boolean) {
+        background = if (has) rounded(TEXT, CHIP_H / 2) else glass(CHIP_H / 2)
+        setTextColor(if (has) BASE else if (text.startsWith("•")) TEXT else TEXT_2)
     }
 
     /** A [chip]'s open state: the tungsten dot and full-strength words. */
@@ -809,6 +815,20 @@ abstract class Screen : Activity() {
         indeterminateTintList = android.content.res.ColorStateList.valueOf(TUNGSTEN)
         max = 1000
         if (fraction != null) progress = (fraction * max).toInt()
+    }
+
+    /**
+     * A glass control's focus, as Apple TV does it: the face turns white and the word or glyph dark, with a little
+     * growth. A brighter glass alone was too easy to miss from the sofa.
+     */
+    protected fun TextView.lightFocus(radiusDp: Int, grow: Float = CHIP_GROW) {
+        isFocusable = true
+        background = glass(radiusDp)
+        setOnFocusChangeListener { v, has ->
+            v.background = if (has) rounded(TEXT, radiusDp) else glass(radiusDp)
+            setTextColor(if (has) BASE else TEXT)
+            v.grow(has, grow).start()
+        }
     }
 
     /** One list-row focus treatment across settings, episodes, sources and menus. */
@@ -1071,7 +1091,7 @@ abstract class Screen : Activity() {
         const val FOCUS_OUT_MS = 170L
         const val PRESS_DIP = 0.96f // OK held: the control's scale, relative to where focus left it
         // The trailer box.
-        const val TRAILER_W = 0.58f // share of the screen the box takes: a box, not a page
+        const val TRAILER_W = 0.68f // share of the screen the box takes: a box, not a page, but big enough to watch
         const val TRAILER_SCRIM = 0xCC08090B.toInt() // the art stays, dimmed, behind the box
         const val TRAILER_BLACK = 0xFA08090B.toInt() // Settings › Title page › Art behind the trailer: Off
         const val TRAILER_PROBE_MS = 7_000L
@@ -1126,7 +1146,7 @@ abstract class Screen : Activity() {
         const val GLASS_FOCUSED = 0x3DF5F5F7 // a lit face: with no rim, the fill alone carries focus
         const val GLASS_EDGE = 0x1FFFFFFF
         const val GLASS_HIGHLIGHT = 0x4DFFFFFF
-        const val ROW_FOCUSED = 0x29F5F5F7
+        const val ROW_FOCUSED = 0x38F5F5F7 // a list row under the remote: brighter than it was, still a row not a button
         const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
         private val pool = Executors.newFixedThreadPool(6)
     }

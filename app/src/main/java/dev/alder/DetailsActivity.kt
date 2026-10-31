@@ -131,6 +131,8 @@ class DetailsActivity : Screen() {
     // ---------- title and watch window ----------
 
     private var keepFocus: String? = null // the hero control the remote was on before a rebuild, by its words
+    private var actionRow1: View? = null // Play and the small controls
+    private var actionRow2: View? = null // Trailer, Preview, Recap: Down from Play lands here before the episodes
 
     private fun showHero(m: Meta?) {
         keepFocus = currentFocus?.takeIf { isInside(it, hero) }?.let { it.contentDescription?.toString() ?: (it as? TextView)?.text?.toString() }
@@ -258,7 +260,7 @@ class DetailsActivity : Screen() {
         // A trailer file (IMDb's, or the add-on's own) plays in the box on every TV; a title with only a YouTube id
         // takes the YouTube route Settings chose. Shown whenever IMDb could have one: every IMDb-numbered title.
         val ytId = m.trailers.firstOrNull()
-        val trailer = if (Settings.titlePage(this, SettingsActivity.TITLE_TRAILER) && (ytId != null || metaId.startsWith("tt")))
+        val trailer = if (Settings.titlePage(this, SettingsActivity.TITLE_TRAILER))
             glassButton("Trailer") {
                 showTrailerClip(m.name, { m.trailerFiles + imdbTrailerStreams(metaId) }) {
                     if (ytId != null) showTrailer(ytId, m.name)
@@ -269,16 +271,22 @@ class DetailsActivity : Screen() {
             glassButton("Preview") { preview(target?.first ?: metaId, m) } else null
         val recap = if (type == "series" && Settings.titlePage(this, SettingsActivity.TITLE_RECAP))
             glassButton("Recap") { openRecap(m, episode?.season ?: selectedSeason) } else null
-        stack.addView(LinearLayout(this).apply {
+        // Play and its small controls on one line; Trailer, Preview and Recap on a second, so none is ever squeezed
+        // out of a line the text block's width can't hold (a series with a resume point had seven controls).
+        actionRow1 = LinearLayout(this).apply {
             clipChildren = false
             addView(playButton, wrap().apply { marginEnd = dp(14) })
-            trailer?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
-            preview?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
-            recap?.let { addView(it, LinearLayout.LayoutParams(-2, dp(32)).apply { marginEnd = dp(8) }) }
             startOver?.let { addView(it, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }) }
             addView(listButton, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) })
             addView(infoButton)
-        }, wrap().apply { topMargin = dp(16) })
+        }
+        stack.addView(actionRow1, wrap().apply { topMargin = dp(16) })
+        val extras = listOfNotNull(trailer, preview, recap)
+        actionRow2 = if (extras.isEmpty()) null else LinearLayout(this).apply {
+            clipChildren = false
+            extras.forEachIndexed { i, b -> addView(b, LinearLayout.LayoutParams(-2, dp(32)).apply { if (i > 0) marginStart = dp(8) }) }
+        }
+        actionRow2?.let { stack.addView(it, wrap().apply { topMargin = dp(10) }) }
         // The title's details arrive in two or three steps, each redrawing this block: the remote stays on the
         // control it was on (Trailer, a cast name, ⓘ) rather than snapping back to Play each time.
         playButton.post {
@@ -296,7 +304,7 @@ class DetailsActivity : Screen() {
     private fun iconButton(symbol: String, description: String, action: () -> Unit) = text(symbol, 18f).apply {
         gravity = Gravity.CENTER
         contentDescription = description
-        rowFocus(16, rest = { glass(16) })
+        lightFocus(16)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
     }
@@ -305,7 +313,7 @@ class DetailsActivity : Screen() {
     private fun glassButton(label: String, action: () -> Unit) = text(label, SMALL, bold = true).apply {
         gravity = Gravity.CENTER
         setPadding(dp(14), 0, dp(14), 0)
-        rowFocus(16, rest = { glass(16) })
+        lightFocus(16)
         setOnClickListener { action() }
     }
 
@@ -771,6 +779,7 @@ class DetailsActivity : Screen() {
                 return true
             } else if (!infoOpen && !similarOpen && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
                 currentFocus?.let { isInside(it, hero) } == true &&
+                !(actionRow2 != null && currentFocus?.let { f -> actionRow1?.let { isInside(f, it) } } == true) &&
                 (if (type == "series") ::guide.isInitialized else ::similarOverlay.isInitialized)) {
                 if (type == "series") showGuide() else showSimilar()
                 return true
