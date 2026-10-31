@@ -217,6 +217,26 @@ internal fun imdbTrailerStreams(imdbId: String): List<Stream> {
     }.getOrDefault(emptyList())
 }
 
+private val imdbCertificateCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+/**
+ * The title's age rating from IMDb's own service ("PG-13", "TV-MA", "15"), through the same query IMDb's site makes.
+ * Null when IMDb has none or the call fails (asked again next time); cached for the app's life. Blocks.
+ */
+internal fun imdbCertificate(imdbId: String): String? {
+    if (!imdbId.startsWith("tt")) return null
+    imdbCertificateCache[imdbId]?.let { return it }
+    return runCatching {
+        val query = JSONObject().put("query", "{title(id:\"$imdbId\"){certificate{rating}}}").toString()
+        val raw = Http.post("https://api.graphql.imdb.com/", query, timeoutMs = 12_000, headers = mapOf("x-imdb-client-name" to "imdb-web-next-localized"))
+        parseImdbCertificate(JSONObject(raw))?.also { imdbCertificateCache[imdbId] = it }
+    }.onFailure { android.util.Log.w("CAS", "IMDb certificate for $imdbId failed: $it") }.getOrNull()
+}
+
+/** The rating text in IMDb's answer, or null when there is none (unrated, or an id IMDb doesn't know). */
+internal fun parseImdbCertificate(json: JSONObject): String? =
+    json.optJSONObject("data")?.optJSONObject("title")?.optJSONObject("certificate")?.text("rating")?.trim()?.takeIf { it.isNotEmpty() && it.length <= 8 }
+
 /** The trailer among IMDb's videos (a trailer before a clip or featurette), its files best quality first. */
 internal fun parseImdbTrailerStreams(json: JSONObject): List<Stream> {
     val nodes = json.optJSONObject("data")?.optJSONObject("title")?.optJSONObject("primaryVideos")?.optJSONArray("edges").objects()
@@ -256,6 +276,8 @@ class Meta(json: JSONObject) {
     /** The IMDb id, from the id itself or the add-on's `imdb_id` field (an add-on may number titles its own way). */
     val imdbId: String? = id.takeIf { it.startsWith("tt") }?.substringBefore(':') ?: json.text("imdb_id")?.takeIf { it.startsWith("tt") }
     val cast = json.optJSONArray("cast").strings()
+    /** The age rating ("PG-13", "15", "TV-MA") when the add-on gives one; IMDb is asked otherwise (imdbCertificate). */
+    val certification: String? = (json.text("certification") ?: json.text("contentRating"))?.trim()?.takeIf { it.isNotEmpty() && it.length <= 8 }
     val director = json.optJSONArray("director").strings()
     /** Trailer files an add-on gives outright (a `url` in `trailerStreams`): playable in CAS's own player. */
     val trailerFiles: List<Stream> = json.optJSONArray("trailerStreams").objects().mapNotNull { t ->

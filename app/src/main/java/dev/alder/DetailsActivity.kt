@@ -27,6 +27,19 @@ internal fun episodeDate(value: String?): String? {
     return SimpleDateFormat("d MMM yyyy", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(parsed)
 }
 
+/**
+ * "Airs 7 Nov" for an episode released after [now] (both ISO text in UTC, as Stremio and the add-ons write them), with
+ * the year when it isn't this one; null once it has aired, or without a date. Text compares as time in this format.
+ */
+internal fun airs(released: String?, now: String = Library.now()): String? {
+    val day = released?.take(10)?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) } ?: return null
+    if (released <= now) return null
+    val source = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false; timeZone = TimeZone.getTimeZone("UTC") }
+    val parsed = runCatching { source.parse(day) }.getOrNull() ?: return null
+    val pattern = if (day.take(4) == now.take(4)) "d MMM" else "d MMM yyyy"
+    return "Airs " + SimpleDateFormat(pattern, Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(parsed)
+}
+
 // A title stays in place over its art; episodes and related titles open over the same scene.
 class DetailsActivity : Screen() {
     private val type by lazy { intent.getStringExtra("type") ?: "movie" }
@@ -65,6 +78,9 @@ class DetailsActivity : Screen() {
     private var item: JSONObject? = null // the title's library item: progress and whether it's in My List
     private var itemChangedHere = false
     private var similarRequested = false
+    private var certificate: String? = null // the age rating, from the add-on or IMDb
+    private var certificateRequested = false
+    private var tickers = emptyMap<String, () -> Unit>() // each episode row's words, redrawn when a tick changes
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,8 +116,18 @@ class DetailsActivity : Screen() {
             // guide is rebuilt, so it reopens on the same episode rather than leaving a hidden title behind.
             val wasGuide = guideOpen
             val episodeTag = currentFocus?.takeIf { it in episodeRows }?.tag
+            certificate = m.certification ?: certificate
             showHero(m)
             m.imdbId?.let { id -> background({ imdbTrailerStreams(id) }) {} } // ready before the button is pressed
+            // The age rating, from IMDb when the add-on has none; the facts line is redrawn once when it comes.
+            if (certificate == null && !certificateRequested && m.imdbId != null && Settings.titlePage(this, SettingsActivity.TITLE_RATING)) {
+                certificateRequested = true
+                background({ imdbCertificate(m.imdbId) }) { r ->
+                    val found = r.getOrNull() ?: return@background
+                    certificate = found
+                    if (!guideOpen && !infoOpen && !similarOpen) showHero(meta)
+                }
+            }
             if (type == "series" && m.videos.isNotEmpty()) {
                 buildGuide(m.videos)
                 if (wasGuide) { showGuide(); episodeRows.firstOrNull { it.tag == episodeTag }?.requestFocus() }
@@ -168,6 +194,14 @@ class DetailsActivity : Screen() {
                 .takeIf { it > 0 }?.let(::seasons) else m.runtime
             val facts = listOfNotNull(m.year, m.genres.firstOrNull(), length).joinToString(DOT)
             val factRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+            // The age rating before the year: a thin outlined capsule, quiet, the way a cinema listing prints it.
+            val cert = certificate?.takeIf { Settings.titlePage(this, SettingsActivity.TITLE_RATING) }
+            if (cert != null) factRow.addView(text(cert, 10.5f, bold = true, color = TEXT_2).apply {
+                letterSpacing = 0.04f
+                setPadding(dp(5), dp(2), dp(5), dp(2))
+                background = GradientDrawable().apply { setStroke(dp(1), TEXT_2); cornerRadius = dp(4).toFloat() }
+                alpha = RATING_ALPHA
+            }, wrap().apply { marginEnd = dp(8) })
             factRow.addView(text(facts, SMALL, color = TEXT_2).onArt().apply {
                 maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             })
@@ -242,16 +276,18 @@ class DetailsActivity : Screen() {
         val resumeAt = (item?.let { Library.resumeAt(it, target?.first ?: metaId) } ?: 0L).takeIf { it >= STARTED } ?: 0L
         val duration = item?.optJSONObject("state")?.optLong("duration") ?: 0L
         val remaining = if (resumeAt > 0 && duration > resumeAt) runtime("${(duration - resumeAt) / 60_000} min") + " left" else null
-        val where = listOfNotNull(episode?.let { "S${it.season} E${it.episode}" }, episode?.title?.takeIf { it.isNotBlank() }, remaining).joinToString(DOT)
-        if (where.isNotEmpty() && resumeAt > 0) stack.addView(text(where, SMALL, bold = true).onArt().apply {
+        // The next episode isn't out yet (Stremio queues it as soon as the last one ends): say when, and Play waits.
+        val unaired = airs(episode?.released)
+        val where = listOfNotNull(episode?.let { "S${it.season} E${it.episode}" }, episode?.title?.takeIf { it.isNotBlank() }, remaining ?: unaired).joinToString(DOT)
+        if (where.isNotEmpty() && (resumeAt > 0 || unaired != null)) stack.addView(text(where, SMALL, bold = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }.marginTop(16))
         if (remaining != null) stack.addView(progressBar(resumeAt.toFloat() / duration), LinearLayout.LayoutParams(dp(240), dp(3)).apply { topMargin = dp(8) })
 
         playButton = pill(if (resumeAt > 0) "Resume" else "Play", R.drawable.ic_play).apply {
-            setOnClickListener { openSources(target?.first ?: metaId, startOver = false) }
+            setOnClickListener { if (unaired != null) notAired(unaired) else openSources(target?.first ?: metaId, startOver = false) }
             // Held OK: every source, to choose one by hand.
-            setOnLongClickListener { openSources(target?.first ?: metaId, startOver = false, pick = true); true }
+            setOnLongClickListener { if (unaired != null) notAired(unaired) else openSources(target?.first ?: metaId, startOver = false, pick = true); true }
         }
         val startOver = if (resumeAt > 0) iconButton("↺", "Start over") {
             openSources(target?.first ?: metaId, startOver = true)
@@ -272,7 +308,7 @@ class DetailsActivity : Screen() {
                 }
             } else null
         val preview = if (Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW))
-            glassButton("Preview") { preview(target?.first ?: metaId, m) } else null
+            glassButton("Preview") { if (unaired != null) notAired(unaired) else preview(target?.first ?: metaId, m) } else null
         val recap = if (type == "series" && Settings.titlePage(this, SettingsActivity.TITLE_RECAP))
             glassButton("Recap") { openRecap(m, episode?.season ?: selectedSeason) } else null
         // Play and its small controls on one line; Trailer, Preview and Recap on a second, so none is ever squeezed
@@ -362,6 +398,73 @@ class DetailsActivity : Screen() {
         listButton.contentDescription = if (Library.inList(entry)) "Remove from My List" else "Add to My List"
         val snapshot = JSONObject(entry.toString())
         background({ Stremio.saveLibrary(key, listOf(snapshot)) }) {}
+    }
+
+    /** An episode that isn't out yet: a word on when, instead of a search for sources that can't exist. */
+    private fun notAired(when_: String) = choose(when_, listOf("OK"), "This episode has not aired yet.") {}
+
+    // ---------- episode ticks ----------
+
+    /**
+     * A change to the ticks (Stremio's watched bitfield): on the title's library item, made if it has none yet, saved
+     * to Stremio so the phone and the web show the same ✓, and reflected on Home's NEW count and in the guide at once.
+     */
+    private fun tick(change: (JSONObject, List<Video>) -> Unit) {
+        val m = meta ?: return
+        itemChangedHere = true
+        val entry = item ?: Library.newItem(metaId, type, m.name, m.poster ?: poster)
+        change(entry, m.videos)
+        entry.put("_mtime", Library.now())
+        item = entry
+        Profiles.active(this)?.id?.let { NewEpisodes.record(this, it, entry, m) }
+        refreshTicks()
+        val snapshot = JSONObject(entry.toString())
+        background({ Stremio.saveLibrary(key, listOf(snapshot)) }) {}
+    }
+
+    /** The guide's rows and the still redrawn for the ticks as they are now; the remote stays where it is. */
+    private fun refreshTicks() {
+        tickers.values.forEach { it() }
+        (currentFocus?.tag as? String)?.let { id -> meta?.videos?.firstOrNull { it.id == id }?.let(::updatePreview) }
+    }
+
+    /** Held OK on an episode: the sources, or its tick, or everything before it ticked in one go. */
+    private fun episodeMenu(video: Video, videos: List<Video>) {
+        val watched = Library.watched(item, videos)
+        val ticked = video.id in watched
+        val before = videos.subList(0, videos.indexOf(video).coerceAtLeast(0)).filter { it.season > 0 && it.id !in watched }.map { it.id }
+        val options = listOf("Every source", if (ticked) "Mark as unwatched" else "Mark as watched") +
+            (if (before.isNotEmpty()) listOf("Mark previous episodes watched") else emptyList())
+        choose("S${video.season} E${video.episode}" + video.title.takeIf { it.isNotBlank() }?.let { "$DOT$it" }.orEmpty(), options) { i ->
+            when (i) {
+                0 -> {
+                    val next = videos.getOrNull(videos.indexOf(video) + 1)?.id
+                    openSources(video.id, startOver = false, next = next, label = "S${video.season} E${video.episode}", pick = true)
+                }
+                1 -> tick { entry, vs -> if (ticked) Library.markUnwatched(entry, vs, video.id) else Library.markWatched(entry, vs, video.id) }
+                2 -> tick { entry, vs -> Library.markWatchedMany(entry, vs, before) }
+            }
+        }
+    }
+
+    /** Held OK on a season: the whole season ticked, or every tick in it taken off when all are on. */
+    private fun seasonMenu(season: Int, videos: List<Video>) {
+        val ids = videos.filter { it.season == season }.map { it.id }
+        if (ids.isEmpty()) return
+        val watched = Library.watched(item, videos)
+        val all = ids.all { it in watched }
+        val name = if (season == 0) "Specials" else "season $season"
+        choose(if (season == 0) "Specials" else "Season $season", listOf(if (all) "Mark $name unwatched" else "Mark $name watched", "Keep")) { i ->
+            if (i == 0) tick { entry, vs -> if (all) Library.markUnwatchedMany(entry, vs, ids) else Library.markWatchedMany(entry, vs, ids) }
+        }
+    }
+
+    /** Whether an episode's still is hidden: Settings asks, and it is neither watched nor the one in progress. */
+    private fun blurStill(video: Video): Boolean {
+        if (!Settings.blurThumbnails(this)) return false
+        val state = item?.optJSONObject("state")
+        val inProgress = state?.text("video_id") == video.id && (state?.optLong("timeOffset") ?: 0L) > 1
+        return !inProgress && video.id !in Library.watched(item, meta?.videos.orEmpty())
     }
 
     // ---------- glass and episode guide ----------
@@ -479,60 +582,69 @@ class DetailsActivity : Screen() {
                     fillGuide()
                     seasonButtons[season]?.requestFocus()
                 }
+                // Held: the whole season ticked as watched, or unticked.
+                setOnLongClickListener { seasonMenu(season, videos); true }
                 seasonStrip.addView(this, LinearLayout.LayoutParams(-2, dp(24)).apply {
                     if (seasonStrip.childCount > 0) marginStart = dp(8)
                 })
             }
         }
         guideRows.removeAllViews()
-        val watched = Library.watched(item, videos)
         val currentId = playTarget(meta)?.first
+        val tickers = mutableMapOf<String, () -> Unit>()
         episodeRows = videos.filter { it.season == selectedSeason }.map { video ->
             val row = FrameLayout(this).apply { tag = video.id }
             val number = text("%02d".format(video.episode), BODY, color = TEXT_3)
             row.addView(number, FrameLayout.LayoutParams(dp(32), -2, Gravity.CENTER_VERTICAL).apply {
                 leftMargin = dp(12)
             })
-            val resumeAt = item?.let { Library.resumeAt(it, video.id) } ?: 0L
-            val duration = item?.optJSONObject("state")?.takeIf { it.text("video_id") == video.id }
-                ?.optLong("duration") ?: 0L
-            val status = when {
-                video.id in watched -> "✓"
-                resumeAt > 0 && duration > resumeAt -> "${(duration - resumeAt) / 60_000} min left"
-                else -> meta?.runtime.orEmpty()
-            }
-            row.addView(text(video.title.ifBlank { "Episode ${video.episode}" }, BODY,
-                color = if (video.id in watched) TEXT_2 else TEXT).apply {
+            val unaired = airs(video.released)
+            val title = text(video.title.ifBlank { "Episode ${video.episode}" }, BODY).apply {
                 maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-            }, FrameLayout.LayoutParams(dp(225), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(46) })
-            if (status.isNotEmpty()) row.addView(text(status, SMALL,
-                color = if (video.id in watched) TUNGSTEN else TEXT_2).apply { gravity = Gravity.END },
-                FrameLayout.LayoutParams(dp(98), -2, Gravity.CENTER_VERTICAL or Gravity.END).apply {
-                    rightMargin = dp(12)
-                })
+            }
+            row.addView(title, FrameLayout.LayoutParams(dp(225), -2, Gravity.CENTER_VERTICAL).apply { leftMargin = dp(46) })
+            val status = text("", SMALL).apply { gravity = Gravity.END }
+            row.addView(status, FrameLayout.LayoutParams(dp(98), -2, Gravity.CENTER_VERTICAL or Gravity.END).apply { rightMargin = dp(12) })
+            // The row's words follow the ticks: ✓ and a quiet name once watched, time left when started, the length
+            // otherwise; an episode not out yet says when, and sits back.
+            tickers[video.id] = {
+                val ticked = video.id in Library.watched(item, videos)
+                val resumeAt = item?.let { Library.resumeAt(it, video.id) } ?: 0L
+                val duration = item?.optJSONObject("state")?.takeIf { it.text("video_id") == video.id }?.optLong("duration") ?: 0L
+                title.setTextColor(if (ticked) TEXT_2 else TEXT)
+                status.text = when {
+                    ticked -> "✓"
+                    unaired != null -> unaired
+                    resumeAt > 0 && duration > resumeAt -> "${(duration - resumeAt) / 60_000} min left"
+                    else -> meta?.runtime.orEmpty()
+                }
+                status.setTextColor(if (ticked) TUNGSTEN else TEXT_2)
+                status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
+                row.alpha = if (unaired != null && !ticked) AIRS_ALPHA else 1f
+            }
+            tickers.getValue(video.id)()
             row.rowFocus(9) { focused -> if (focused) updatePreview(video) }
             row.setOnClickListener {
+                if (unaired != null) return@setOnClickListener notAired(unaired)
                 val next = videos.getOrNull(videos.indexOf(video) + 1)?.id
                 openSources(video.id, startOver = false, next = next, label = "S${video.season} E${video.episode}")
             }
-            row.setOnLongClickListener {
-                val next = videos.getOrNull(videos.indexOf(video) + 1)?.id
-                openSources(video.id, startOver = false, next = next,
-                    label = "S${video.season} E${video.episode}", pick = true)
-                true
-            }
+            row.setOnLongClickListener { episodeMenu(video, videos); true }
             guideRows.addView(row, LinearLayout.LayoutParams(-1, dp(45)))
             row
         }
+        this.tickers = tickers
         videos.firstOrNull { it.id == currentId && it.season == selectedSeason }?.let(::updatePreview)
             ?: videos.firstOrNull { it.season == selectedSeason }?.let(::updatePreview)
     }
 
     private fun updatePreview(video: Video) {
-        Images.load(video.thumbnail, previewImage, previewImage.layoutParams?.width?.takeIf { it > 0 } ?: dp(436), orElse = meta?.background)
+        // The still hides behind a blur until the episode is watched, when Settings asks; the art behind, blurred too.
+        Images.load(video.thumbnail, previewImage, previewImage.layoutParams?.width?.takeIf { it > 0 } ?: dp(436), orElse = meta?.background,
+            look = if (blurStill(video)) Images.blurred else null)
         previewTitle.text = video.title.ifBlank { "Episode ${video.episode}" }
         previewFacts.text = listOfNotNull("S${video.season} E${video.episode}", meta?.runtime,
-            episodeDate(video.released)).joinToString(DOT)
+            airs(video.released) ?: episodeDate(video.released)).joinToString(DOT)
         previewAbout.text = video.overview.orEmpty()
         previewAbout.visibility = if (video.overview.isNullOrBlank()) View.GONE else View.VISIBLE
         previewProgress.removeAllViews()
@@ -585,7 +697,7 @@ class DetailsActivity : Screen() {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(0xC9000808.toInt(), 0x99000808.toInt(), 0x00000000))
         }, FrameLayout.LayoutParams(resources.displayMetrics.widthPixels * 3 / 5, -1))
-        val facts = listOfNotNull(m.year, m.runtime,
+        val facts = listOfNotNull(certificate?.takeIf { Settings.titlePage(this, SettingsActivity.TITLE_RATING) }, m.year, m.runtime,
             m.genres.take(2).joinToString(" / ").ifEmpty { null }, m.rating?.let { "IMDb $it" }).joinToString(DOT)
         val story = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
@@ -769,7 +881,8 @@ class DetailsActivity : Screen() {
                     // Right, free in a list, previews the episode under the remote; the box hands the remote back here.
                     KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
                         val m = meta; val id = focused?.tag as? String
-                        if (m != null && id != null && Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW)) { previewFrom = focused; preview(id, m) }
+                        val out = m?.videos?.firstOrNull { it.id == id }?.let { airs(it.released) == null } ?: true // nothing to preview before it airs
+                        if (m != null && id != null && out && Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW)) { previewFrom = focused; preview(id, m) }
                         return true
                     }
                     KeyEvent.KEYCODE_DPAD_LEFT -> return true
@@ -806,5 +919,7 @@ class DetailsActivity : Screen() {
         const val PANE_SHADE = 0.55f // the episode panel's frost, darkened to the mock's smoked glass
         const val GUIDE_ART = 0.6f // the film's brightness behind the episode guide
         const val STARTED = 60_000L // ms watched before a title counts as started
+        const val RATING_ALPHA = 0.65f // the age rating capsule: present, not loud
+        const val AIRS_ALPHA = 0.65f // an episode not out yet sits back in the list
     }
 }

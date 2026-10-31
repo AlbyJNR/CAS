@@ -109,12 +109,23 @@ object Library {
     }
 
     /** Ticks [videoId] as watched in that bitfield, as stremio-core's `set_video` does, so other devices show the ✓. */
-    fun markWatched(item: JSONObject, videos: List<Video>, videoId: String) {
+    fun markWatched(item: JSONObject, videos: List<Video>, videoId: String) = setWatched(item, videos, watched(item, videos) + videoId)
+
+    /** Ticks every id in [ids] (a season, or all the episodes before one). */
+    fun markWatchedMany(item: JSONObject, videos: List<Video>, ids: Collection<String>) = setWatched(item, videos, watched(item, videos) + ids)
+
+    /** Takes the tick off [videoId]; with none left, the bitfield goes (stremio-core reads a missing one as nothing watched). */
+    fun markUnwatched(item: JSONObject, videos: List<Video>, videoId: String) = setWatched(item, videos, watched(item, videos) - videoId)
+
+    /** Takes the tick off every id in [ids]. */
+    fun markUnwatchedMany(item: JSONObject, videos: List<Video>, ids: Collection<String>) = setWatched(item, videos, watched(item, videos) - ids.toSet())
+
+    private fun setWatched(item: JSONObject, videos: List<Video>, seen: Set<String>) {
         val ids = videos.sortedWith(compareBy({ it.season }, { it.episode })).map { it.id }
-        val seen = watched(item, videos) + videoId
+        val last = ids.indexOfLast { it in seen }
+        if (last < 0) { item.state.put("watched", JSONObject.NULL); return }
         val bits = ByteArray((ids.size + 7) / 8)
         ids.forEachIndexed { i, id -> if (id in seen) bits[i / 8] = (bits[i / 8].toInt() or (1 shl (i % 8))).toByte() }
-        val last = ids.indexOfLast { it in seen }.takeIf { it >= 0 } ?: return
         val zipped = java.io.ByteArrayOutputStream().also { out ->
             java.util.zip.DeflaterOutputStream(out, java.util.zip.Deflater(6)).use { it.write(bits) }
         }.toByteArray()
@@ -163,6 +174,7 @@ object Library {
 
     private val JSONObject.state: JSONObject get() = optJSONObject("state") ?: JSONObject().also { put("state", it) }
 
-    private fun now(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+    /** Now as Stremio writes times: ISO 8601 in UTC with milliseconds. */
+    fun now(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 }

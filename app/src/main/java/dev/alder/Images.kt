@@ -93,6 +93,9 @@ object Images {
      */
     class Look(val name: String, val paint: (Bitmap) -> Bitmap)
 
+    /** An episode still with nothing to give away: shrunk to a few dozen pixels and blurred, then stretched smooth. */
+    val blurred = Look("blur") { frost(it, 28) }
+
     private val inFlight = ConcurrentHashMap<String, FutureTask<Bitmap?>>()
 
     /**
