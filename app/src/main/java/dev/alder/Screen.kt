@@ -475,7 +475,17 @@ abstract class Screen : Activity() {
      * closes itself when the minute is up. OK pauses, Left and Right skip ten seconds, Back closes. Progress isn't
      * kept: a preview is a look, not a watch. A source that fails gives way to the next; none left closes with a word.
      */
-    protected fun showPreview(title: String, find: () -> List<Stream>) {
+    protected fun showPreview(title: String, find: () -> List<Stream>) =
+        showClip("Preview", title, PREVIEW_FROM, PREVIEW_MS, find) {}
+
+    /**
+     * A trailer as a file, in the box through CAS's own player (IMDb's video service or an add-on's own file), whole
+     * and from the start. [orElse] runs when no file turns up: the YouTube routes, which need the YouTube id.
+     */
+    protected fun showTrailerClip(title: String, find: () -> List<Stream>, orElse: () -> Unit) =
+        showClip("Trailer", title, 0.0, 0L, find, orElse)
+
+    private fun showClip(kind: String, title: String, from: Double, limitMs: Long, find: () -> List<Stream>, orElse: () -> Unit) {
         hideTrailer()
         val token = ++previewToken
         val surface = android.view.SurfaceView(this)
@@ -485,13 +495,14 @@ abstract class Screen : Activity() {
             addView(surface, FrameLayout.LayoutParams(-1, -1))
             addView(ring, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
         }
-        openBox("Preview", title, boxFrame(content), boxHints())
+        openBox(kind, title, boxFrame(content), boxHints())
         background(find) { result ->
             if (token != previewToken || trailerOverlay == null) return@background
             val sources = result.getOrDefault(emptyList())
             if (sources.isEmpty()) {
                 hideTrailer()
-                return@background choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {}
+                return@background if (kind == "Trailer") orElse()
+                    else choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {}
             }
             // As the player sets its sound up: decoded here unless a receiver takes Dolby and DTS; ffmpeg after the TV's decoders.
             val passthrough = Settings.passthrough(this)
@@ -529,17 +540,17 @@ abstract class Screen : Activity() {
                     if (state != Player.STATE_READY || placed) return
                     placed = true
                     val length = player.duration
-                    if (length > PREVIEW_MIN_LENGTH) player.seekTo((length * PREVIEW_FROM).toLong())
+                    if (from > 0 && length > PREVIEW_MIN_LENGTH) player.seekTo((length * from).toLong())
                 }
                 override fun onRenderedFirstFrame() {
                     ring.visibility = View.GONE
                     main.removeCallbacks(previewEnd)
-                    main.postDelayed(previewEnd, PREVIEW_MS)
+                    if (limitMs > 0) main.postDelayed(previewEnd, limitMs)
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     android.util.Log.w("CAS", "preview source ${at + 1} failed: ${error.errorCodeName}")
                     if (++at < sources.size) start(sources[at])
-                    else main.post { if (boxPlayer === player) { hideTrailer(); choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {} } }
+                    else main.post { if (boxPlayer === player) { hideTrailer(); if (kind == "Trailer") orElse() else choose("Preview unavailable", listOf("OK"), "No source for this title could be played right now.") {} } }
                 }
             })
             start(sources[0])

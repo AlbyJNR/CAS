@@ -6,6 +6,7 @@ An understated, cinematic TV interface: charcoal (#08090B), near-white (#F5F5F7)
 
 ## Implemented
 
+- Trailers as files (1.7.0, taken from upstream Alder 1.3.1's idea): `imdbTrailerStreams()` asks IMDb's GraphQL video service for the title's trailer (MP4/HLS, 1080p→SD) and `Meta.trailerFiles` takes an add-on's own `trailerStreams` URLs; `Screen.showTrailerClip` plays them in the box through CAS's ExoPlayer, falling back to the YouTube routes only when no file exists. Upstream remote is added as `upstream`; a full merge of 1.3.1 (~60 conflict hunks in 14 files) is the agreed next step.
 - Preview: the box (Screen.openBox) with CAS's own ExoPlayer, fed by the same add-on list, filter and ranking as the sources page (streamAddons / wantedSource / rankSources in StreamsActivity.kt), starting at 12% for titles over 10 minutes and closing after 60 s. Debug builds open it from `adb shell am start ... --es preview <direct url>`.
 - The mark is an aperture (a C with a dot), generated with the banner and icon by `tools/cas_brand.py`, and as `drawable/ic_mark.xml` for `Screen.brand()`.
 - Browse-by-genre tiles in Search were tried in 1.4.0 and removed in 1.4.1 at Alan's request; the genre chips on Shows and Movies remain.

@@ -25,12 +25,13 @@ object Http {
 
     fun get(url: String, keep: Boolean = false, timeoutMs: Int = 20_000): String = text(url, null, keep, timeoutMs)
 
-    fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
+    fun post(url: String, json: String, keep: Boolean = false, timeoutMs: Int = 20_000, headers: Map<String, String> = emptyMap()): String =
+        text(url, json, keep, timeoutMs, headers)
 
     fun bytes(url: String): ByteArray = request(url, null, cache = true).second
 
-    private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000): String {
-        val (code, body) = request(url, json, cache = false, timeoutMs)
+    private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000, headers: Map<String, String> = emptyMap()): String {
+        val (code, body) = request(url, json, cache = false, timeoutMs, headers)
         val text = String(body, Charsets.UTF_8)
         // Stremio's API answers errors as JSON (read by the caller); anything else failed is an error page: say the code.
         if (code >= 400 && !text.trimStart().startsWith("{")) throw IOException("HTTP $code")
@@ -77,11 +78,12 @@ object Http {
     // host. Disconnecting threw it away, so every picture paid a fresh TCP and TLS handshake first.
     // [cache]: pictures only. The response cache kept an addon's 404 and, revalidated with a 304, served it forever
     // (AIOMetadata's movie search); answers have their own copy in [saved].
-    private fun request(url: String, json: String?, cache: Boolean, timeoutMs: Int = 20_000): Pair<Int, ByteArray> {
+    private fun request(url: String, json: String?, cache: Boolean, timeoutMs: Int = 20_000, headers: Map<String, String> = emptyMap()): Pair<Int, ByteArray> {
         val c = URL(url).openConnection() as HttpURLConnection
         c.useCaches = cache
         // Not Android's "Dalvik/2.1.0": some add-ons behind Cloudflare answer that with a challenge page.
         c.setRequestProperty("User-Agent", userAgent)
+        headers.forEach { (name, value) -> c.setRequestProperty(name, value) }
         c.connectTimeout = minOf(10_000, timeoutMs)
         c.readTimeout = timeoutMs
         if (json != null) {

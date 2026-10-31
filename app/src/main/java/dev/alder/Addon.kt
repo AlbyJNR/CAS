@@ -193,6 +193,49 @@ private val metaPool = java.util.concurrent.Executors.newCachedThreadPool()
 
 private val YOUTUBE_ID = Regex("^[A-Za-z0-9_-]{11}$")
 
+// ---------- trailers as files ----------
+
+private val imdbTrailerCache = java.util.concurrent.ConcurrentHashMap<String, List<Stream>>()
+
+/**
+ * The title's trailer as video files from IMDb's own video service (MP4 and HLS, 1080p down to SD), through the same
+ * query IMDb's site makes. Playable in CAS's player, so the box shows a picture on every TV. Empty when IMDb has none,
+ * the id isn't IMDb's, or the call fails; cached for the app's life. Blocks: run it off the main thread.
+ */
+internal fun imdbTrailerStreams(imdbId: String): List<Stream> {
+    if (!imdbId.startsWith("tt")) return emptyList()
+    imdbTrailerCache[imdbId]?.let { return it }
+    return runCatching {
+        val query = JSONObject().put("query",
+            "{title(id:\"$imdbId\"){primaryVideos(first:5){edges{node{id name{value}contentType{displayName{value}}playbackURLs{displayName{value}url videoMimeType}}}}}}").toString()
+        val raw = Http.post("https://api.graphql.imdb.com/", query, timeoutMs = 5_000, headers = mapOf("x-imdb-client-name" to "imdb-web-next-localized"))
+        parseImdbTrailerStreams(JSONObject(raw)).also { imdbTrailerCache[imdbId] = it }
+    }.getOrDefault(emptyList())
+}
+
+/** The trailer among IMDb's videos (a trailer before a clip or featurette), its files best quality first. */
+internal fun parseImdbTrailerStreams(json: JSONObject): List<Stream> {
+    val nodes = json.optJSONObject("data")?.optJSONObject("title")?.optJSONObject("primaryVideos")?.optJSONArray("edges").objects()
+        .mapNotNull { it.optJSONObject("node") }
+        .filter { node -> node.optJSONArray("playbackURLs").objects().any { it.text("url") != null } }
+    val best = nodes.minByOrNull { node ->
+        val type = node.optJSONObject("contentType")?.optJSONObject("displayName")?.text("value").orEmpty()
+        val name = node.optJSONObject("name")?.text("value").orEmpty()
+        when {
+            type.equals("Trailer", true) -> 0
+            name.contains("trailer", true) -> 1
+            else -> 2
+        }
+    } ?: return emptyList()
+    val title = best.optJSONObject("name")?.text("value")?.ifBlank { null } ?: "Trailer"
+    val order = listOf("1080p", "auto", "720p", "480p", "sd")
+    return best.optJSONArray("playbackURLs").objects()
+        .mapNotNull { u -> u.text("url")?.let { url -> (u.optJSONObject("displayName")?.text("value") ?: u.text("videoMimeType") ?: "") to url } }
+        .sortedBy { (quality, _) -> order.indexOf(quality.lowercase()).let { if (it < 0) order.size else it } }
+        .distinctBy { it.second }
+        .map { (quality, url) -> Stream(if (quality.isNotBlank() && !quality.equals("auto", true)) "$title ($quality)" else title, quality, url, emptyMap(), 0L, null, null) }
+}
+
 class Meta(json: JSONObject) {
     val id: String = json.getString("id")
     val type: String = json.optString("type")
@@ -208,6 +251,11 @@ class Meta(json: JSONObject) {
     val genres = json.optJSONArray("genres").strings().take(3)
     val cast = json.optJSONArray("cast").strings()
     val director = json.optJSONArray("director").strings()
+    /** Trailer files an add-on gives outright (a `url` in `trailerStreams`): playable in CAS's own player. */
+    val trailerFiles: List<Stream> = json.optJSONArray("trailerStreams").objects().mapNotNull { t ->
+        val url = t.text("url") ?: return@mapNotNull null
+        Stream(t.text("title")?.takeIf { it.isNotBlank() } ?: "Trailer", "", url, emptyMap(), 0L, null, null)
+    }
     /** YouTube ids of the title's trailers: Cinemeta's `trailers` (source + type) and `trailerStreams` (ytId). */
     val trailers: List<String> = (json.optJSONArray("trailers").objects()
         .filter { it.optString("type").let { t -> t.isEmpty() || t.equals("Trailer", true) } }

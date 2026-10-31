@@ -255,8 +255,16 @@ class DetailsActivity : Screen() {
         } else null
         infoButton = iconButton("ⓘ", "More information") { showInfo() }
         listButton = iconButton(if (Library.inList(item)) "✓" else "+", "My List") { toggleList() }
-        val trailer = m.trailers.firstOrNull()?.takeIf { Settings.titlePage(this, SettingsActivity.TITLE_TRAILER) }
-            ?.let { id -> glassButton("Trailer") { showTrailer(id, m.name) } }
+        // A trailer file (IMDb's, or the add-on's own) plays in the box on every TV; a title with only a YouTube id
+        // takes the YouTube route Settings chose. Shown whenever IMDb could have one: every IMDb-numbered title.
+        val ytId = m.trailers.firstOrNull()
+        val trailer = if (Settings.titlePage(this, SettingsActivity.TITLE_TRAILER) && (ytId != null || metaId.startsWith("tt")))
+            glassButton("Trailer") {
+                showTrailerClip(m.name, { m.trailerFiles + imdbTrailerStreams(metaId) }) {
+                    if (ytId != null) showTrailer(ytId, m.name)
+                    else choose("Trailer unavailable", listOf("OK"), "No trailer was found for this title.") {}
+                }
+            } else null
         val preview = if (Settings.titlePage(this, SettingsActivity.TITLE_PREVIEW))
             glassButton("Preview") { preview(target?.first ?: metaId, m) } else null
         val recap = if (type == "series" && Settings.titlePage(this, SettingsActivity.TITLE_RECAP))
