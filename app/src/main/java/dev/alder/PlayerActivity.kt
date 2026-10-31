@@ -25,6 +25,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
@@ -134,11 +135,13 @@ class PlayerActivity : Screen() {
         if (sources.isEmpty()) return finish()
         // Audio is decoded to PCM here unless Settings says a receiver takes Dolby and DTS: TVs report passthrough
         // (DTS-HD, TrueHD) they then can't open, and playback dies. A track that fails is swapped (onPlayerError).
-        val passthrough = Settings.passthrough(this)
+        passthrough = Settings.passthrough(this)
+        dialogueProcessor.enabled = !passthrough && Settings.clearDialogue(this)
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
                 if (passthrough) DefaultAudioSink.Builder(context).build() else
-                object : ForwardingAudioSink(DefaultAudioSink.Builder(context).build()) {
+                // Clear dialogue sits in the PCM chain; off, it passes the sound through untouched.
+                object : ForwardingAudioSink(DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf(dialogueProcessor)).build()) {
                     override fun getFormatSupport(format: Format): Int =
                         if (format.sampleMimeType == MimeTypes.AUDIO_RAW) super.getFormatSupport(format) else AudioSink.SINK_FORMAT_UNSUPPORTED
 
@@ -289,8 +292,11 @@ class PlayerActivity : Screen() {
                 }
             }
 
+            override fun onVideoSizeChanged(videoSize: VideoSize) { updateBadges() }
+
             override fun onTracksChanged(tracks: Tracks) {
                 trackStatus.text = trackStatus(tracks)
+                updateBadges()
                 if (selectAddonSub) tracks.groups.firstOrNull(::isAddonSub)?.let { g ->
                     selectAddonSub = false
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -807,8 +813,13 @@ class PlayerActivity : Screen() {
         main.postDelayed(skipTask, 500)
     }
 
+    // ---------- sound ----------
+    private val dialogueProcessor = DialogueAudioProcessor()
+    private var passthrough = false // a receiver takes Dolby and DTS untouched: no PCM chain, no Clear dialogue
+
     // ---------- player controls ----------
     private lateinit var controls: FrameLayout
+    private lateinit var badges: LinearLayout // "4K · Dolby Vision · Atmos 5.1 · English · Real-Debrid" under the title
     private lateinit var bar: SeekBar
     private lateinit var elapsed: TextView
     private lateinit var length: TextView
@@ -840,6 +851,8 @@ class PlayerActivity : Screen() {
             ?: name, SERIF_HERO, serif = true).onArt().apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }
+        // What's playing, as a quiet line of small capsules under the name: the format, the sound, the words, the service.
+        badges = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; alpha = 0.85f }
         subtitle = text(intent.getStringExtra("episode")?.substringBefore("  ·  ").orEmpty(), SMALL, color = TEXT_2).onArt()
         pauseFacts = text("", SMALL, color = TEXT_2).onArt()
         pauseInfo = column(Gravity.START).apply {
@@ -919,6 +932,9 @@ class PlayerActivity : Screen() {
             })
             addView(topName, FrameLayout.LayoutParams(dp(250), -2).apply {
                 leftMargin = dp(PAD); topMargin = dp(31)
+            })
+            addView(badges, FrameLayout.LayoutParams(-2, -2).apply {
+                leftMargin = dp(PAD); topMargin = dp(84)
             })
             addView(TextClock(this@PlayerActivity).apply {
                 format12Hour = "h:mm a"; format24Hour = "HH:mm"
@@ -1008,6 +1024,7 @@ class PlayerActivity : Screen() {
             controls.visibility = View.VISIBLE
             controls.animate().alpha(1f).setDuration(150).start()
             updateProgress()
+            updateBadges()
             (focus ?: playPause).requestFocus()
         } else focus?.requestFocus()
         if (player.playWhenReady) main.postDelayed(hideTask, HIDE)
@@ -1139,6 +1156,11 @@ class PlayerActivity : Screen() {
             section(list, "Subtitle timing", steps.map { if (it == 0L) "On time" else "%+.1f s".format(it / 1000f) + if (it < 0) "  earlier" else "  later" },
                 steps.indexOf(subDelay)) { i -> shiftSubtitles(shiftable, steps[i]) }
         }
+        // Clear dialogue, where the sound is chosen; not offered with a receiver, which gets the sound undecoded.
+        if (!passthrough) section(list, "Sound", listOf("Normal", "Clear dialogue  ·  voices lifted"), if (dialogueProcessor.enabled) 1 else 0) { i ->
+            dialogueProcessor.enabled = i == 1
+            Settings.setClearDialogue(this, i == 1)
+        }
         list.addView(View(this).apply { setBackgroundColor(GLASS_EDGE) }, LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(0, dp(18), 0, dp(10)) })
         list.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1266,6 +1288,29 @@ class PlayerActivity : Screen() {
         }
     }
 
+    /** The capsules under the name, from the tracks playing now and the source's own words (Dolby Vision, the debrid). */
+    private fun updateBadges() {
+        if (!::badges.isInitialized) return
+        val tracks = player.currentTracks
+        val video = player.videoFormat
+        val audio = player.audioFormat
+        val subOff = C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes
+        val sub = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.takeIf { !subOff }
+        val subName = sub?.let { g -> if (isAddonSub(g)) chosenSub?.language else Languages.code(g.getTrackFormat(0).language)?.let(Languages::name) }
+        val source = sources.getOrNull(at)
+        val wanted = playerBadges(video?.height ?: 0, audio?.sampleMimeType, audio?.channelCount ?: 0,
+            Languages.code(audio?.language)?.let(Languages::name), source?.dolbyVision == true, source?.hdr == true, subName, source?.debrid?.name)
+        if (wanted == badges.tag) return
+        badges.tag = wanted
+        badges.removeAllViews()
+        wanted.forEachIndexed { i, label ->
+            badges.addView(caps(label, TEXT_2).onArt().apply {
+                background = glass(7)
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+            }, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(6) })
+        }
+    }
+
     private fun isAddonSub(g: Tracks.Group) = g.type == C.TRACK_TYPE_TEXT && g.getTrackFormat(0).id?.contains(ADDON_SUB) == true
 
     private fun trackName(f: Format, audio: Boolean): String {
@@ -1360,4 +1405,41 @@ private class SeekBar(context: Context) : View(context) {
         paint.color = Screen.TEXT
         if (duration > 0) canvas.drawCircle(x(position), y, knob, paint)
     }
+}
+
+/**
+ * The player's format badges, in reading order: picture (4K, Dolby Vision or HDR), sound (codec and layout), the
+ * audio language, the subtitles on, and the debrid service the file comes through. Each only when known; a plain
+ * stereo AAC web file in English with nothing else reads "1080p · AAC · English".
+ */
+internal fun playerBadges(
+    height: Int, audioMime: String?, channels: Int, audioLanguage: String?,
+    dolbyVision: Boolean, hdr: Boolean, subtitles: String?, debrid: String?,
+): List<String> {
+    val out = mutableListOf<String>()
+    when {
+        height >= 2160 -> out += "4K"
+        height >= 1440 -> out += "1440p"
+        height >= 1080 -> out += "1080p"
+        height >= 720 -> out += "720p"
+        height >= 480 -> out += "${height}p"
+    }
+    if (dolbyVision) out += "Dolby Vision" else if (hdr) out += "HDR"
+    val codec = when (audioMime) {
+        "audio/eac3-joc" -> "Atmos"
+        "audio/true-hd" -> "TrueHD"
+        "audio/vnd.dts.uhd;profile=p2" -> "DTS:X"
+        "audio/vnd.dts.hd" -> "DTS-HD"
+        "audio/vnd.dts" -> "DTS"
+        "audio/eac3" -> "DD+"
+        "audio/ac3" -> "DD"
+        "audio/mp4a-latm" -> "AAC"
+        else -> null
+    }
+    val layout = when (channels) { 6 -> "5.1"; 8 -> "7.1"; else -> null }
+    listOfNotNull(codec, layout).joinToString(" ").takeIf { it.isNotEmpty() }?.let { out += it }
+    audioLanguage?.takeIf { it.isNotBlank() }?.let { out += it }
+    subtitles?.takeIf { it.isNotBlank() }?.let { out += "$it subtitles" }
+    debrid?.takeIf { it.isNotBlank() }?.let { out += it }
+    return out
 }
