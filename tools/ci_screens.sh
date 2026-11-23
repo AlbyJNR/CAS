@@ -9,6 +9,15 @@ BODY=$(jq -n --arg e "$CAS_TEST_EMAIL" --arg p "$CAS_TEST_PASSWORD" '{type:"Logi
 KEY=$(curl -s -m 30 -H 'content-type: application/json' -d "$BODY" https://api.strem.io/api/login | jq -r '.result.authKey // empty')
 [ -n "$KEY" ] || { echo "::error::The test account did not sign in to Stremio"; exit 1; }
 echo "::add-mask::$KEY"
+# A profile's copy goes by way of the account's library as one hidden item, in the item's poster address (Stremio
+# keeps only the fields it knows). This writes one of 60,000 characters and reads it back: "whole" must be true.
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+BLOB=$(head -c 45000 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_' | head -c 60000)
+PUT=$(jq -n --arg k "$KEY" --arg n "$NOW" --arg b "cas1:$BLOB" '{authKey:$k,collection:"libraryItem",changes:[{_id:"cas:copy",name:"CAS: lists and settings",type:"other",poster:$b,posterShape:"poster",removed:true,temp:false,_ctime:$n,_mtime:$n,behaviorHints:{},state:{lastWatched:$n,timeWatched:0,timeOffset:0,overallTimeWatched:0,timesWatched:0,flaggedWatched:0,duration:0,video_id:null,watched:null,noNotif:false}}]}')
+curl -s -m 30 -H 'content-type: application/json' -d "$PUT" https://api.strem.io/api/datastorePut | jq -c '{put: (.result // .error)}' > screens/copy-check.txt
+GET=$(jq -n --arg k "$KEY" '{authKey:$k,collection:"libraryItem",ids:["cas:copy"],all:false}')
+curl -s -m 30 -H 'content-type: application/json' -d "$GET" https://api.strem.io/api/datastoreGet | jq -c --arg b "cas1:$BLOB" '.result[0] | {sent: ($b|length), back: ((.poster // "")|length), whole: (.poster == $b)}' >> screens/copy-check.txt
+cat screens/copy-check.txt
 shot() { adb exec-out screencap -p > "screens/$1.png"; }
 key() { adb shell input keyevent "$1"; sleep "${2:-2}"; }
 adb install "$APK" > /dev/null

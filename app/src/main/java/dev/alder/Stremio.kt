@@ -173,6 +173,32 @@ object Stremio {
         return waiting.filter { w -> (have[w.optString("_id")] ?: "") < w.optString("_mtime") }
     }
 
+    /**
+     * A profile's lists and settings, kept as one hidden item in its own Stremio library ([COPY_ID]): written from
+     * one TV and read on another signed in to the same account. Stremio's apps do not show it (it is "removed", of
+     * type "other"). Stremio keeps only the fields it knows and drops any other, so the copy travels in the item's
+     * poster address, which nothing shows, squeezed and written as plain letters (checked whole at 60,000
+     * characters by CI's screens job). Blocks.
+     */
+    fun saveCopy(authKey: String, copy: String) {
+        val now = Library.now()
+        val item = Library.newItem(COPY_ID, "other", "CAS: lists and settings", COPY_MARK + packed(copy)).put("removed", true).put("temp", false).put("_mtime", now)
+        result(post("datastorePut", putBody(authKey, listOf(item))))
+    }
+
+    /** The copy saved with this account, or null when there is none (or it is not one CAS wrote). Blocks. */
+    fun readCopy(authKey: String): String? =
+        libraryItems(Http.post(API + "datastoreGet", libraryBody(authKey, listOf(COPY_ID)))).firstOrNull()?.optString("poster")
+            ?.takeIf { it.startsWith(COPY_MARK) }?.let { runCatching { unpacked(it.removePrefix(COPY_MARK)) }.getOrNull() }
+
+    private const val COPY_MARK = "cas1:"
+    private fun packed(text: String): String = android.util.Base64.encodeToString(
+        java.io.ByteArrayOutputStream().also { out -> java.util.zip.GZIPOutputStream(out).use { it.write(text.toByteArray()) } }.toByteArray(), android.util.Base64.NO_WRAP or android.util.Base64.URL_SAFE)
+    private fun unpacked(text: String): String =
+        java.util.zip.GZIPInputStream(android.util.Base64.decode(text, android.util.Base64.URL_SAFE).inputStream()).use { String(it.readBytes()) }
+
+    const val COPY_ID = "cas:copy"
+
     /** The account behind a sign-in: each sign-in has its own auth key, so two keys can be the same account. */
     fun userId(authKey: String): String =
         result(post("getUser", JSONObject().put("type", "GetUser").put("authKey", authKey))).getString("_id")

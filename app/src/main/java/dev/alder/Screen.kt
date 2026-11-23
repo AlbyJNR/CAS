@@ -263,6 +263,12 @@ abstract class Screen : Activity() {
         // The disk cache for pictures, and last time's answers.
         Http.init(cacheDir)
         Http.saved = java.io.File(cacheDir, "answers")
+        // CAS closed as it opened, twice running: what it keeps from last time is cleared, and it starts clean.
+        if (Crash.recover(this)) {
+            Http.forget()
+            android.widget.Toast.makeText(this, "CAS closed twice as it opened, so it cleared its saved copies. Your profiles and settings are as they were.", android.widget.Toast.LENGTH_LONG).show()
+        }
+        main.postDelayed({ Crash.settled(applicationContext) }, 25_000)
         // ASCII only: a model name with other characters would make every request throw before it was sent.
         Http.userAgent = "CAS/${Updates.mine(this)} (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MODEL})"
             .filter { it.code in 0x20..0x7E }

@@ -18,7 +18,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * burst of add-on requests side by side), and a disk cache for pictures. Every call blocks, so run them off the main thread.
  */
 internal val GUEST_HOSTS = setOf("api.graphql.imdb.com", "www.rottentomatoes.com", "www.rogerebert.com", "backend.metacritic.com")
-internal const val REST_MS = 10 * 60_000L
+internal const val REST_MS = 3 * 60_000L
+
+/** Whether a site that has now failed [running] times running is left alone for a while. */
+internal fun restNow(running: Int) = running >= 2
 
 /** The longest a whole call for an answer may take, ms: its read wait and half as much again, for the connection and a slow body. */
 internal fun callLimit(timeoutMs: Int) = timeoutMs + timeoutMs / 2
@@ -70,16 +73,20 @@ object Http {
     // at any time. One that fails is left alone for [REST_MS]: its rows keep last time's copy from disk, the page
     // spends no more requests or seconds on it, and the site is not asked again and again.
     private val resting = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val failures = java.util.concurrent.ConcurrentHashMap<String, Int>() // failures running, by host
 
     private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000, headers: Map<String, String> = emptyMap()): String {
         val host = url.substringAfter("://").substringBefore('/')
         val guest = host in GUEST_HOSTS
-        if (guest && (resting[host] ?: 0L) > System.currentTimeMillis()) throw IOException("$host is resting after a failure")
+        if (guest && (resting[host] ?: 0L) > System.currentTimeMillis()) throw IOException("$host is resting after failures")
+        // Two failures running, not one: IMDb alone feeds the ratings, the age ratings, a dozen rows and every
+        // person's page, and one slow answer used to switch all of that off for ten minutes.
+        fun failed() { if (restNow(failures.merge(host, 1, Int::plus) ?: 1)) { resting[host] = System.currentTimeMillis() + REST_MS; failures.remove(host) } }
         val (code, body) = try { request(url, json, cache = false, timeoutMs, headers) } catch (e: IOException) {
-            if (guest) resting[host] = System.currentTimeMillis() + REST_MS
+            if (guest) failed()
             throw e
         }
-        if (guest && restsAfter(code)) resting[host] = System.currentTimeMillis() + REST_MS
+        if (guest) { if (restsAfter(code)) failed() else failures.remove(host) }
         val text = String(body, Charsets.UTF_8)
         // Stremio's API answers errors as JSON (read by the caller); anything else failed is an error page: say the code.
         if (code >= 400 && !text.trimStart().startsWith("{")) throw IOException("HTTP $code")

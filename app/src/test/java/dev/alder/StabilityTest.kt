@@ -166,6 +166,33 @@ class StabilityTest {
         assertEquals(200 * 1024 * 1024, bufferBytesFor(512L * 1024 * 1024))
     }
 
+    @Test fun aNewVersionWaitsItsDays() {
+        val day = 24 * 3600_000L
+        assertFalse(ripe(10 * day, 11 * day, 2))
+        assertTrue(ripe(10 * day, 12 * day, 2))
+        assertTrue(ripe(10 * day, 10 * day, 0)) // at once
+        assertTrue(ripe(0, 10 * day, 2)) // no date known: not held back for ever
+    }
+
+    @Test fun guardsCountBeforeTheyAct() {
+        assertFalse(needsRecovery(1)); assertTrue(needsRecovery(2))
+        assertFalse(restNow(1)); assertTrue(restNow(2))
+        assertFalse(pinLocks(2)); assertTrue(pinLocks(3))
+    }
+
+    @Test fun addressesLoseEverythingAfterTheHost() {
+        assertEquals("failed https://torrentio.strem.fun/… now", scrubbed("failed https://torrentio.strem.fun/realdebrid=SECRETKEY/stream/movie/tt1.json now"))
+        assertFalse(scrubbed("java.io.IOException: http://192.168.1.5:7000/abc/manifest.json").contains("abc"))
+        assertEquals("no address here", scrubbed("no address here"))
+    }
+
+    @Test fun aSettingKeepsItsKindInACopy() {
+        assertEquals("b", profileValue(true).getString("t"))
+        assertEquals(2, profileValue(2).getInt("v"))
+        assertEquals("s", profileValue("auto").getString("t"))
+        assertEquals("f", profileValue(1.15f).getString("t"))
+    }
+
     @Test fun onlyARefusingOrBrokenSiteRests() {
         assertTrue(restsAfter(403))
         assertTrue(restsAfter(429))

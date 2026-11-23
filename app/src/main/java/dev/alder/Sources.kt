@@ -62,7 +62,7 @@ object Sources {
         val app = c.applicationContext
         pool.execute {
             try { all(app, authKey, type, videoId) }
-            catch (e: Throwable) { android.util.Log.w("CAS", "sources ahead for $videoId failed: $e") }
+            catch (e: Throwable) { android.util.Log.w("CAS", "sources ahead for $videoId failed: ${scrubbed(e.toString())}") }
             finally { inFlight.remove(k) }
         }
     }

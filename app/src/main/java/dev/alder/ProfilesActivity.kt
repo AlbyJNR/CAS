@@ -23,6 +23,10 @@ import android.widget.TextView
 
 // Profile picker, Stremio sign-in, and setting up Watchly.
 // The app starts here; with a single profile it goes straight on to Home.
+/** Whether this many wrong PINs running puts the PIN to rest for [PIN_LOCK_MS]. */
+internal fun pinLocks(wrong: Int) = wrong >= 3
+internal const val PIN_LOCK_MS = 30_000L
+
 class ProfilesActivity : Screen() {
     // The sign-in code being waited on; anything else stops its polling loop.
     private var waitingCode: String? = null
@@ -378,9 +382,16 @@ class ProfilesActivity : Screen() {
         }
         fun submit() {
             if (digits.any { it < 0 }) return
-            if (check(digits.joinToString("") { "$it" })) return
+            // Three wrong tries and the PIN rests for half a minute, kept across leaving the screen: a child (or
+            // anyone) cannot work through the ten thousand PINs one after another.
+            val guard = getSharedPreferences("pin", MODE_PRIVATE)
+            val wait = guard.getLong("until", 0) - System.currentTimeMillis()
+            if (wait > 0) { digits.fill(-1); at = 0; draw(); error.text = "Too many tries. Wait ${(wait + 999) / 1000} seconds."; return }
+            if (check(digits.joinToString("") { "$it" })) { guard.edit().remove("wrong").remove("until").apply(); return }
+            val wrong = guard.getInt("wrong", 0) + 1
+            guard.edit().putInt("wrong", if (pinLocks(wrong)) 0 else wrong).apply { if (pinLocks(wrong)) putLong("until", System.currentTimeMillis() + PIN_LOCK_MS) }.apply()
             digits.fill(-1); at = 0; draw()
-            error.text = errorMessage
+            error.text = if (pinLocks(wrong)) "Too many tries. Wait ${PIN_LOCK_MS / 1000} seconds." else errorMessage
             row.animate().translationX(dp(16).toFloat()).setDuration(50).withEndAction {
                 row.animate().translationX(-dp(16).toFloat()).setDuration(80).withEndAction {
                     row.animate().translationX(0f).setDuration(50).start()

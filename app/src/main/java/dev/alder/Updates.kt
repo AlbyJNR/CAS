@@ -19,7 +19,14 @@ object Updates {
     private const val RELEASES = "https://github.com/AlbyJNR/CAS/releases/download/"
     private const val DAY = 24 * 3600_000L
 
-    class Release(val version: String, val apk: String)
+    class Release(val version: String, val apk: String, val publishedMs: Long = 0)
+
+    /**
+     * Whether [release] has been out long enough to install itself on this TV (Settings › About › New versions).
+     * By default a version waits two days: the TV its maker watches on takes each version at once, and a fault no
+     * test saw is met there first, not on every TV in the family the same night. Check for updates always offers it.
+     */
+    fun ripe(c: Context, release: Release) = ripe(release.publishedMs, System.currentTimeMillis(), Settings.updateWaitDays(c))
 
     fun mine(c: Context): String = c.packageManager.getPackageInfo(c.packageName, 0).versionName.orEmpty()
 
@@ -34,7 +41,8 @@ object Updates {
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url")
                 ?.takeIf { it.startsWith(RELEASES) } ?: return null
-            Release(json.getString("tag_name").removePrefix("v"), apk)
+            Release(json.getString("tag_name").removePrefix("v"), apk,
+                runCatching { java.time.Instant.parse(json.optString("published_at")).toEpochMilli() }.getOrDefault(0L))
         }
         release.also { prefs(c).edit().putLong("checked", System.currentTimeMillis()).apply() }
     }.onFailure { android.util.Log.w("CAS", "update check failed: $it") }.getOrNull()
@@ -83,7 +91,7 @@ object Updates {
         if (!quietDue(p.getLong("quietChecked", 0), System.currentTimeMillis())) return Quiet.NOTHING
         p.edit().putLong("quietChecked", System.currentTimeMillis()).apply()
         val release = latest(c) ?: return Quiet.FAILED
-        if (!newerVersion(release.version, mine(c))) return Quiet.NOTHING
+        if (!newerVersion(release.version, mine(c)) || !ripe(c, release)) return Quiet.NOTHING
         return runCatching { commit(c, release, quiet = true); Quiet.INSTALLING }
             .onFailure { android.util.Log.w("CAS", "quiet update of ${release.version} failed: $it") }
             .getOrDefault(Quiet.FAILED)
@@ -176,6 +184,9 @@ object Updates {
 }
 
 /** A quiet check is worth making again six hours after the last ([lastMs] 0 for never). */
+/** A release published at [publishedMs] has been out [days] days by [nowMs]; one with no date (0) counts as old. */
+internal fun ripe(publishedMs: Long, nowMs: Long, days: Int): Boolean = days <= 0 || publishedMs <= 0 || nowMs - publishedMs >= days * 24 * 3600_000L
+
 internal fun quietDue(lastMs: Long, nowMs: Long): Boolean = nowMs - lastMs > 6 * 3600_000L
 
 /** True when version [a] is newer than [b] ("1.10" > "1.9"; missing parts count as 0). */

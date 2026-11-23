@@ -42,6 +42,37 @@ object Settings {
      * Home, TV, Movies and Search, short pages, a handful of settings. On: every page, every row, every setting.
      */
     fun everything(c: Context) = prefs(c).getBoolean(profileKey(c, "everything"), false)
+    /**
+     * This profile's own choices and lists as one text, to copy to another TV: every setting kept per profile (its
+     * key ends in the profile's number) and its lists. No sign-in, no PIN, nothing of another profile.
+     */
+    fun exportProfile(c: Context): String {
+        val id = Profiles.active(c)?.id ?: return "{}"
+        val out = org.json.JSONObject()
+        prefs(c).all.filterKeys { it.endsWith("@$id") }.forEach { (k, v) -> out.put(k.removeSuffix("@$id"), profileValue(v)) }
+        return org.json.JSONObject().put("settings", out).put("lists", c.getSharedPreferences("lists", Context.MODE_PRIVATE).getString("lists@$id", "") ?: "").toString()
+    }
+
+    /** Puts a copy made by [exportProfile] in place for the profile in use; false when the text is not one. */
+    fun importProfile(c: Context, copy: String): Boolean = runCatching {
+        val id = Profiles.active(c)?.id ?: return false
+        val json = org.json.JSONObject(copy)
+        val settings = json.getJSONObject("settings")
+        val edit = prefs(c).edit()
+        prefs(c).all.keys.filter { it.endsWith("@$id") }.forEach { edit.remove(it) }
+        settings.keys().forEach { k ->
+            val v = settings.getJSONObject(k)
+            when (v.optString("t")) {
+                "b" -> edit.putBoolean("$k@$id", v.getBoolean("v")); "i" -> edit.putInt("$k@$id", v.getInt("v"))
+                "l" -> edit.putLong("$k@$id", v.getLong("v")); "f" -> edit.putFloat("$k@$id", v.getDouble("v").toFloat())
+                "s" -> edit.putString("$k@$id", v.getString("v"))
+            }
+        }
+        edit.apply()
+        json.optString("lists").takeIf { it.isNotEmpty() }?.let { c.getSharedPreferences("lists", Context.MODE_PRIVATE).edit().putString("lists@$id", it).apply() }
+        true
+    }.getOrDefault(false)
+
     /** Light (the default) or dark, each profile's own. */
     fun lightMode(c: Context) = prefs(c).getBoolean(profileKey(c, "light"), true)
     fun setLightMode(c: Context, light: Boolean) = prefs(c).edit().putBoolean(profileKey(c, "light"), light).apply()
@@ -127,6 +158,8 @@ object Settings {
     fun stallSwitch(c: Context): String = prefs(c).getString("stallSwitch", "auto") ?: "auto"
     /** New versions installed by CAS itself while the TV sits on the screensaver, with nothing to press. */
     fun autoUpdate(c: Context) = prefs(c).getBoolean("autoUpdate", true)
+    /** Days a new version must have been out before this TV takes it by itself: 2, or 0 for at once. */
+    fun updateWaitDays(c: Context) = prefs(c).getInt("updateWait", 2)
     /** Episode stills of unwatched episodes blurred in the guide, against spoilers. */
     fun blurThumbnails(c: Context) = prefs(c).getBoolean("blurThumbnails", false)
 }
@@ -184,6 +217,14 @@ object Languages {
 internal fun nextSettingIndex(current: Int, size: Int, direction: Int): Int {
     require(size > 0 && direction in -1..1 && direction != 0)
     return if (current < 0) if (direction < 0) size - 1 else 0 else (current + direction + size) % size
+}
+
+/** One stored setting with its kind, so a copy puts back a number as a number and a switch as a switch. */
+internal fun profileValue(v: Any?): org.json.JSONObject = org.json.JSONObject().apply {
+    when (v) {
+        is Boolean -> put("t", "b").put("v", v); is Int -> put("t", "i").put("v", v); is Long -> put("t", "l").put("v", v)
+        is Float -> put("t", "f").put("v", v.toDouble()); else -> put("t", "s").put("v", v?.toString().orEmpty())
+    }
 }
 
 /** Whether a stream add-on's address carries a Real-Debrid key (Torrentio and its kin write "realdebrid=…" into it). */
@@ -549,6 +590,28 @@ class SettingsActivity : Screen() {
                         recreate()
                     }
                 }
+                // This profile's lists and settings to another TV, by way of its own Stremio account (they are kept on
+                // one TV only, and a new or reset TV starts with none).
+                Profiles.active(this)?.let { me ->
+                    actionRow("Copy to another TV", "", "Your lists and settings are kept on this TV only. Save a copy with your Stremio account, then bring it to another TV signed in to the same account.") {
+                        choose("Copy to another TV", listOf("Save a copy from this TV", "Bring the copy to this TV", "Cancel")) { pick ->
+                            when (pick) {
+                                0 -> { val copy = Settings.exportProfile(this); urgent({ Stremio.saveCopy(me.authKey, copy) }) { r ->
+                                    choose(if (r.isSuccess) "Copy saved" else "Couldn't save the copy", listOf("OK"),
+                                        if (r.isSuccess) "On the other TV, sign in to the same Stremio account. Then select Settings › Profile › Copy to another TV › Bring the copy to this TV."
+                                        else "Check the TV's connection and try again.") {} } }
+                                1 -> background({ Stremio.readCopy(me.authKey) }) { r ->
+                                    val copy = r.getOrNull()
+                                    if (copy == null) choose(if (r.isSuccess) "No copy yet" else "Couldn't get the copy", listOf("OK"),
+                                        if (r.isSuccess) "Save a copy from the other TV first." else "Check the TV's connection and try again.") {}
+                                    else choose("Bring the copy to this TV?", listOf("Cancel", "Bring it"), "This profile's lists and settings on this TV change to the ones in the copy.") { yes ->
+                                        if (yes == 1) { if (Settings.importProfile(this, copy)) recreate() else choose("Couldn't read the copy", listOf("OK"), "Save a new copy from the other TV.") {} }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 // One row: switching and managing both open the picker, where Hold OK does the managing.
                 actionRow("Profiles", "", "Choose who is watching. Rename profiles, change PINs or add another person.") {
                     startActivity(Intent(this, ProfilesActivity::class.java).putExtra("pick", true)
@@ -592,6 +655,8 @@ class SettingsActivity : Screen() {
                 })
                 choiceRow(Choice("autoUpdate", "Updates", "Overnight: a new version installs by itself while the screensaver is on, and is there next time. Ask me offers it on Home instead.",
                     listOf(true to "Overnight", false to "Ask me")))
+                choiceRow(Choice("updateWait", "New versions", "After two days: a new version waits two days before this TV takes it, so a fault is found on another TV first. At once: this TV takes each version when it comes out.",
+                    listOf(2 to "After two days", 0 to "At once")))
                 actionRow("CAS", "Version " + Updates.mine(this),
                     "A quieter way to watch. CAS connects your Stremio account to your TV.") {
                     choose("CAS", listOf("OK"), "A TV interface for your Stremio account.") {}

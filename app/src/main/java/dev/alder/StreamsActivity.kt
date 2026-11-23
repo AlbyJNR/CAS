@@ -330,7 +330,7 @@ class StreamsActivity : Screen() {
             fun answered(i: Int, addon: Addon, streams: Result<Addon.Streams>) {
                     streams.exceptionOrNull()?.let { e ->
                         failures[i] = e
-                        android.util.Log.w("CAS", "streams from ${addon.name} failed", e)
+                        android.util.Log.w("CAS", "streams from ${addon.name} failed: ${scrubbed(e.toString())}") // its address holds a debrid key
                     }
                     torrents[i] = streams.getOrNull()?.torrents ?: 0
                     answers[i] = streams.getOrNull()?.playable.orEmpty()

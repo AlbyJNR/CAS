@@ -512,7 +512,7 @@ class MainActivity : Screen() {
         }
         // Overnight updates install from the screensaver; with that off, Home asks once a day as before.
         if (!Settings.autoUpdate(this) && Updates.due(this)) background({ Updates.latest(applicationContext) }) { r ->
-            val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) } ?: return@background
+            val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) && Updates.ripe(this, it) } ?: return@background
             if (Updates.offerOnce(this, release.version)) choose("CAS ${release.version} is ready", listOf("Later", "Install"),
                 "Install it now? It takes a minute, and your profiles and settings stay.") { if (it == 1) installUpdate(release) }
         }

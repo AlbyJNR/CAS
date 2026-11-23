@@ -13,6 +13,15 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.70.0
+
+- A new version waits 2 days before it installs itself. To get each version at once on a TV, go to Settings › About › **New versions** and select **At once**.
+- If CAS closes 2 times as it opens, it clears its saved copies and starts again. Your profiles and settings stay.
+- Copy your lists and settings to another TV: go to Settings › Profile › **Copy to another TV**.
+- After 3 incorrect PINs, wait 30 seconds before you try again.
+- When IMDb or another site fails 1 time, CAS continues to use it. Before, CAS stopped for 10 minutes.
+- The address of an add-on does not go into the log of the TV.
+
 ## 1.69.0
 
 - Sign-ins and PINs stay on this TV. An Android backup does not copy them. If you move to a new TV, sign in again.
