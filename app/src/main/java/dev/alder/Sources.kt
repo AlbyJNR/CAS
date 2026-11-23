@@ -53,7 +53,7 @@ object Sources {
         return all(c, authKey, type, videoId)
     }
 
-    private const val AWAIT_MS = 40_000L
+    private const val AWAIT_MS = 50_000L
 
     /** Fetches ahead, once, in the background; nothing happens when the sources are already kept or being fetched. */
     fun prefetch(c: Context, authKey: String, type: String, videoId: String) {

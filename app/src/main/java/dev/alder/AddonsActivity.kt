@@ -22,6 +22,7 @@ class AddonsActivity : Screen() {
     private lateinit var helpName: TextView
     private lateinit var helpBody: TextView
     private var addons: List<Addon> = emptyList()
+    private var loaded = false // the list is Stremio's own, read in this visit: nothing is added to or saved from an empty one that only failed to load
 
     private val scene by lazy { ImageView(this).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
@@ -78,7 +79,7 @@ class AddonsActivity : Screen() {
     private fun load() {
         val key = authKey ?: return
         background({ Stremio.addons(key, refresh = true) }) { result ->
-            result.onSuccess { addons = it; show() }
+            result.onSuccess { addons = it; loaded = true; show() }
                 .onFailure { show(message = "Couldn't reach Stremio. Check the TV's internet.", retry = ::load) }
         }
     }
@@ -216,6 +217,7 @@ class AddonsActivity : Screen() {
     // Stremio's install links are stremio://host/…/manifest.json; a bare addon address gets /manifest.json added.
     private fun install(typed: String) {
         if (typed.isEmpty()) return show(ADD_URL)
+        if (!loaded) return show(ADD_URL, "Your add-ons have not loaded yet. Check the TV's internet, then try again.", retry = ::load)
         val url = typed.replaceFirst(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
             .let { if (it.contains("://")) it else "https://$it" }
             .let { if (it.endsWith("/manifest.json")) it else it.trimEnd('/') + "/manifest.json" }

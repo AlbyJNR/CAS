@@ -30,8 +30,10 @@ object Images {
     private fun store(budget: Long) = object : LruCache<String, Bitmap>(budget.toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
-    private val cards = store(Runtime.getRuntime().maxMemory() / 4)
-    private val screens = store(Runtime.getRuntime().maxMemory() / 6)
+    // Capped: with the large heap the player's buffer asks for, a quarter of the heap would be far more pictures
+    // than a small TV's graphics memory holds.
+    private val cards = store(minOf(Runtime.getRuntime().maxMemory() / 4, 64L * 1024 * 1024))
+    private val screens = store(minOf(Runtime.getRuntime().maxMemory() / 6, 40L * 1024 * 1024))
     private fun cache(widthPx: Int) = if (widthPx > 1000) screens else cards
 
     /**

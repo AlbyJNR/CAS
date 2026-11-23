@@ -133,6 +133,39 @@ class StabilityTest {
         assertEquals("Slow Horses", McPick.of(parseMcList(list)[0].json()).title)
     }
 
+    private fun serves(resources: String, top: String = "") = manifestServes(org.json.JSONObject(
+        """{"id":"x","name":"X","types":["movie","series"],$top"resources":$resources}"""), "stream", "movie", "tt1")
+
+    @Test fun addonsAreAskedWhenStremioWouldAskThem() {
+        assertTrue(serves("""["stream"]""")) // no prefixes anywhere: every id
+        assertTrue(serves("""["stream"]""", """"idPrefixes":[],""")) // an empty list is every id
+        assertTrue(serves("""[{"name":"stream","types":["movie"]}]""", """"idPrefixes":["kitsu"],""")) // written in full with no prefixes: every id, not the manifest's
+        assertFalse(serves("""[{"name":"stream","types":["movie"],"idPrefixes":["kitsu"]}]"""))
+        assertFalse(serves("""["stream"]""", """"idPrefixes":["kitsu"],"""))
+        assertFalse(serves("""["meta"]"""))
+    }
+
+    @Test fun anAddonListIsSavedOnlyWhenItWasReadWhole() {
+        assertNull(Stremio.unsafeToSave(true, 0, listOf("cinemeta"), listOf("cinemeta")))
+        assertNull(Stremio.unsafeToSave(true, 0, listOf("cinemeta"), listOf("cinemeta", "torrentio")))
+        assertTrue(Stremio.unsafeToSave(false, 0, listOf("cinemeta"), listOf("cinemeta", "mine")) != null) // not read fresh
+        assertTrue(Stremio.unsafeToSave(true, 0, null, listOf("mine")) != null) // never read: an empty list plus one
+        assertTrue(Stremio.unsafeToSave(true, 1, listOf("cinemeta"), listOf("cinemeta")) != null) // one unreadable would be dropped
+        assertTrue(Stremio.unsafeToSave(true, 0, listOf("cinemeta"), listOf("mine")) != null) // Stremio's own must stay
+    }
+
+    @Test fun progressMadeOfflineGoesUpUnlessStremioHasNewer() {
+        fun item(id: String, at: String) = org.json.JSONObject().put("_id", id).put("_mtime", at)
+        val fetched = listOf(item("tt1", "2026-11-23T10:00:00.000Z"), item("tt2", "2026-11-23T12:00:00.000Z"))
+        val waiting = listOf(item("tt1", "2026-11-23T11:00:00.000Z"), item("tt2", "2026-11-23T11:00:00.000Z"), item("tt3", "2026-11-23T09:00:00.000Z"))
+        assertEquals(listOf("tt1", "tt3"), Stremio.newerThan(fetched, waiting).map { it.getString("_id") }) // tt2 was watched elsewhere since
+    }
+
+    @Test fun thePlayersBufferFollowsTheMemoryAndroidGives() {
+        assertNull(bufferBytesFor(192L * 1024 * 1024))
+        assertEquals(200 * 1024 * 1024, bufferBytesFor(512L * 1024 * 1024))
+    }
+
     @Test fun onlyARefusingOrBrokenSiteRests() {
         assertTrue(restsAfter(403))
         assertTrue(restsAfter(429))

@@ -61,14 +61,7 @@ class Addon(val descriptor: JSONObject) {
     }
 
     /** Whether this addon answers [resource] ("meta", "stream", …) for this type and id. */
-    fun serves(resource: String, type: String, id: String): Boolean {
-        val entry = manifest.optJSONArray("resources").items()
-            .firstOrNull { (it as? String ?: (it as? JSONObject)?.optString("name")) == resource } ?: return false
-        val own = entry as? JSONObject
-        val types = (own?.optJSONArray("types") ?: manifest.optJSONArray("types")).strings()
-        val prefixes = (own?.optJSONArray("idPrefixes") ?: manifest.optJSONArray("idPrefixes"))?.strings()
-        return type in types && (prefixes == null || prefixes.any { id.startsWith(it) })
-    }
+    fun serves(resource: String, type: String, id: String): Boolean = manifestServes(manifest, resource, type, id)
 
     // Catalogs (one [genre] of them with Stremio's `genre` extra) and details are kept on disk as they arrive; the saved*
     // versions read last time's answer, no network.
@@ -146,7 +139,9 @@ class Addon(val descriptor: JSONObject) {
 
     /** Playable streams only: torrent-only results (no url) need a streaming server, which this app doesn't have. */
     fun streams(type: String, videoId: String): Streams {
-        val all = get(false, "stream", type, videoId).optJSONArray("streams").objects()
+        // A debrid add-on's search for a title nobody has cached yet can take half a minute: at the usual 20 s it
+        // showed as failed, and the title as having no source.
+        val all = JSONObject(Http.get(url(arrayOf("stream", type, videoId)), false, STREAM_WAIT_MS)).optJSONArray("streams").objects()
         return Streams(all.mapNotNull { Stream.from(it) }, all.count { it.text("url") == null && it.text("infoHash") != null })
     }
 
@@ -643,6 +638,7 @@ internal fun money(total: JSONObject): String? {
     }
 }
 
+internal const val STREAM_WAIT_MS = 30_000 // how long a stream add-on has to answer
 internal const val IMDB_LIST_SIZE = 30 // a row shows a dozen; thirty is plenty to move along, and a third less to parse and picture
 
 /**
@@ -665,6 +661,21 @@ private fun trailerRank(node: JSONObject): Int {
 }
 
 private const val SPOT_SECONDS = 60
+
+/**
+ * Whether an add-on with this [manifest] answers [resource] for this type and id, as stremio-core reads a manifest:
+ * a resource written out in full answers for its own types and prefixes, and with no prefixes for every id; a
+ * resource named in short takes the manifest's. An empty list of prefixes is "every id" too. CAS read both as
+ * "none", and never asked add-ons that Stremio asks.
+ */
+internal fun manifestServes(manifest: JSONObject, resource: String, type: String, id: String): Boolean {
+    val entry = manifest.optJSONArray("resources").items()
+        .firstOrNull { (it as? String ?: (it as? JSONObject)?.optString("name")) == resource } ?: return false
+    val own = entry as? JSONObject
+    val types = (own?.optJSONArray("types") ?: manifest.optJSONArray("types")).strings()
+    val prefixes = (if (own != null) own.optJSONArray("idPrefixes") else manifest.optJSONArray("idPrefixes"))?.strings().orEmpty()
+    return type in types && (prefixes.isEmpty() || prefixes.any { id.startsWith(it) })
+}
 
 /** A name as people write it: some meta add-ons send HTML's codes in it ("O&apos;Hara"). */
 internal fun plain(s: String): String = if ('&' !in s) s else s.replace("&apos;", "'").replace("&#39;", "'").replace("&#x27;", "'")
@@ -763,7 +774,9 @@ class Stream(
      * False for addon "actions" dressed up as streams, such as MyTrakt's "Mark Watched" (a 27 KB placeholder file).
      * They stay listed but are never picked or focused first. Unknown size counts as a video.
      */
-    val isVideo get() = size == 0L || size >= 50L * 1024 * 1024
+    // Under 5 MB is not a video (MyTrakt lists a 27 KB "Mark watched" action as a stream). The line was 50 MB, which
+    // also hid short cartoons and low-resolution episodes with no reason shown.
+    val isVideo get() = size == 0L || size >= 5L * 1024 * 1024
 
     /**
      * The addon's name for it on one line: "Torrentio (2160p)" becomes "Torrentio  ·  2160p". A debrid tag ("[RD+]")

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing of CAS leaves the TV in a backup or a device-to-device transfer: its storage holds each profile's
+     Stremio sign-in and PIN. After a move to a new TV, sign in again. (Android 12 and later read this file;
+     android:allowBackup="false" covers the versions before.) -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" /><exclude domain="file" /><exclude domain="database" /><exclude domain="sharedpref" /><exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" /><exclude domain="file" /><exclude domain="database" /><exclude domain="sharedpref" /><exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

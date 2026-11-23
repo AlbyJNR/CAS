@@ -61,6 +61,9 @@ internal fun plausibleEpisode(durationMs: Long) = durationMs >= 2 * 60_000L
 // It gets a short list of sources: one that fails, or hasn't shown a picture after START_WAIT, gives way to the next
 // at the same second, and when the list runs out the player says so and offers Try again or Choose a source. Network blips are retried first, twice
 // after 1.5 s (NuvioTV's rule), so a dropped connection doesn't cost the source.
+/** The player's buffer in bytes for a heap of [maxMemory]: 200 MB when that leaves 250 MB for the rest of CAS, else null (ExoPlayer's own size). */
+internal fun bufferBytesFor(maxMemory: Long): Int? = (200 * 1024 * 1024).takeIf { maxMemory >= 450L * 1024 * 1024 }
+
 class PlayerActivity : Screen() {
     override val alwaysDark get() = true
     private lateinit var player: ExoPlayer
@@ -180,7 +183,10 @@ class PlayerActivity : Screen() {
         // small Fire TV Stick holds what it held before.
         val buffers = DefaultLoadControl.Builder()
             .setBufferDurationsMs(BUFFER_MIN_MS, BUFFER_MAX_MS, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS)
-            .setBackBuffer(BACK_BUFFER_MS, true).build()
+            .setBackBuffer(BACK_BUFFER_MS, true)
+            // Big files (a 4K remux) fill ExoPlayer's usual 131 MB in ten to seventeen seconds and then stop to load
+            // more often. Where Android gives CAS the room, the buffer holds up to 200 MB; elsewhere it is as it was.
+            .apply { bufferBytesFor(Runtime.getRuntime().maxMemory())?.let(::setTargetBufferBytes) }.build()
         player = ExoPlayer.Builder(this, renderers).setLoadControl(buffers).build()
         val remembered = Settings.titleChoice(this, metaId)
         wantAudio = remembered?.audio ?: Settings.audioLanguage(this)
@@ -282,13 +288,16 @@ class PlayerActivity : Screen() {
                     asHls = true
                     return load(position())
                 }
-                if (retryable(e) && retries < RETRIES) {
+                // Once the film is playing, a drop in the network gets more patience than a source that will not start:
+                    // four tries over about twenty seconds, before the source is given up for another.
+                if (retryable(e) && retries < (if (started) RETRIES_PLAYING else RETRIES)) {
                     retries++
                     // ExoPlayer's own retries already took about 6 s: each of ours gets a fresh START_WAIT, or the
                     // start timeout would move on to the next source before the second retry ran.
                     main.removeCallbacks(startTimeout)
-                    main.postDelayed(startTimeout, RETRY_WAIT + START_WAIT)
-                    main.postDelayed({ if (!isFinishing) player.prepare() }, RETRY_WAIT)
+                    val wait = RETRY_WAIT * retries // 1.5 s, then 3, 4.5, 6: the later tries give a router time to come back
+                    main.postDelayed(startTimeout, wait + START_WAIT)
+                    main.postDelayed({ if (!isFinishing) player.prepare() }, wait)
                     return
                 }
                 android.util.Log.w("CAS", "source ${at + 1}/${sources.size} failed: ${e.errorCodeName}", e)
@@ -1539,6 +1548,7 @@ class PlayerActivity : Screen() {
         const val ADDON_SUB = "addon-subtitle" // the id an addon subtitle file is attached under
         const val SUB_WAIT = 2_000L // ms the start waits for the addon's subtitles
         const val RETRIES = 2
+        const val RETRIES_PLAYING = 4 // tries at the same source after an error in the middle of a film
         const val BUFFER_MIN_MS = 30_000 // read ahead again under this much buffered
         const val BUFFER_MAX_MS = 60_000 // and stop at this much
         const val BACK_BUFFER_MS = 20_000 // kept behind the position, for a short rewind without a new request

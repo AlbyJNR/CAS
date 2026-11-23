@@ -13,6 +13,16 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.69.0
+
+- Sign-ins and PINs stay on this TV. An Android backup does not copy them. If you move to a new TV, sign in again.
+- CAS does not save the add-on list unless it has read the full list from Stremio. Before, an error could remove all add-ons.
+- When CAS cannot read one add-on, the other add-ons work. Before, Home could show nothing.
+- If the TV has no internet when you stop a film, CAS keeps your progress and sends it when the internet comes back.
+- CAS asks all the add-ons that Stremio asks, and gives each add-on 30 seconds. Short videos show as sources.
+- When the internet stops for a short time in a film, CAS tries the same source 4 times before it changes source.
+- Large files stop less on a TV with sufficient memory.
+
 ## 1.68.0
 
 - Profile pictures: a profile can have an animal as its picture. There are 12 animals.
