@@ -121,6 +121,8 @@ class MainActivity : Screen() {
     internal val listSortChips = mutableMapOf<ListSort, TextView>()
     internal var lastListChip: TextView? = null
     internal val navItems = mutableMapOf<Page, View>()
+    internal lateinit var weatherStrip: LinearLayout // now and five days, left of the wordmark, on Home
+    internal var weatherOn = false
     internal lateinit var wordmark: View // "CAS", top right, now that the rail holds the pages
     internal var page = Page.HOME
     internal val Page.isCatalog get() = this == Page.SHOWS || this == Page.MOVIES
@@ -385,6 +387,8 @@ class MainActivity : Screen() {
             })
             wordmark = brand().apply { alpha = 0f }
             addView(wordmark, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = dp(26); rightMargin = dp(PAD) })
+            weatherStrip = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE; isFocusable = false }
+            addView(weatherStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = dp(10); rightMargin = dp(PAD + 110) })
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-2, -1, Gravity.START)) // fades in if the page wants it
         })
 
@@ -504,6 +508,7 @@ class MainActivity : Screen() {
         if (everythingBuilt != null && everythingBuilt != Settings.everything(this)) return recreate()
         // Idle dim stays off (ponytail, 2026-10-26); the cinema screensaver is Settings › Picture & sound › Screensaver (CAS 1.6).
         restIdle()
+        refreshWeather()
         // A version downloaded overnight that Android wants a press for: one press, no download to wait on.
         Updates.pending(this)?.let { waiting ->
             if (Updates.offerOnce(this, waiting.version)) choose("CAS ${waiting.version} is ready", listOf("Later", "Install"),
@@ -644,6 +649,7 @@ class MainActivity : Screen() {
         val alpha = if (on) 0.3f else 1f
         header.animate().alpha(alpha).setDuration(400).start()
         wordmark.animate().alpha(alpha).setDuration(400).start()
+        weatherStrip.animate().alpha(alpha).setDuration(400).start()
         scroller.animate().alpha(alpha).setDuration(400).start()
         browseInfo.animate().alpha(if (heroItem == null) 0f else alpha).setDuration(400).start()
         cardCaption.animate().alpha(alpha).setDuration(400).start()
@@ -866,6 +872,7 @@ class MainActivity : Screen() {
         val headerOn = !cinemaOn || header.hasFocus()
         header.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         wordmark.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
+        showWeather()
         topShade.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         // Lighter in the cinema (only its few words sit low on the left), full while browsing under the cards.
         browseInfo.animate().alpha(if (cinemaOn || heroItem == null) 0f else 1f).setDuration(250).start()
@@ -1238,6 +1245,7 @@ class MainActivity : Screen() {
         pendingPlace = places[p]
         val switched = p != page
         page = p
+        showWeather()
         val grid = p == Page.LIBRARY
         scroller.layoutParams = (scroller.layoutParams as FrameLayout.LayoutParams).apply {
             topMargin = if (grid) dp(LIST_TOP) else browseRowTop

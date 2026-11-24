@@ -657,6 +657,8 @@ class SettingsActivity : Screen() {
                     listOf(true to "Overnight", false to "Ask me")))
                 choiceRow(Choice("updateWait", "New versions", "After two days: a new version waits two days before this TV takes it, so a fault is found on another TV first. At once: this TV takes each version when it comes out.",
                     listOf(2 to "After two days", 0 to "At once")))
+                actionRow("Weather on Home", Weather.place(this)?.name?.substringBefore(',') ?: "Off",
+                    "Today and the next five days at the top of Home, for one town on this TV. Weather data by Open-Meteo.com.") { askTown() }
                 actionRow("CAS", "Version " + Updates.mine(this),
                     "A quieter way to watch. CAS connects your Stremio account to your TV.") {
                     choose("CAS", listOf("OK"), "A TV interface for your Stremio account.") {}
@@ -684,6 +686,26 @@ class SettingsActivity : Screen() {
                 }
                 latestChecked?.let(::gotLatest) ?: background({ Updates.latest(applicationContext) }) { r -> latestChecked = r; gotLatest(r) }
             }
+        }
+    }
+
+    private fun askTown() {
+        val on = Weather.place(this) != null
+        fun ask(): Unit = askName("Your town", hint = "Belfast, Leeds, Cork…") { words ->
+            background({ Weather.find(words) }) { r ->
+                val found = r.getOrDefault(emptyList())
+                fun set(p: Weather.Place) { Weather.setPlace(this, p); showGroup(Group.ABOUT) }
+                when {
+                    found.isEmpty() -> choose("No town with that name", listOf("Try again", "Cancel"),
+                        if (r.isFailure) "CAS could not ask. Check the internet connection." else "Check the spelling, or give a larger town near you.") { if (it == 0) ask() }
+                    found.size == 1 -> set(found[0])
+                    else -> choose("Which one?", found.map { it.name }) { set(found[it]) }
+                }
+            }
+        }
+        if (!on) return ask()
+        choose("Weather on Home", listOf("Change the town", "Turn off", "Cancel"), Weather.place(this)?.name) {
+            when (it) { 0 -> ask(); 1 -> { Weather.setPlace(this, null); showGroup(Group.ABOUT) } }
         }
     }
 

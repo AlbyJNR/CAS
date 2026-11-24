@@ -13,6 +13,12 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.71.0
+
+- Home can show the weather: the temperature now, and the next 5 days. To set it, go to Settings › About › **Weather on Home** and give your town.
+- The weather comes from Open-Meteo. CAS sends only the position of the town, to the nearest kilometre.
+- If there is no town or no answer, Home shows no weather.
+
 ## 1.70.0
 
 - A new version waits 2 days before it installs itself. To get each version at once on a TV, go to Settings › About › **New versions** and select **At once**.

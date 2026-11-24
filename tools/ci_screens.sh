@@ -22,7 +22,7 @@ shot() { adb exec-out screencap -p > "screens/$1.png"; }
 key() { adb shell input keyevent "$1"; sleep "${2:-2}"; }
 adb install "$APK" > /dev/null
 adb logcat -c
-adb shell am start -n uk.albyjnr.cas/dev.alder.ProfilesActivity --es testKey "$KEY" > /dev/null
+adb shell am start -n uk.albyjnr.cas/dev.alder.ProfilesActivity --es testKey "$KEY" --ez casTown true > /dev/null
 sleep 35; shot 01-home
 # A held OK on the first title: its menu, Trailer first.
 adb shell input keyevent --longpress KEYCODE_DPAD_CENTER; sleep 3; shot 01a-hold-menu

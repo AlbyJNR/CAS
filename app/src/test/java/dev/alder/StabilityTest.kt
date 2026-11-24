@@ -202,4 +202,38 @@ class StabilityTest {
         assertTrue("api.graphql.imdb.com" in GUEST_HOSTS)
         assertFalse("api.strem.io" in GUEST_HOSTS) // Stremio is never rested: Retry must reach it
     }
+
+    private val answer = """{"current":{"temperature_2m":6.2,"weather_code":3,"is_day":0},"daily":{"time":["2026-11-24","2026-11-25","2026-11-26","2026-11-27","2026-11-28","2026-11-29","2026-11-30"],"weather_code":[3,3,0,53,71,61,95],"temperature_2m_max":[6.6,7.0,5.4,6.4,11.5,10.8,9.1],"temperature_2m_min":[2.4,4.7,1.9,1.5,6.4,7.3,-0.6]}}"""
+
+    @Test fun weatherReportGivesNowAndTheFiveDaysAfterToday() {
+        val r = report(answer, "2026-11-24")!!
+        assertEquals(6, r.now); assertEquals(false, r.day)
+        assertEquals(listOf("Wed", "Thu", "Fri", "Sat", "Sun"), r.days.map { it.name })
+        assertEquals(7, r.days[0].high); assertEquals(5, r.days[0].low)
+    }
+
+    @Test fun weatherCopyFromBeforeMidnightDropsTheDayThatIsNowToday() {
+        val r = report(answer, "2026-11-25")!!
+        assertEquals("Thu", r.days.first().name); assertEquals(5, r.days.size)
+        assertEquals(-1, report(answer, "2026-11-29")!!.days.single().low)
+    }
+
+    @Test fun weatherAnswerThatIsNotAReportGivesNothing() {
+        assertEquals(null, report("<html>busy</html>", "2026-11-24"))
+        assertEquals(null, report("""{"error":true,"reason":"x"}""", "2026-11-24"))
+        assertEquals(0, places("""{"generationtime_ms":1}""").size)
+    }
+
+    @Test fun weatherCopyShowsForTwelveHoursAndAsksAgainAfterThree() {
+        val h = 3600_000L
+        assertEquals(true, shows(100 * h, 111 * h)); assertEquals(false, shows(100 * h, 112 * h)); assertEquals(false, shows(0, h))
+        assertEquals(false, asksAgain(100 * h, 102 * h)); assertEquals(true, asksAgain(100 * h, 103 * h)); assertEquals(true, asksAgain(100 * h, 99 * h))
+    }
+
+    @Test fun weatherSkyAndPlaceAndUrl() {
+        assertEquals(Sky.MOON, sky(0, day = false)); assertEquals(Sky.RAIN, sky(81)); assertEquals(Sky.SNOW, sky(86)); assertEquals(Sky.CLOUD, sky(1234))
+        assertEquals("Drizzle", skyWord(53, true))
+        assertEquals("London, England, United Kingdom", places("""{"results":[{"name":"London","latitude":51.5,"longitude":-0.12,"admin1":"England","country":"United Kingdom"}]}""")[0].name)
+        assertEquals(true, url(51.50853, -0.12574).contains("latitude=51.51&longitude=-0.13&"))
+    }
 }

@@ -76,6 +76,9 @@ class ProfilesActivity : Screen() {
         // Debug builds only: `--ez casDark true` (or false) sets the profile's mode, so CI can photograph both.
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && intent.hasExtra("casDark") && Profiles.active(this) != null)
             Settings.setLightMode(this, !intent.getBooleanExtra("casDark", false))
+        // Debug builds only: `--ez casTown true` sets a town for the weather line, so CI can photograph it.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && intent.getBooleanExtra("casTown", false))
+            Weather.setPlace(this, Weather.Place("London", 51.51, -0.13))
         // Debug builds only, and only on a TV with no profile yet: `--es testKey <Stremio auth key>` signs a test
         // profile in with no phone, so CI can photograph the signed-in screens (cas-build.yml, screens).
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && Profiles.all(this).isEmpty())
