@@ -657,8 +657,12 @@ class SettingsActivity : Screen() {
                     listOf(true to "Overnight", false to "Ask me")))
                 choiceRow(Choice("updateWait", "New versions", "After two days: a new version waits two days before this TV takes it, so a fault is found on another TV first. At once: this TV takes each version when it comes out.",
                     listOf(2 to "After two days", 0 to "At once")))
-                actionRow("Weather on Home", Weather.place(this)?.name?.substringBefore(',') ?: "Off",
-                    "Today and the next five days at the top of Home, for one town on this TV. Weather data by Open-Meteo.com.") { askTown() }
+                actionRow("Weather on Home", Weather.place(this).let { p -> when {
+                    Weather.off(this) -> "Off"
+                    p == null -> "Automatic"
+                    p.auto -> p.name.substringBefore(',') + " (automatic)"
+                    else -> p.name.substringBefore(',')
+                } }, "Today and the next five days at the top of Home. CAS finds the town from the internet connection, or you type it. Weather data by Open-Meteo.com. Town by GeoJS.") { askTown() }
                 actionRow("CAS", "Version " + Updates.mine(this),
                     "A quieter way to watch. CAS connects your Stremio account to your TV.") {
                     choose("CAS", listOf("OK"), "A TV interface for your Stremio account.") {}
@@ -690,7 +694,6 @@ class SettingsActivity : Screen() {
     }
 
     private fun askTown() {
-        val on = Weather.place(this) != null
         fun ask(): Unit = askName("Your town", hint = "Belfast, Leeds, Cork…") { words ->
             background({ Weather.find(words) }) { r ->
                 val found = r.getOrDefault(emptyList())
@@ -703,9 +706,21 @@ class SettingsActivity : Screen() {
                 }
             }
         }
-        if (!on) return ask()
-        choose("Weather on Home", listOf("Change the town", "Turn off", "Cancel"), Weather.place(this)?.name) {
-            when (it) { 0 -> ask(); 1 -> { Weather.setPlace(this, null); showGroup(Group.ABOUT) } }
+        val place = Weather.place(this)
+        val typed = place != null && !place.auto
+        val off = Weather.off(this)
+        val items = listOfNotNull("Find my town for me".takeIf { typed || off }, if (typed) "Change the town" else "Type the town", "Turn off".takeIf { !off }, "Cancel")
+        choose("Weather on Home", items, when {
+            off -> null
+            place == null -> "CAS finds your town from the internet connection. Open Home to see it."
+            typed -> place.name
+            else -> place.name + ". CAS found this from the internet connection. If it is not your town, type the town."
+        }) {
+            when (items[it]) {
+                "Find my town for me" -> { Weather.setAutomatic(this); showGroup(Group.ABOUT) }
+                "Change the town", "Type the town" -> ask()
+                "Turn off" -> { Weather.setPlace(this, null); showGroup(Group.ABOUT) }
+            }
         }
     }
 

@@ -34,9 +34,18 @@ private fun MainActivity.skyView(s: Sky, color: Int) = ImageView(this).apply {
 
 /** Shows the saved report at once; asks for a new one, off the main thread, when the saved one is three hours old. */
 internal fun MainActivity.refreshWeather() {
-    if (Weather.place(this) == null) return drawWeather(null)
+    if (Weather.off(this)) return drawWeather(null)
     drawWeather(Weather.saved(this))
-    if (Weather.due(this)) background({ Weather.fetch(applicationContext) }) { r -> r.getOrNull()?.let(::drawWeather) }
+    if (weatherBusy || !Weather.wantsWork(this)) return
+    weatherBusy = true
+    background({ Weather.refresh(applicationContext) }) { r ->
+        weatherBusy = false
+        r.exceptionOrNull()?.let { android.util.Log.i("CAS", "weather: " + scrubbed(it.toString())) }
+        r.getOrNull()?.let(::drawWeather)
+        // A first answer that did not come (a TV just switched on is often not on the network yet): one more try,
+        // a little later, so the line does not wait for the next visit to Home.
+        if (r.getOrNull() == null && !weatherRetried) { weatherRetried = true; weatherStrip.postDelayed({ if (!isDestroyed) refreshWeather() }, 20_000) }
+    }
 }
 
 internal fun MainActivity.drawWeather(r: Weather.Report?) {
@@ -46,7 +55,12 @@ internal fun MainActivity.drawWeather(r: Weather.Report?) {
     if (r == null) return
     weatherStrip.addView(skyView(sky(r.code, r.day), Screen.TEXT), LinearLayout.LayoutParams(dp(26), dp(26)))
     weatherStrip.addView(text("${r.now}°", 22f, bold = true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
-    weatherStrip.addView(text(skyWord(r.code, r.day), SMALL, color = TEXT_2), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+    // The town under the word: a town found from the internet address can be the wrong one, and this shows it.
+    val town = Weather.place(this)?.name?.substringBefore(',').orEmpty()
+    weatherStrip.addView(column(Gravity.START,
+        text(skyWord(r.code, r.day), SMALL),
+        text(town, SMALL, color = TEXT_2).apply { maxLines = 1; maxWidth = dp(130); ellipsize = android.text.TextUtils.TruncateAt.END },
+    ), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
     if (r.days.isNotEmpty()) weatherStrip.addView(View(this).apply { setBackgroundColor(ink(0x33)) }, LinearLayout.LayoutParams(dp(1), dp(30)).apply { marginStart = dp(18); marginEnd = dp(2) })
     r.days.forEach { d ->
         val temps = SpannableStringBuilder("${d.high}° ").apply {

@@ -5,12 +5,13 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * The weather line on Home: now, and the five days after today, for one town set once on this TV.
- * Open-Meteo answers without an account or a key. The request carries a map position cut to two decimals
- * (about a kilometre) and nothing else. No town, or no answer: there is no line, and Home is as it was.
+ * The weather line on Home: now, and the five days after today, for one town on this TV. CAS finds the town from
+ * the internet address (GeoJS, no account or key) unless one is typed in Settings; the line names the town, so a
+ * wrong one shows. Open-Meteo gives the weather, also without an account or key: that request carries a map position
+ * cut to two decimals (about a kilometre) and nothing else. No town, or no answer: there is no line.
  */
 object Weather {
-    class Place(val name: String, val lat: Double, val lon: Double)
+    class Place(val name: String, val lat: Double, val lon: Double, val auto: Boolean = false)
     class Day(val name: String, val code: Int, val high: Int, val low: Int)
     class Report(val now: Int, val code: Int, val day: Boolean, val days: List<Day>)
 
@@ -19,14 +20,51 @@ object Weather {
 
     private fun prefs(c: Context) = c.getSharedPreferences("weather", Context.MODE_PRIVATE)
 
+    fun off(c: Context) = prefs(c).getBoolean("off", false)
+
     fun place(c: Context): Place? = prefs(c).run {
         val name = getString("name", null) ?: return null
-        Place(name, getFloat("lat", 0f).toDouble(), getFloat("lon", 0f).toDouble())
+        Place(name, getFloat("lat", 0f).toDouble(), getFloat("lon", 0f).toDouble(), getBoolean("auto", false))
     }
 
+    /** A town typed in Settings ([Place.auto] false) stays until Settings changes it. Null turns the weather off. */
     fun setPlace(c: Context, p: Place?) = prefs(c).edit().clear().apply {
-        if (p != null) putString("name", p.name).putFloat("lat", p.lat.toFloat()).putFloat("lon", p.lon.toFloat())
+        if (p == null) putBoolean("off", true)
+        else putString("name", p.name).putFloat("lat", p.lat.toFloat()).putFloat("lon", p.lon.toFloat()).putBoolean("auto", p.auto)
     }.apply()
+
+    /** Back to the town CAS finds by itself. */
+    fun setAutomatic(c: Context) = prefs(c).edit().clear().apply()
+
+    /** True when [refresh] has something to do: no town yet, a found town a day old, or a report three hours old. */
+    fun wantsWork(c: Context, nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (off(c)) return false
+        val p = place(c) ?: return true
+        return (p.auto && looksAgain(prefs(c).getLong("foundAt", 0), nowMs)) || asksAgain(prefs(c).getLong("at", 0), nowMs)
+    }
+
+    /**
+     * Finds the town when none is typed (from the internet address, one time a day), then the report when it is due.
+     * Network: call it off the main thread.
+     */
+    fun refresh(c: Context): Report? {
+        if (off(c)) return null
+        val now = System.currentTimeMillis()
+        val before = place(c)
+        if (before == null || (before.auto && looksAgain(prefs(c).getLong("foundAt", 0), now))) {
+            val found = runCatching { here(Http.get("https://get.geojs.io/v1/ip/geo.json", timeoutMs = 8_000)) }
+                .onFailure { android.util.Log.i("CAS", "weather: no town: " + scrubbed(it.toString())) }.getOrNull()
+            android.util.Log.i("CAS", "weather: town " + if (found == null) "not found" else "found")
+            if (found != null) prefs(c).edit().apply {
+                // The same town again keeps its report; another town starts without one.
+                if (before == null || moved(before, found)) remove("answer").remove("at")
+                putString("name", found.name).putFloat("lat", found.lat.toFloat()).putFloat("lon", found.lon.toFloat()).putBoolean("auto", true)
+            }.apply()
+            if (found != null || before != null) prefs(c).edit().putLong("foundAt", now).apply()
+        }
+        if (place(c) == null) return null
+        return if (asksAgain(prefs(c).getLong("at", 0), now)) fetch(c) else saved(c)
+    }
 
     /** Towns with this name, the largest first. Network: call it off the main thread. */
     fun find(name: String): List<Place> {
@@ -40,10 +78,8 @@ object Weather {
         getString("answer", null)?.let { report(it, today(nowMs)) }
     }
 
-    fun due(c: Context, nowMs: Long = System.currentTimeMillis()) = place(c) != null && asksAgain(prefs(c).getLong("at", 0), nowMs)
-
     /** Asks for a new report and keeps it. Network: call it off the main thread. Null when the answer is no use. */
-    fun fetch(c: Context): Report? {
+    private fun fetch(c: Context): Report? {
         val p = place(c) ?: return null
         val body = Http.get(url(p.lat, p.lon), timeoutMs = 8_000)
         val now = System.currentTimeMillis()
@@ -57,6 +93,18 @@ object Weather {
 
 internal fun shows(atMs: Long, nowMs: Long) = atMs > 0 && nowMs - atMs in 0 until Weather.KEEP_MS
 internal fun asksAgain(atMs: Long, nowMs: Long) = atMs <= 0 || nowMs < atMs || nowMs - atMs >= Weather.FRESH_MS
+
+internal fun looksAgain(foundMs: Long, nowMs: Long) = foundMs <= 0 || nowMs < foundMs || nowMs - foundMs >= 24 * 3600_000L
+internal fun moved(a: Weather.Place, b: Weather.Place) = Math.abs(a.lat - b.lat) > 0.05 || Math.abs(a.lon - b.lon) > 0.05
+
+/** The town in GeoJS's answer for this internet address. Null if the answer has no position. */
+internal fun here(answer: String): Weather.Place? = runCatching {
+    val j = JSONObject(answer)
+    val lat = j.getDouble("latitude"); val lon = j.getDouble("longitude")
+    if (lat.isNaN() || lon.isNaN() || (lat == 0.0 && lon == 0.0)) return null
+    val name = listOf("city", "region", "country").map { j.optString(it) }.firstOrNull { it.isNotBlank() && it != "null" } ?: return null
+    Weather.Place(name, lat, lon, auto = true)
+}.getOrNull()
 
 internal fun url(lat: Double, lon: Double) = "https://api.open-meteo.com/v1/forecast" +
     "?latitude=" + String.format(Locale.US, "%.2f", lat) + "&longitude=" + String.format(Locale.US, "%.2f", lon) +

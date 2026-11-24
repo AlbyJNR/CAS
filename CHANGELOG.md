@@ -13,6 +13,13 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.72.0
+
+- Home shows the weather with no setup. CAS finds your town from the internet connection.
+- The weather shows the name of the town. If the town is incorrect, go to Settings › About › **Weather on Home** and type your town.
+- A town that you type stays. CAS does not change it.
+- To remove the weather, go to Settings › About › **Weather on Home** and select **Turn off**.
+
 ## 1.71.0
 
 - Home can show the weather: the temperature now, and the next 5 days. To set it, go to Settings › About › **Weather on Home** and give your town.

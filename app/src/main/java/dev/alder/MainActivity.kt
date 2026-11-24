@@ -123,6 +123,8 @@ class MainActivity : Screen() {
     internal val navItems = mutableMapOf<Page, View>()
     internal lateinit var weatherStrip: LinearLayout // now and five days, left of the wordmark, on Home
     internal var weatherOn = false
+    internal var weatherBusy = false
+    internal var weatherRetried = false
     internal lateinit var wordmark: View // "CAS", top right, now that the rail holds the pages
     internal var page = Page.HOME
     internal val Page.isCatalog get() = this == Page.SHOWS || this == Page.MOVIES

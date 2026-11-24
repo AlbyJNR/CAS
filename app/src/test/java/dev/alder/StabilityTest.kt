@@ -236,4 +236,20 @@ class StabilityTest {
         assertEquals("London, England, United Kingdom", places("""{"results":[{"name":"London","latitude":51.5,"longitude":-0.12,"admin1":"England","country":"United Kingdom"}]}""")[0].name)
         assertEquals(true, url(51.50853, -0.12574).contains("latitude=51.51&longitude=-0.13&"))
     }
+
+    @Test fun weatherTownFromTheInternetAddress() {
+        val p = here("""{"city":"Belfast","region":"Northern Ireland","country":"United Kingdom","latitude":"54.5968","longitude":"-5.9254"}""")!!
+        assertEquals("Belfast", p.name); assertEquals(true, p.auto); assertEquals(54.5968, p.lat, 0.0001)
+        assertEquals("Ireland", here("""{"country":"Ireland","latitude":"53.3","longitude":"-6.2"}""")!!.name)
+        assertEquals(null, here("""{"city":"X","latitude":"nil","longitude":"nil"}"""))
+        assertEquals(null, here("""{"city":"X","latitude":"0","longitude":"0"}"""))
+        assertEquals(null, here("<html>"))
+    }
+
+    @Test fun weatherFoundTownIsLookedForOnceADayAndSmallShiftsKeepTheReport() {
+        val h = 3600_000L
+        assertEquals(false, looksAgain(100 * h, 123 * h)); assertEquals(true, looksAgain(100 * h, 124 * h)); assertEquals(true, looksAgain(0, h))
+        val a = Weather.Place("A", 54.60, -5.93)
+        assertEquals(false, moved(a, Weather.Place("A", 54.62, -5.95))); assertEquals(true, moved(a, Weather.Place("B", 54.2, -5.9)))
+    }
 }
