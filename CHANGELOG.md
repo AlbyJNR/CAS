@@ -13,6 +13,11 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.72.1
+
+- A new version installs itself on the night it comes out, as before 1.70.0.
+- To make a TV wait 2 days, go to Settings › About › **New versions** and select **After two days**.
+
 ## 1.72.0
 
 - Home shows the weather with no setup. CAS finds your town from the internet connection.

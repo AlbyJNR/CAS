@@ -159,7 +159,7 @@ object Settings {
     /** New versions installed by CAS itself while the TV sits on the screensaver, with nothing to press. */
     fun autoUpdate(c: Context) = prefs(c).getBoolean("autoUpdate", true)
     /** Days a new version must have been out before this TV takes it by itself: 2, or 0 for at once. */
-    fun updateWaitDays(c: Context) = prefs(c).getInt("updateWait", 2)
+    fun updateWaitDays(c: Context) = prefs(c).getInt("updateWait", 0)
     /** Episode stills of unwatched episodes blurred in the guide, against spoilers. */
     fun blurThumbnails(c: Context) = prefs(c).getBoolean("blurThumbnails", false)
 }
@@ -655,8 +655,8 @@ class SettingsActivity : Screen() {
                 })
                 choiceRow(Choice("autoUpdate", "Updates", "Overnight: a new version installs by itself while the screensaver is on, and is there next time. Ask me offers it on Home instead.",
                     listOf(true to "Overnight", false to "Ask me")))
-                choiceRow(Choice("updateWait", "New versions", "After two days: a new version waits two days before this TV takes it, so a fault is found on another TV first. At once: this TV takes each version when it comes out.",
-                    listOf(2 to "After two days", 0 to "At once")))
+                choiceRow(Choice("updateWait", "New versions", "At once: this TV takes each version on the night it comes out. After two days: a new version waits two days before this TV takes it, so a fault is found on another TV first.",
+                    listOf(0 to "At once", 2 to "After two days")))
                 actionRow("Weather on Home", Weather.place(this).let { p -> when {
                     Weather.off(this) -> "Off"
                     p == null -> "Automatic"
