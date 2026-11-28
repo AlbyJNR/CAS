@@ -13,6 +13,17 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Each release gets its own `## <version>` heading on a line of its own: What's new in the app reads the heading.
 
+## 1.74.0
+
+- CAS has a **Live** page for TV channels: kids, news and sport. To open it, select **Live** in the menu on the left.
+- Select a channel to play it. Press Up or Down to change the channel. Press Back to go out.
+- The page of a person has a new choice: **Top rated**. It shows a list with numbers, the best title first.
+- The list shows the work that the person did in their own job. Each title shows its rating from IMDb in a colour.
+- The TV page and the Movies page have a **Top rated** choice before the genres. It opens the 50 best titles.
+- On that list, move along the genres at the top. The list changes to the genre that you stop on.
+- The Live channels come from a list that CAS keeps. CAS can correct a channel without a new version.
+- A channel with the note **UK only** plays only on a connection in the UK.
+
 ## 1.72.1
 
 - A new version installs itself on the night it comes out, as before 1.70.0.

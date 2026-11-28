@@ -1,0 +1,297 @@
+{
+ "v": 1,
+ "rev": 1,
+ "rows": [
+  {
+   "name": "Kids",
+   "channels": [
+    {
+     "id": "cbeebies",
+     "name": "CBeebies",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:cbeebies_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "cbbc",
+     "name": "CBBC",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:cbbc_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "pop",
+     "name": "Pop",
+     "kind": "stream",
+     "url": "https://amg01753-narrativeentert-popkids-samsunguk-yjjil.amagi.tv/playlist/amg01753-narrativeentert-popkids-samsunguk/playlist.m3u8"
+    },
+    {
+     "id": "tinypop",
+     "name": "Tiny Pop",
+     "kind": "stream",
+     "url": "https://amg01753-narrativeentert-tinypop-samsunguk-hvvb7.amagi.tv/playlist/amg01753-narrativeentert-tinypop-samsunguk/playlist.m3u8"
+    },
+    {
+     "id": "popup",
+     "name": "Pop Up",
+     "kind": "stream",
+     "url": "https://amg01753-amg01753c9-samsung-gb-8005.playouts.now.amagi.tv/ts-eu-w1-n2/playlist/amg01753-narrativeuk-popup-samsunggb/playlist.m3u8"
+    },
+    {
+     "id": "moonbug",
+     "name": "Moonbug Kids",
+     "kind": "stream",
+     "url": "https://dq2a9ghraf7sw.cloudfront.net/Moonbug.m3u8"
+    },
+    {
+     "id": "teletubbies",
+     "name": "Teletubbies",
+     "kind": "stream",
+     "url": "https://dy9gbyiaxw0rb.cloudfront.net/master.m3u8"
+    },
+    {
+     "id": "mrbean",
+     "name": "Mr Bean Animated",
+     "kind": "stream",
+     "url": "https://amg00627-amg00627c23-samsung-gb-3927.playouts.now.amagi.tv/playlist.m3u8"
+    },
+    {
+     "id": "babyshark",
+     "name": "Baby Shark TV",
+     "kind": "stream",
+     "url": "https://newidco-babysharktv-1-eu.rakuten.wurl.tv/playlist.m3u8"
+    },
+    {
+     "id": "lego",
+     "name": "Lego Channel",
+     "kind": "stream",
+     "url": "https://dh18i7whff86v.cloudfront.net/index.m3u8"
+    },
+    {
+     "id": "zoomoo",
+     "name": "ZooMoo",
+     "kind": "stream",
+     "url": "https://d1bpufuvfayfg8.cloudfront.net/ZooMoo.m3u8"
+    },
+    {
+     "id": "ryan",
+     "name": "Ryan and Friends",
+     "kind": "stream",
+     "url": "https://d3a0tomzw8z726.cloudfront.net/Ryan_and_Friends.m3u8"
+    }
+   ]
+  },
+  {
+   "name": "News",
+   "channels": [
+    {
+     "id": "bbcnews",
+     "name": "BBC News",
+     "kind": "stream",
+     "url": "https://vs-hls-push-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "cnn",
+     "name": "CNN International",
+     "kind": "stream",
+     "url": "https://d2sybdl23b9psq.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-bocx3i7bjz0dg/CNNFAST_GB.m3u8"
+    },
+    {
+     "id": "aljazeera",
+     "name": "Al Jazeera",
+     "kind": "stream",
+     "url": "https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8"
+    },
+    {
+     "id": "euronews",
+     "name": "Euronews",
+     "kind": "stream",
+     "url": "https://cdn-euronews.akamaized.net/live/eds/euronews-en/25002/index.m3u8"
+    },
+    {
+     "id": "bloomberg",
+     "name": "Bloomberg",
+     "kind": "stream",
+     "url": "https://bloomberg.com/media-manifest/streams/eu.m3u8"
+    },
+    {
+     "id": "gbnews",
+     "name": "GB News",
+     "kind": "stream",
+     "url": "https://live-gbnews.simplestreamcdn.com/s3/gbnews_subs/index.m3u8"
+    },
+    {
+     "id": "talktv",
+     "name": "TalkTV",
+     "kind": "stream",
+     "url": "https://488f4ce4.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctZ2JfVGFsa19ITFM/playlist.m3u8"
+    },
+    {
+     "id": "nbcnow",
+     "name": "NBC News NOW",
+     "kind": "stream",
+     "url": "https://xumo-drct-nbcnn-ir8ze.fast.nbcuni.com/live/master.m3u8"
+    },
+    {
+     "id": "cbsnews",
+     "name": "CBS News",
+     "kind": "stream",
+     "url": "https://cbsn-us-vtt.cbsnstream.cbsnews.com/out/v1/ef868690d34144509eda696884bf1619/master.m3u8"
+    },
+    {
+     "id": "vm1",
+     "name": "Virgin Media One",
+     "kind": "stream",
+     "url": "https://live-virginmedia.simplestreamcdn.com/s3/rewrite/virgin_one/index.m3u8"
+    },
+    {
+     "id": "parliament",
+     "name": "BBC Parliament",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_parliament/pc_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "nhk",
+     "name": "NHK World",
+     "kind": "stream",
+     "url": "https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8"
+    }
+   ]
+  },
+  {
+   "name": "Sport",
+   "channels": [
+    {
+     "id": "bbcone",
+     "name": "BBC One",
+     "kind": "stream",
+     "url": "https://vs-hls-push-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_one_london/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "bbconeni",
+     "name": "BBC One Northern Ireland",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_one_northern_ireland_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "bbctwo",
+     "name": "BBC Two",
+     "kind": "stream",
+     "url": "https://vs-hls-push-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_two_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "bbcthree",
+     "name": "BBC Three",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_three_hd/mobile_wifi_main_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "bbcscotland",
+     "name": "BBC Scotland",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_scotland_hd/pc_hd_abr_v2.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "bbcalba",
+     "name": "BBC Alba",
+     "kind": "stream",
+     "url": "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_alba/iptv_hd_abr_v1.m3u8",
+     "note": "UK only"
+    },
+    {
+     "id": "s4c",
+     "name": "S4C",
+     "kind": "stream",
+     "url": "https://v2.uk.live.s4c-cdn.co.uk/out/v1/S4C/UK_TX/uk_live/uk-tx-dvb.mpd",
+     "note": "UK only"
+    },
+    {
+     "id": "tg4",
+     "name": "TG4",
+     "kind": "stream",
+     "url": "https://fastly.live.brightcove.com/6384196213112/eu-west-1/1555966122001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoieDl2YzlnLmVncmVzcy55ODN1ZWIiLCJhY2NvdW50X2lkIjoiMTU1NTk2NjEyMjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyIxNTU1OTY2MTIyMDAxIl0sImp0aSI6IjYzODQxOTYyMTMxMTIifQ.Co2xR3kmJBoxTaFTpwU0b37lJ05vNt-y32-SwfM26EA/chunklist.m3u8"
+    },
+    {
+     "id": "vm2",
+     "name": "Virgin Media Two",
+     "kind": "stream",
+     "url": "https://live-virginmedia.simplestreamcdn.com/s3/rewrite/virgin_two/index.m3u8"
+    },
+    {
+     "id": "vm3",
+     "name": "Virgin Media Three",
+     "kind": "stream",
+     "url": "https://live-virginmedia.simplestreamcdn.com/s3/rewrite/virgin_three/index.m3u8"
+    },
+    {
+     "id": "espn1000",
+     "name": "ESPN 1000 Chicago",
+     "kind": "twitch",
+     "channel": "espn1000chicago"
+    },
+    {
+     "id": "espn1000radio",
+     "name": "ESPN 1000 Chicago",
+     "kind": "stream",
+     "url": "https://live.amperwave.net/direct/goodkarma-wmvpammp3-ibc1",
+     "note": "Sound only"
+    },
+    {
+     "id": "talksport",
+     "name": "talkSPORT",
+     "kind": "stream",
+     "url": "https://af7a8b4e.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctZ2JfdGFsa1NQT1JUX0hMUw/playlist.m3u8"
+    },
+    {
+     "id": "fifa",
+     "name": "FIFA+",
+     "kind": "stream",
+     "url": "https://d2w9q46ikgrcwx.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-of5cbk3sav3w5/v1/sysdata_s_p_a_fifa_7/samsungheadend_us/latest/main/hls/playlist.m3u8"
+    },
+    {
+     "id": "eurovision",
+     "name": "Eurovision Sport",
+     "kind": "stream",
+     "url": "https://amg26268-amg26268c34-amgplt0018.playout.now3.amagi.tv/ts-us-e2-n1/playlist/amg26268-amg26268c34-amgplt0018/playlist.m3u8"
+    },
+    {
+     "id": "redbull",
+     "name": "Red Bull TV",
+     "kind": "stream",
+     "url": "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8"
+    },
+    {
+     "id": "mutv",
+     "name": "MUTV",
+     "kind": "stream",
+     "url": "https://fastly.live.brightcove.com/6374054671112/eu-west-1/6058004203001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiYXplMnp5LmVncmVzcy55ODN1ZWIiLCJhY2NvdW50X2lkIjoiNjA1ODAwNDIwMzAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI2MDU4MDA0MjAzMDAxIl0sImp0aSI6IjYzNzQwNTQ2NzExMTIifQ.3FmuTna3DAmY7xlhK5fk6LMrosrtrR5VsU2QOgYO5y4/playlist-hls.m3u8"
+    },
+    {
+     "id": "pga",
+     "name": "PGA Tour",
+     "kind": "stream",
+     "url": "https://d11k1mnrgfposz.cloudfront.net/playlist.m3u8"
+    },
+    {
+     "id": "horse",
+     "name": "Horse & Country",
+     "kind": "stream",
+     "url": "https://hncfree-samsung-uk.amagi.tv/playlist.m3u8"
+    },
+    {
+     "id": "unbeaten",
+     "name": "Unbeaten",
+     "kind": "stream",
+     "url": "https://d1t5afz6qed3xk.cloudfront.net/Unbeaten.m3u8"
+    }
+   ]
+  }
+ ]
+}

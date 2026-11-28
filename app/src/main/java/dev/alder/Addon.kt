@@ -436,7 +436,7 @@ internal fun parseImdbPersonTitles(json: JSONObject): List<ImdbPick> =
     json.optJSONObject("data")?.optJSONObject("advancedTitleSearch")?.optJSONArray("edges").objects()
         .mapNotNull { e -> e.optJSONObject("node")?.optJSONObject("title")?.let { imdbPick(it) } }.distinctBy { it.id }
 
-private fun imdbAsk(body: String, region: String) = JSONObject(Http.post("https://api.graphql.imdb.com/", body, keep = true, timeoutMs = 15_000,
+internal fun imdbAsk(body: String, region: String) = JSONObject(Http.post("https://api.graphql.imdb.com/", body, keep = true, timeoutMs = 15_000,
     headers = mapOf("x-imdb-client-name" to "imdb-web-next-localized", "x-imdb-user-country" to region)))
 
 /** The person named [name] and what they made, or null when IMDb knows no one by it. Blocks. */

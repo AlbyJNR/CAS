@@ -60,5 +60,39 @@ sleep 30; shot 20-dark-home
 key KEYCODE_DPAD_LEFT 2; shot 21-dark-rail
 key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_CENTER 12; shot 22-dark-title
 key KEYCODE_DPAD_DOWN 3; key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_CENTER 6; shot 23-dark-details
+# The ranked lists, opened by the debug build's hook (the short CAS has no genre chips to walk to): films, a genre,
+# TV, and two people's.
+open() { adb shell "am start --activity-clear-task -n uk.albyjnr.cas/dev.alder.ProfilesActivity --es casOpen '$1'" > /dev/null; sleep "${2:-12}"; }
+open ranked; shot 24-dark-top-rated
+key KEYCODE_DPAD_DOWN 1; key KEYCODE_DPAD_DOWN 1; key KEYCODE_DPAD_RIGHT 2; shot 24a-dark-top-rated-moved
+key KEYCODE_BACK 3
+adb shell am start -S -n uk.albyjnr.cas/dev.alder.ProfilesActivity --ez casDark false > /dev/null; sleep 25
+open ranked 10
+key KEYCODE_DPAD_UP 2; for i in 1 2 3 4 5; do key KEYCODE_DPAD_RIGHT 1; done; sleep 6; shot 25-top-rated-crime
+key KEYCODE_BACK 3
+open rankedtv; shot 26-top-rated-tv
+key KEYCODE_BACK 3
+open "person:Martin Scorsese"; shot 27-person
+key KEYCODE_DPAD_UP 2; key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_CENTER 10; shot 28-person-top-rated
+key KEYCODE_DPAD_DOWN 2; key KEYCODE_DPAD_DOWN 2; shot 28a-person-top-rated-line
+key KEYCODE_BACK 3
+open "person:Olivia Colman"
+key KEYCODE_DPAD_UP 2; key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_RIGHT 2; key KEYCODE_DPAD_CENTER 10; shot 29-person-actress
+key KEYCODE_BACK 3
+# Live: the page, a card along and down, then a channel playing, the next channel, and Twitch's player.
+open live 8; shot 30-live
+key KEYCODE_DPAD_RIGHT 1; key KEYCODE_DPAD_DOWN 2; shot 31-live-news
+key KEYCODE_DPAD_RIGHT 1; key KEYCODE_DPAD_CENTER 15; shot 32-live-playing
+key KEYCODE_DPAD_DOWN 12; shot 33-live-next-channel
+key KEYCODE_BACK 3; shot 34-live-back
+key KEYCODE_DPAD_DOWN 2; for i in 1 2 3 4 5 6 7 8; do key KEYCODE_DPAD_RIGHT 1; done; shot 35-live-sport
+key KEYCODE_DPAD_CENTER 25; shot 36-live-twitch
+key KEYCODE_BACK 3
+key KEYCODE_DPAD_RIGHT 1; key KEYCODE_DPAD_CENTER 12; shot 37-live-sound-only
+key KEYCODE_BACK 3
+# The rail with the remote on Live.
+adb shell am start -S -n uk.albyjnr.cas/dev.alder.ProfilesActivity > /dev/null; sleep 25
+key KEYCODE_DPAD_LEFT 2; for i in 1 2 3; do key KEYCODE_DPAD_DOWN 1; done; sleep 1; shot 38-rail-on-live
+key KEYCODE_DPAD_CENTER 6; shot 39-live-from-rail
 adb logcat -d | grep -vF "$KEY" > screens/logcat.txt || true
 if grep -q "FATAL EXCEPTION" screens/logcat.txt; then echo "::error::CAS crashed on the signed-in walk"; grep -A 20 "FATAL EXCEPTION" screens/logcat.txt | head -40; exit 1; fi

@@ -145,6 +145,7 @@ class MainActivity : Screen() {
     internal lateinit var heroAdded: TextView
     internal var addedLine = "" // the library's "Added 3 days ago", drawn after the scores by showScores
     internal var search: View? = null
+    internal var liveEntry: View? = null // the rail's way into Live TV
     internal val rows = mutableListOf<Row>()
     internal var focusedSomething = false
     // Full details, fetched once per title and kept for the [META_KEEP] used last: a series' details carry every
@@ -762,6 +763,10 @@ class MainActivity : Screen() {
                 }
             }.inNav()
         }
+        // Live TV (2026-11-28): a screen of its own, like Search. Kids, news and sport from CAS's own list of channels.
+        if (!profile.kids) liveEntry = entry(R.drawable.ic_live, "Live").apply {
+            setOnClickListener { startActivity(Intent(this@MainActivity, LiveActivity::class.java)) }
+        }.inNav()
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL).apply { leftMargin = dp(RAIL_X) })
         styleNav()
         return header
@@ -786,7 +791,7 @@ class MainActivity : Screen() {
     /** The focused entry on white, the open page lit. */
     internal fun styleNav() {
         if (!::nav.isInitialized) return
-        val entries = navItems.map { (p, v) -> v to p } + listOfNotNull(search?.let { it to null }, profileEntry to null)
+        val entries = navItems.map { (p, v) -> v to p } + listOfNotNull(search?.let { it to null }, liveEntry?.let { it to null }, profileEntry to null)
         entries.forEach { (item, p) ->
             val focused = item.isFocused
             val current = p != null && p == page
@@ -1670,6 +1675,10 @@ class MainActivity : Screen() {
             clipChildren = false
             setPadding(dp(EDGE), dp(2), dp(PAD), dp(2))
         }
+        // Top rated first (2026-11-28): the numbered list of the best films or TV, on a screen of its own. Not for a child's profile.
+        if (names.isNotEmpty() && !profile.kids && (page == Page.SHOWS || page == Page.MOVIES)) line.addView(chip("Top rated", false).apply {
+            setOnClickListener { startActivity(Intent(this@MainActivity, RankedActivity::class.java).putExtra("tv", page == Page.SHOWS)) }
+        }, LinearLayout.LayoutParams(-2, -2))
         // One chip per genre row; no "All": the page's first row is where Back already goes.
         names.forEach { value ->
             val control = chip(value, false).apply {

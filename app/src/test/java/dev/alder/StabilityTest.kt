@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 
 /** The rules that keep CAS steady: the row band holding its row, memory given back, a failing site left alone. */
@@ -251,5 +252,77 @@ class StabilityTest {
         assertEquals(false, looksAgain(100 * h, 123 * h)); assertEquals(true, looksAgain(100 * h, 124 * h)); assertEquals(true, looksAgain(0, h))
         val a = Weather.Place("A", 54.60, -5.93)
         assertEquals(false, moved(a, Weather.Place("A", 54.62, -5.95))); assertEquals(true, moved(a, Weather.Place("B", 54.2, -5.9)))
+    }
+
+    private fun rated(id: String, rating: String?, votes: Int, type: String = "movie") =
+        Rated(ImdbPick(id, id, type, null, "2000", null, emptyList(), rating, null, null, null, null, null), votes)
+
+    @Test fun aPersonsBestIsByRatingThenVotesWithAFloorOfVotes() {
+        val many = (1..12).map { rated("tt$it", "7.${it % 10}", 20_000 + it) }
+        val list = best(many + rated("ttfans", "9.9", 900) + rated("ttnone", null, 500_000) + rated("tt9", "9.0", 1) + rated("tttv", "9.5", 3_000, "series"))
+        assertEquals("tttv", list[0].id); assertEquals(1, list[0].rank) // a series needs fewer votes than a film
+        assertEquals("tt9", list[1].id); assertEquals("7.9", list[1].rating); assertEquals(2, list[1].rank) // the same title twice counts once
+        assertEquals(false, list.any { it.id == "ttfans" || it.id == "ttnone" })
+        assertEquals(13, list.size)
+        // Someone with few well-known titles: the floor drops, so the list is not bare.
+        assertEquals(listOf("b", "a"), best(listOf(rated("a", "6.0", 1_500), rated("b", "8.1", 1_200), rated("c", "9.0", 40))).map { it.id })
+        assertEquals(50, best((1..80).map { rated("x$it", "7.0", 50_000 + it) }).size)
+    }
+
+    @Test fun aPersonsJobAndTheQueriesForRankedLists() {
+        assertEquals("director", bestJob(listOf("Producer", "Director", "Actor"))); assertEquals("actress", bestJob(listOf("Actress", "Writer")))
+        assertEquals(null, bestJob(listOf("Producer", "Composer")))
+        assertEquals("As director  ·  1 title", bestCaption("director", 1))
+        val q = JSONObject(creditsQuery("nm1", "director", FILMS, "GB")).getString("query")
+        assertTrue(q.contains("""name(id:"nm1")""")); assertTrue(q.contains("""categories:["director"],titleType:["movie"]""")); assertTrue(q.contains("voteCount"))
+        val parsed = parseCredits(JSONObject("""{"data":{"name":{"credits":{"edges":[
+            {"node":{"title":{"id":"tt1","titleText":{"text":"One"},"titleType":{"id":"movie"},"ratingsSummary":{"aggregateRating":8.25,"voteCount":1200}}}},
+            {"node":{"title":{"id":"nm9","titleText":{"text":"Not a title"}}}}]}}}}"""))
+        assertEquals(1, parsed.size); assertEquals(1200, parsed[0].votes); assertEquals("8.3", parsed[0].pick.rating)
+        val crime = JSONObject(genreBestQuery("Crime", tv = false, region = "GB")).getString("query")
+        assertTrue(crime.contains("""allGenreIds:["Crime"]""")); assertTrue(crime.contains("ratingsCountRange:{min:100000}")); assertTrue(crime.contains("sortBy:USER_RATING,sortOrder:DESC"))
+        val allTv = JSONObject(genreBestQuery(null, tv = true, region = "GB")).getString("query")
+        assertEquals(false, allTv.contains("allGenreIds")); assertTrue(allTv.contains("ratingsCountRange:{min:25000}")); assertTrue(allTv.contains(""""tvSeries","tvMiniSeries""""))
+        assertEquals(20_000, genreVotes("Documentary", tv = false))
+        assertEquals(listOf(3, 2, 2, 1, 0, 0), listOf("8.0", "7.9", "7.0", "6.5", "5.9", null).map(::scoreBand))
+    }
+
+    @Test fun liveListKeepsWhatItCanPlayAndTheNewerCopyWins() {
+        val list = parseLive("""{"v":1,"rev":3,"rows":[
+            {"name":"News","channels":[
+                {"id":"a","name":"A","kind":"stream","url":"https://x.test/a.m3u8","note":"UK only"},
+                {"id":"a","name":"A again","kind":"stream","url":"https://x.test/a2.m3u8"},
+                {"id":"b","name":"B","kind":"stream","url":"file:///sdcard/b"},
+                {"id":"c","name":"C","kind":"twitch","channel":"espn1000chicago"},
+                {"id":"d","name":"D","kind":"twitch","channel":"bad name/../x"},
+                {"id":"e","name":"E","kind":"app","packages":["com.dazn","not a package"]},
+                {"id":"f","name":"F","kind":"hologram","url":"https://x.test/f"},
+                {"name":"No id","kind":"stream","url":"https://x.test/g"}]},
+            {"name":"Empty","channels":[{"id":"z","name":"Z","kind":"stream"}]}]}""")!!
+        assertEquals(3, list.rev); assertEquals(1, list.rows.size)
+        assertEquals(listOf("a", "c", "e"), list.rows[0].channels.map { it.id })
+        assertEquals("UK only", list.rows[0].channels[0].note); assertEquals(listOf("com.dazn"), list.rows[0].channels[2].packages)
+        assertNull(parseLive("<html>")); assertNull(parseLive("""{"rows":[]}"""))
+        val old = parseLive("""{"rev":2,"rows":[{"name":"N","channels":[{"id":"a","name":"A","kind":"stream","url":"https://x.test/a.m3u8"}]}]}""")!!
+        assertEquals(3, newer(old, list)!!.rev); assertEquals(3, newer(list, old)!!.rev); assertEquals(2, newer(old, null)!!.rev); assertNull(newer(null, null))
+        assertTrue(sameLive(list, list)); assertFalse(sameLive(list, old))
+    }
+
+    @Test fun liveChannelsGoRoundAndTheListIsReadAFewTimesADay() {
+        assertEquals(0, liveStep(4, 1, 5)); assertEquals(4, liveStep(0, -1, 5)); assertEquals(3, liveStep(2, 1, 5)); assertEquals(0, liveStep(0, 1, 0))
+        val h = 3600_000L
+        assertFalse(liveAsksAgain(100 * h, 105 * h)); assertTrue(liveAsksAgain(100 * h, 106 * h)); assertTrue(liveAsksAgain(100 * h, 99 * h)); assertTrue(liveAsksAgain(0, h * 500_000))
+        val page = twitchPage("espn1000chicago", "albyjnr.github.io", clear = false)
+        assertTrue(page.contains("player.twitch.tv/?channel=espn1000chicago&parent=albyjnr.github.io")); assertTrue(page.contains("background:#000"))
+    }
+
+    @Test fun theAppsOwnLiveListIsWholeAndEveryChannelPlaysSomehow() {
+        val file = listOf("src/main/assets/live.json", "app/src/main/assets/live.json").map { java.io.File(it) }.first { it.exists() }
+        val list = parseLive(file.readText())!!
+        assertEquals(listOf("Kids", "News", "Sport"), list.rows.map { it.name })
+        val all = list.rows.flatMap { it.channels }
+        assertEquals(JSONObject(file.readText()).getJSONArray("rows").let { rows -> (0 until rows.length()).sumOf { rows.getJSONObject(it).getJSONArray("channels").length() } }, all.size) // none left out
+        assertEquals(all.size, all.map { it.id }.distinct().size)
+        assertTrue(all.none { it.name.contains("YouTube", true) || it.name.contains("Alder", true) })
     }
 }

@@ -21,6 +21,9 @@
             <data android:scheme="https" />
         </intent>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="vnd.youtube" /></intent>
+        <!-- Live: a channel that plays in another app on the TV opens that app, when the TV has it -->
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LEANBACK_LAUNCHER" /></intent>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
     </queries>
 
     <application
@@ -55,6 +58,10 @@
         <activity android:name=".SearchActivity" android:screenOrientation="landscape" />
         <activity android:name=".PersonActivity" android:screenOrientation="landscape" />
         <activity android:name=".GridActivity" android:screenOrientation="landscape" />
+        <activity android:name=".RankedActivity" android:screenOrientation="landscape" />
+        <activity android:name=".LiveActivity" android:screenOrientation="landscape" />
+        <activity android:name=".LiveWebActivity" android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout" />
+        <activity android:name=".LivePlayerActivity" android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout" />
         <activity android:name=".SettingsActivity" android:screenOrientation="landscape" />
         <activity android:name=".AddonsActivity" android:screenOrientation="landscape" />
         <activity android:name=".DetailsActivity" android:screenOrientation="landscape" />

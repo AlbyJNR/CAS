@@ -83,6 +83,12 @@ class ProfilesActivity : Screen() {
         // profile in with no phone, so CI can photograph the signed-in screens (cas-build.yml, screens).
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && Profiles.all(this).isEmpty())
             intent.getStringExtra("testKey")?.takeIf { it.isNotBlank() }?.let { key -> return signedIn("Test", key, null) }
+        // Debug builds only: `--es casOpen ranked` (or rankedtv, or person:<name>) opens that screen, so CI can photograph it.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && Profiles.active(this) != null) intent.getStringExtra("casOpen")?.let { what ->
+            startActivity(if (what == "live") Intent(this, LiveActivity::class.java) else if (what.startsWith("person:")) Intent(this, PersonActivity::class.java).putExtra("name", what.substringAfter(':'))
+                else Intent(this, RankedActivity::class.java).putExtra("tv", what == "rankedtv"))
+            return finish()
+        }
         val profiles = Profiles.all(this)
         // Home found this profile signed out: straight to its sign-in, the profile and its settings kept.
         val again = intent.getStringExtra("signIn")?.let { id -> profiles.firstOrNull { it.id == id } }

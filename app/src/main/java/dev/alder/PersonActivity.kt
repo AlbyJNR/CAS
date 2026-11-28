@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -20,12 +21,14 @@ import android.widget.TextView
  * and when they were born, a few lines about them. The rest of the screen is what the page is for: everything they
  * made, as posters, the best known first or the newest first, films or TV or both, more arriving as the remote
  * goes down. OK on a poster opens that title. All of it is IMDb's; a name IMDb does not know goes to a plain search.
+ * Top rated (2026-11-28) turns the posters into a numbered list: what they made in their own job, the best first.
  */
 class PersonActivity : Screen() {
     private val asked by lazy { intent.getStringExtra("name").orEmpty() }
     private val country by lazy { java.util.Locale.getDefault().country.ifEmpty { "GB" } }
     private var who: ImdbPerson? = null
     private var newest = false
+    private var rated = false // the numbered list, by rating
     private var kind = ALL
     private var cursor: String? = null
     private var more = false
@@ -49,12 +52,17 @@ class PersonActivity : Screen() {
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
-            addView(chips, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(count, wrap())
+            // The choices in a strip that scrolls: six of them, or five in large text, are wider than the space.
+            addView(HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false; clipChildren = false; clipToPadding = false
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                addView(chips)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(count, wrap().apply { marginStart = dp(10) })
         }
         val works = column(Gravity.START).apply {
             clipChildren = false
-            addView(top, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(6); marginEnd = dp(6) })
+            addView(top, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(2); marginEnd = dp(6) })
             // A pane of its own around the posters, and it clips: Android clips a view to its bounds only through its
             // parent, and this column must not clip (the choices above grow under the remote). Without the pane the
             // rows that had scrolled up drew over the choices.
@@ -116,8 +124,9 @@ class PersonActivity : Screen() {
             setOnClickListener { if (!on) { pick(); showChips(label); load(reset = true) } }
             if (label == focus) post { requestFocus() }
         }, LinearLayout.LayoutParams(-2, -2).apply { if (chips.childCount > 0) marginStart = dp(gap) })
-        add("Best known", !newest, 0) { newest = false }
-        add("Newest", newest, 8) { newest = true }
+        add("Best known", !newest && !rated, 0) { newest = false; rated = false }
+        add("Newest", newest, 8) { newest = true; rated = false }
+        if (who?.let { bestJob(it.jobs) } != null) add("Top rated", rated, 8) { rated = true; newest = false }
         add("All", kind == ALL, 22) { kind = ALL }
         add("Films", kind == FILMS, 8) { kind = FILMS }
         add("TV", kind == TV, 8) { kind = TV }
@@ -135,6 +144,7 @@ class PersonActivity : Screen() {
             count.text = ""
             grid.addView(ring(), LinearLayout.LayoutParams(dp(28), dp(28)).apply { topMargin = dp(20) })
         } else if (loading || !more) return
+        if (rated) return loadRated(p)
         loading = true
         val token = request
         val after = cursor
@@ -154,6 +164,25 @@ class PersonActivity : Screen() {
             val first = tiles.isEmpty()
             page.picks.forEach(::addTile)
             if (first && !chips.hasFocus()) tiles.firstOrNull()?.requestFocus()
+        }
+    }
+
+    /** Their best as a numbered list: one answer from IMDb, ranked here. Nothing more arrives as the remote goes down. */
+    private fun loadRated(p: ImdbPerson) {
+        val job = bestJob(p.jobs) ?: return
+        more = false
+        val token = request
+        background({ imdbBestOf(p.id, job, kind, country) }) { r ->
+            if (isFinishing || token != request) return@background
+            grid.removeAllViews()
+            val picks = r.getOrNull() ?: return@background grid.addView(failed("Couldn't reach IMDb. Check the TV's connection.") { load(reset = true) })
+            if (picks.isEmpty()) return@background grid.addView(text("Nothing here", BODY, color = TEXT_2), wrap().apply { topMargin = dp(12); marginStart = dp(2) })
+            // Whose work the list is, over the list: the line of choices has no room for it.
+            grid.addView(text(bestCaption(job, picks.size), SMALL, color = TEXT_3), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(4); bottomMargin = dp(8) })
+            tiles += rankedList(grid, picks, (scroll.width - dp(12) - dp(RANK_GAP)) / 2) {
+                startActivity(Intent(this, DetailsActivity::class.java).putExtra("type", it.type).putExtra("id", it.id).putExtra("name", it.name).putExtra("poster", it.poster))
+            }
+            if (!chips.hasFocus()) tiles.firstOrNull()?.requestFocus()
         }
     }
 
